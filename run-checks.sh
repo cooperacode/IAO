@@ -6,13 +6,13 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 echo "==> dotnet test (Harness.Engine.Tests)"
-dotnet test src/Harness.Engine.Tests/Harness.Engine.Tests.csproj -c Release
+dotnet test src/dotnet/Harness.Engine.Tests/Harness.Engine.Tests.csproj -c Release
 
 echo "==> smoke do fluxo de desenvolvimento (binário, ponta a ponta)"
 # Dirige o binário do Flows.Development pela inbox num workspace descartável (não toca o
 # .harness/ do repo). Pega o que o build sozinho não pega: transporte, inbox e serialização
 # AOT em runtime. Determinístico e 0 tokens — o "driver" aqui é este script.
-DEV_DLL="$DIR/src/Flows.Development/bin/Release/net10.0/Flows.Development.dll"
+DEV_DLL="$DIR/src/dotnet/Flows.Development/bin/Release/net10.0/Flows.Development.dll"
 [[ -f "$DEV_DLL" ]] || { echo "[smoke] DLL não encontrada: $DEV_DLL" >&2; exit 1; }
 
 SMOKE_DIR="$(mktemp -d)"

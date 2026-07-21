@@ -14,7 +14,7 @@ Você é o **interpretador** de um harness cuja máquina de estados vive em cód
 arquivo, roda um comando no terminal, lê o `stdout` e segue a instrução retornada.
 
 Programa: `./run-development.sh` (pré-requisito, uma vez:
-`dotnet build src/Flows.Development/Flows.Development.csproj -c Release`).
+`dotnet build src/dotnet/Flows.Development/Flows.Development.csproj -c Release`).
 
 O estado que atravessa os resets vive em **artefatos persistentes**, não na conversa:
 - `.harness/feature_list.json` — a lista de features e quais já passam (do harness).

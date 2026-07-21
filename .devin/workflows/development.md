@@ -41,9 +41,9 @@ No passo `verify`, rode o comando de verificação indicado no `<input>` (`$VERI
 
 1. Garanta o build do harness (uma vez):
    ```bash
-   dotnet build src/Flows.Development/Flows.Development.csproj -c Release
+   dotnet build src/dotnet/Flows.Development/Flows.Development.csproj -c Release
    ```
-   (Ou binário nativo sem runtime .NET: `dotnet publish src/Flows.Development/Flows.Development.csproj -c Release -r linux-x64`.)
+   (Ou binário nativo sem runtime .NET: `dotnet publish src/dotnet/Flows.Development/Flows.Development.csproj -c Release -r linux-x64`.)
 
 2. Inicie o fluxo: escreva `{ "type": "text", "value": "start", "context": { "driver": "devin" } }` em `.harness/inbox.json`, rode o script sem argumentos e guarde o `stdout`:
    ```bash

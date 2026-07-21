@@ -12,8 +12,8 @@ feature per session until all of them pass.
 
 ## What exists on this branch
 
-- Reusable engine in `src/Harness.Engine`.
-- Development flow in `src/Flows.Development`.
+- Reusable engine in `src/dotnet/Harness.Engine`.
+- Development flow in `src/dotnet/Flows.Development`.
 - Stable wrapper `run-development.sh`, which runs the Native AOT binary when
   it exists or falls back to the DLL via `dotnet`.
 - IDE adapters for Claude Code, GitHub Copilot, Devin, and Codex.
@@ -114,7 +114,7 @@ and `.harness/run_config.json`.
 There is no `resume` command on this branch — and there doesn't need to be:
 **`start` already decides on its own, in code, whether to reset or resume.**
 The rule lives in `DevelopmentTasks.Start()`
-(`src/Flows.Development/DevelopmentTasks.cs`) and is purely mechanical:
+(`src/dotnet/Flows.Development/DevelopmentTasks.cs`) and is purely mechanical:
 
 - Does `.harness/feature_list.json` have any feature with `passes: false`?
   Then a run is in progress — `start` **resets nothing**, it just returns
@@ -193,21 +193,21 @@ Prerequisite for compiling: a .NET SDK compatible with the projects'
 DLL build, useful for local development:
 
 ```bash
-dotnet build src/Flows.Development/Flows.Development.csproj -c Release
+dotnet build src/dotnet/Flows.Development/Flows.Development.csproj -c Release
 ```
 
 Native AOT, recommended for a self-contained package:
 
 ```bash
-dotnet publish src/Flows.Development/Flows.Development.csproj -c Release -r osx-arm64
+dotnet publish src/dotnet/Flows.Development/Flows.Development.csproj -c Release -r osx-arm64
 ```
 
 RIDs used by packaging: `osx-arm64`, `osx-x64`, `linux-x64`,
 `linux-arm64`, `win-x64`.
 
 The wrapper first looks for a published native binary at
-`src/Flows.Development/bin/Release/net10.0/<RID>/publish/`. If not found, it
-uses `src/Flows.Development/bin/Release/net10.0/Flows.Development.dll` via
+`src/dotnet/Flows.Development/bin/Release/net10.0/<RID>/publish/`. If not found, it
+uses `src/dotnet/Flows.Development/bin/Release/net10.0/Flows.Development.dll` via
 `dotnet`.
 
 ```bash
@@ -220,7 +220,7 @@ To validate the deterministic layer locally:
 ./run-checks.sh
 ```
 
-This script runs `dotnet test src/Harness.Engine.Tests/Harness.Engine.Tests.csproj
+This script runs `dotnet test src/dotnet/Harness.Engine.Tests/Harness.Engine.Tests.csproj
 -c Release` and an end-to-end smoke test in a temporary directory, using the
 inbox transport. It requires no agent and consumes no tokens.
 
@@ -295,7 +295,7 @@ Expected usage flow:
 
 ## Creating a new flow
 
-1. Create `src/Flows.<Name>/` and reference `src/Harness.Engine`.
+1. Create `src/dotnet/Flows.<Name>/` and reference `src/dotnet/Harness.Engine`.
 2. Implement the domain's state machine and prompts.
 3. In `Program.cs`, register a `Dictionary<string, Func<Envelope?, string>>`
    and call `HarnessHost.Run(args, tasks, ...)`.

@@ -51,7 +51,7 @@ contains() { local x; for x in "${@:2}"; do [[ "$x" == "$1" ]] && return 0; done
 
 # ---- metadados por fluxo ----
 project_for() { case "$1" in
-  development) echo "src/Flows.Development/Flows.Development.csproj";;
+  development) echo "src/dotnet/Flows.Development/Flows.Development.csproj";;
 esac; }
 assembly_for() { case "$1" in
   development) echo "Flows.Development";;
