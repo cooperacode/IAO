@@ -1,0 +1,7 @@
+{
+  "maxSteps": 12,
+  "maxInstructionChars": 0,
+  "docsMaxChars": 40000,
+  "docsFolder": "docs",
+  "timeoutMs": 30000
+}

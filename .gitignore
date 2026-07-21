@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+
+# Estado de runtime do harness
+.harness/
+
+# Cruft de exemplos antigos
+__pycache__/
+
+# Resultados do benchmark
+bench/out/
+
+# Relatorios gerados (skills/session-report)
+report/
+
+todo-*/
+app/
+.back_*/
+
+#Files
+.DS_Store
+
+paper/
+curso/
+tmp/

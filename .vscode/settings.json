@@ -1,0 +1,21 @@
+{
+    "chat.agentFilesLocations": {
+        ".github/agents": true,
+        ".claude/agents": true,
+        "~/.copilot/agents": true,
+        "agents/": true
+    },
+    "chat.tools.terminal.autoApprove": {
+        "/^\\.\\/(run-refinement|run-eval|run-checks|run-development|package)\\.sh\\b/": true,
+        "/^(\\.\\/)?bench\\/[A-Za-z0-9._-]+\\.(sh|py)\\b/": true,
+        "/^\\.\\/paper\\/build-artifact\\.sh\\b/": true,
+        "/^bash +(run-(refinement|eval|checks|development)|package)\\.sh\\b/": true,
+        "/^chmod \\+x /": true,
+        "/^dotnet (build|run|test|publish|restore|new|sln|add)\\b/": true,
+        "/^python3 bench\\//": true,
+        "/^mkdir -p /": true,
+        "/^rm -r?f? /": true,
+        "/^find \\./": true,
+        "/^git /": true
+    }
+}

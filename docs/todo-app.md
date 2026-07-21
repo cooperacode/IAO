@@ -1,0 +1,97 @@
+# App de Lista de Tarefas (To-Do) — WebAPI com persistência em Postgres
+
+## Contexto
+Este caso adapta o app de lista de tarefas original (CLI local-first, persistência em
+arquivo JSON, já implementado em `todo-app/`) para um cenário de **testes de integração
+reais contra banco de dados**, expondo as funcionalidades via uma **WebAPI HTTP** em vez de
+uma CLI de terminal. A persistência deixa de ser um arquivo local e passa a ser um
+**Postgres**, subindo localmente via **Docker Compose** — não é um serviço de nuvem, é
+infraestrutura de desenvolvimento/teste que roda na máquina de quem está construindo o
+projeto.
+
+## Objetivo
+Adaptar a lista de tarefas (criar, listar, concluir, editar, remover, filtrar) para ser
+exposta via **endpoints HTTP** e persistir as tarefas em **Postgres** em vez de arquivo
+JSON, com o banco subindo via `docker-compose.yml` versionado no projeto. Os testes
+automatizados deixam de exercitar um repositório em arquivo/memória e passam a combinar dois
+níveis: **testes de unidade** (regras de negócio puras de cada slice, sem HTTP nem Postgres)
+e **testes de integração** (o endpoint completo, via HTTP, rodando contra essa instância real
+do Postgres). A implementação continua em **.NET** (C#), com um projeto **ASP.NET Core Web
+API** e dois projetos de testes automatizados (unidade e integração). Deve existir **um único
+comando de verificação** que suba a infraestrutura e rode as duas suítes de testes.
+
+## Arquitetura
+A organização do código segue **Vertical Slice Architecture**: cada funcionalidade abaixo
+(endpoint) é uma fatia vertical autocontida — parsing da requisição HTTP, regra de negócio e
+acesso ao Postgres num único lugar coeso — em vez de camadas horizontais
+(Controller/Service/Repository) compartilhadas entre endpoints. Só entidade, conexão com o
+banco e exceções de domínio são compartilhadas entre slices. Ver a decisão completa em
+[ADR-0001](adr-0001-vertical-slice.md) e a visão de componentes em
+[docs/c4-diagrama-componentes.md](c4-diagrama-componentes.md).
+
+## Funcionalidades desejadas (prioridade sugerida)
+1. **Subir a infraestrutura** — `docker-compose.yml` com um único serviço Postgres; o
+   schema (tabela de tarefas) é criado automaticamente na subida (script de inicialização
+   ou migração aplicada pela própria aplicação ao conectar).
+2. **Adicionar tarefa** — `POST /tasks`; título obrigatório; a tarefa nasce "pendente";
+   persistida no Postgres.
+3. **Listar tarefas** — `GET /tasks`; retorna id, status (pendente/concluída) e título,
+   lidos do Postgres.
+4. **Concluir tarefa** — `PATCH /tasks/{id}/complete`; marca uma tarefa como concluída no
+   Postgres.
+5. **Persistência** — as tarefas sobrevivem entre reinicializações do processo da API via
+   Postgres (não mais arquivo local).
+6. **Remover tarefa** — `DELETE /tasks/{id}`; apaga uma tarefa no Postgres.
+7. **Editar título** — `PUT /tasks/{id}`; altera o texto de uma tarefa existente no
+   Postgres.
+8. **Filtrar listagem** — `GET /tasks?status=...`; mostrar só pendentes, só concluídas, ou
+   todas.
+9. **Testes de integração** — cada endpoint acima é coberto por um teste que chama a API via
+   HTTP e roda contra o Postgres real subido pelo compose (sem mocks, sem repositório em
+   memória).
+10. **Testes de unidade** — as regras de negócio puras de cada slice (ex.: título obrigatório,
+    transições de status válidas, filtro de listagem) são cobertas por testes de unidade
+    rápidos, isolados de HTTP e do Postgres.
+
+## Regras / restrições
+- **Stack obrigatória**: .NET/C# para aplicação e testes (ex.: ASP.NET Core Web API +
+  xUnit); Postgres como banco (driver/ORM à escolha da implementação, ex.: Npgsql, Dapper ou
+  EF Core).
+- **Organização em vertical slices** (ver [Arquitetura](#arquitetura)): cada endpoint é uma
+  fatia isolada, sem Service/Repository genéricos compartilhados entre endpoints.
+- **Infraestrutura via Docker Compose**: um `docker-compose.yml` versionado sobe um único
+  serviço Postgres local. Sem serviços de nuvem, sem autenticação de usuário na aplicação.
+- **Conexão configurável**: string de conexão via variável de ambiente (ex.:
+  `TODO_DB_CONNECTION`), com um valor padrão que aponta para o serviço subido pelo compose.
+- **Ids estáveis e previsíveis** (ex.: sequenciais, gerados pelo Postgres). Operar sobre um
+  id inexistente devolve um **erro HTTP claro** (ex.: `404 Not Found`), não quebra a API.
+- **Título vazio é rejeitado** com resposta de erro HTTP clara (ex.: `400 Bad Request`).
+- **Testes de integração são reais**: cada endpoint precisa ser verificável isoladamente por
+  um teste automatizado que chama a API via HTTP e roda contra o Postgres real — nada de
+  mock ou repositório em memória substituindo o banco.
+- **Testes de unidade cobrem a regra de negócio pura de cada slice** (validação, transições
+  de status, filtro), sem subir HTTP nem Postgres — complementam, não substituem, os testes
+  de integração.
+- **Isolamento entre testes**: cada teste de integração limpa ou isola os próprios dados
+  (ex.: transação com rollback ao final, ou limpeza da tabela entre casos) para não vazar
+  estado entre testes.
+- O projeto deve ter um `init.sh` idempotente que suba o Postgres (`docker compose up -d
+  --wait`, aguardando o banco ficar pronto) e em seguida rode o comando único de
+  verificação (preferencialmente `dotnet test` na raiz da solution, cobrindo os dois
+  projetos de teste).
+
+## Fora de escopo (por enquanto)
+- Múltiplos usuários, sincronização em nuvem, login.
+- Datas de vencimento, lembretes, prioridades, tags.
+- Interface gráfica (frontend) — só a API HTTP nesta fase, sem UI.
+- Orquestração além de um único container Postgres (sem Kubernetes, sem múltiplos
+  serviços, sem ferramenta de migração dedicada obrigatória).
+- Ambiente de CI/produção com Postgres gerenciado — o compose é só para desenvolvimento e
+  teste local.
+
+## Critério de "pronto"
+Todos os endpoints acima funcionam via HTTP contra o Postgres subido via
+`docker-compose.yml`, os dados **persistem entre reinicializações do processo da API**
+(sobrevivem a reiniciar o programa, não necessariamente a um `docker compose down -v`), e as
+suítes de **testes de unidade e de integração passam inteiras (verdes)** — a de integração
+rodando contra o banco real, cobrindo cada endpoint.
