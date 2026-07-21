@@ -3,6 +3,7 @@ using TodoApp.Api.Shared;
 using TodoApp.Api.Tasks.AddTask;
 using TodoApp.Api.Tasks.CompleteTask;
 using TodoApp.Api.Tasks.ListTasks;
+using TodoApp.Api.Tasks.RemoveTask;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,7 @@ app.MapGet("/", () => Results.Ok(new { Name = "TodoApp API" }));
 app.MapAddTask();
 app.MapCompleteTask();
 app.MapListTasks();
+app.MapRemoveTask();
 
 app.Run();
 
