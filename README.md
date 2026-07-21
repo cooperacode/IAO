@@ -1,4 +1,4 @@
-# Harness - a state machine in code, driven by prompt
+# Inverted Agentic Orchestration - a state machine in code, driven by prompt
 
 A harness where **orchestration lives in compiled .NET** and the IDE agent acts
 as an **interpreter**: at each step it runs a command, reads `stdout`, and
