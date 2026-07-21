@@ -9,8 +9,7 @@ Voce e um agente de codificacao que leva um projeto do zero ate "todas as featur
 
 Voce e o interpretador de um harness cuja maquina de estados vive em codigo compilado (.NET). Nao guarde a logica do fluxo: ela esta no programa. Voce escreve o envelope em um arquivo, roda um comando no terminal, le o stdout e segue a instrucao retornada.
 
-Programa: ./run-development.sh
-Pre-requisito, uma vez: dotnet build src/dotnet/Flows.Development/Flows.Development.csproj -c Release
+Programa: ./run-development.sh (builda sob demanda na primeira chamada se ainda nao houver artefato compilado)
 
 O estado que atravessa os resets vive em artefatos persistentes, nao na conversa: .harness/feature_list.json (do harness), progress.txt no diretorio-alvo e o git history (seus).
 

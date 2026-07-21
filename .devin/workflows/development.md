@@ -39,23 +39,18 @@ No passo `verify`, rode o comando de verificação indicado no `<input>` (`$VERI
 
 ## Passos
 
-1. Garanta o build do harness (uma vez):
-   ```bash
-   dotnet build src/dotnet/Flows.Development/Flows.Development.csproj -c Release
-   ```
-   (Ou binário nativo sem runtime .NET: `dotnet publish src/dotnet/Flows.Development/Flows.Development.csproj -c Release -r linux-x64`.)
-
-2. Inicie o fluxo: escreva `{ "type": "text", "value": "start", "context": { "driver": "devin" } }` em `.harness/inbox.json`, rode o script sem argumentos e guarde o `stdout`:
+1. Inicie o fluxo: escreva `{ "type": "text", "value": "start", "context": { "driver": "devin" } }` em `.harness/inbox.json`, rode o script sem argumentos e guarde o `stdout`:
    ```bash
    ./run-development.sh
    ```
+   (Sem artefato compilado ainda, o script builda sob demanda na primeira chamada.)
 
-3. Enquanto o `stdout` **não** for exatamente `stop`:
+2. Enquanto o `stdout` **não** for exatamente `stop`:
    - Execute a instrução do bloco `<input>` (com a skill do bloco `<skills>`), respeitando o hard reset por feature.
    - Preencha o JSON do bloco `<response>`, escreva-o em `.harness/inbox.json` e rode `./run-development.sh` (sem argumentos).
    - Substitua o `stdout` pelo novo resultado e repita.
 
-4. Ao ver `stop`, todas as features passam (`.harness/feature_list.json`). Reporte:
+3. Ao ver `stop`, todas as features passam (`.harness/feature_list.json`). Reporte:
 
 ```markdown
 ✅ DESENVOLVIMENTO CONCLUÍDO — todas as features passam (.harness/feature_list.json)

@@ -203,7 +203,7 @@ RIDs usados pelo empacotamento: `osx-arm64`, `osx-x64`, `linux-x64`,
 O wrapper procura primeiro um binário nativo publicado em
 `src/dotnet/Flows.Development/bin/Release/net10.0/<RID>/publish/`. Se não encontrar,
 usa `src/dotnet/Flows.Development/bin/Release/net10.0/Flows.Development.dll` via
-`dotnet`.
+`dotnet`, buildando sob demanda na primeira chamada se ainda não existir.
 
 ```bash
 ./run-development.sh '{ "type": "text", "value": "start" }'

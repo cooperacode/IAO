@@ -12,8 +12,8 @@ estados vive em código compilado (.NET). **Não guarde a lógica do fluxo** —
 programa. Você escreve o envelope em um arquivo, roda um comando, lê o `stdout` e segue a
 instrução retornada.
 
-Programa: `./run-development.sh` (pré-requisito, uma vez:
-`dotnet build src/dotnet/Flows.Development/Flows.Development.csproj -c Release`).
+Programa: `./run-development.sh` (builda sob demanda na primeira chamada se ainda não
+houver artefato compilado).
 
 O estado que atravessa os resets vive em **artefatos persistentes**, não na conversa:
 `.harness/feature_list.json` (do harness), `progress.txt` e o `git history` (seus).
