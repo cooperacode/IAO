@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: todoapp-postgres
+    environment:
+      POSTGRES_DB: todoapp
+      POSTGRES_USER: todoapp
+      POSTGRES_PASSWORD: todoapp
+    ports:
+      - "54329:5432"
+    volumes:
+      - todoapp-postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todoapp -d todoapp"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  todoapp-postgres-data:
