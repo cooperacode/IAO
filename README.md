@@ -22,6 +22,8 @@ feature per session until all of them pass.
 - Deterministic evaluation primitives in the library (`Evaluators.cs`,
   `BatchEvaluator.cs`, `GoldenCaseStore.cs`, `ScoreStore.cs`), but no packaged
   evaluation CLI/flow on this branch.
+- A protocol-compatible Python port of the engine and the development flow in
+  `src/python` (see "Python port" below) — no .NET SDK required, source-only.
 
 The old `refinement`/`evaluation` flows, the `run-refinement.sh` /
 `run-eval.sh` scripts, and the `src/Bench.Eval` CLI are not part of this
@@ -185,6 +187,26 @@ package.sh                    # packages the binary, skills, and IDE adapter
 harness.json                  # global harness configuration
 ```
 
+### Python port (`src/python`)
+
+A second, protocol-compatible implementation of the engine and the development flow,
+for environments where only Python (3.11+) is available — no .NET SDK required, no build
+step, just an interpreter. It reads/writes the exact same `.harness/*.json(l)` files
+(same field names, same paths) as the .NET side, so tooling like
+`scripts/harness_cost_correlate.py` works unmodified regardless of which engine produced
+the trace. Distributed as source only (`python3 -m`, via `run-development-py.sh`) — no
+Native AOT/standalone-binary equivalent and no IDE adapters yet; both are natural
+follow-ups, not implemented on this branch.
+
+```text
+src/python/
+  harness_engine/    # 1:1 port of Harness.Engine (envelope, dispatch, stores, evaluators)
+  flows_development/ # 1:1 port of Flows.Development (tasks.py, prompts.py, __main__.py)
+  tests/             # pytest, mirrors Harness.Engine.Tests case by case
+run-development-py.sh # wrapper: PYTHONPATH=src/python python3 -m flows_development
+run-checks-py.sh      # pytest + the same deterministic smoke test, via the Python wrapper
+```
+
 ## Build and verification
 
 Prerequisite for compiling: a .NET SDK compatible with the projects'
@@ -231,6 +253,17 @@ To generate a full package for an IDE:
 ```
 
 Supported IDEs: `claude`, `copilot`, `devin`, `codex`.
+
+Python port, no .NET SDK needed — same protocol, same `.harness/` files:
+
+```bash
+./run-development-py.sh '{ "type": "text", "value": "start" }'
+./run-checks-py.sh
+```
+
+`run-checks-py.sh` runs `pytest src/python/tests` plus the same end-to-end smoke test
+(inbox transport, temporary workspace) driven through `run-development-py.sh` instead of
+the .NET binary.
 
 ## Channel contract
 

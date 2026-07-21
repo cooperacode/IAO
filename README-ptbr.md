@@ -22,6 +22,8 @@ por sessão até todas passarem.
 - Primitivos determinísticos de avaliação na biblioteca (`Evaluators.cs`,
   `BatchEvaluator.cs`, `GoldenCaseStore.cs`, `ScoreStore.cs`), mas sem
   CLI/flow de avaliação empacotado neste branch.
+- Uma porta Python compatível em protocolo da engine e do flow de desenvolvimento
+  em `src/python` (ver "Porta Python" abaixo) — sem exigir SDK do .NET, só código-fonte.
 
 Os antigos flows `refinement`/`evaluation`, scripts `run-refinement.sh` /
 `run-eval.sh` e CLI `src/Bench.Eval` não fazem parte da estrutura atual desta
@@ -180,6 +182,27 @@ package.sh                    # empacota binário, skills e adaptador de IDE
 harness.json                  # configuração global do harness
 ```
 
+### Porta Python (`src/python`)
+
+Uma segunda implementação, compatível em protocolo, da engine e do flow de
+desenvolvimento, para ambientes onde só há Python (3.11+) disponível — sem exigir SDK do
+.NET, sem etapa de build, só um interpretador. Lê/grava exatamente os mesmos arquivos
+`.harness/*.json(l)` (mesmos nomes de campo, mesmos caminhos) que o lado .NET, então
+ferramentas como `scripts/harness_cost_correlate.py` continuam funcionando sem alteração
+independente de qual engine gerou o trace. Distribuída só como código-fonte
+(`python3 -m`, via `run-development-py.sh`) — sem equivalente a binário standalone/Native
+AOT e sem adaptadores de IDE ainda; ambos são extensões naturais de acompanhamento, não
+implementadas neste branch.
+
+```text
+src/python/
+  harness_engine/    # porta 1:1 de Harness.Engine (envelope, dispatch, stores, evaluators)
+  flows_development/ # porta 1:1 de Flows.Development (tasks.py, prompts.py, __main__.py)
+  tests/             # pytest, espelha Harness.Engine.Tests caso a caso
+run-development-py.sh # wrapper: PYTHONPATH=src/python python3 -m flows_development
+run-checks-py.sh      # pytest + o mesmo smoke determinístico, via o wrapper Python
+```
+
 ## Build e verificação
 
 Pré-requisito para compilar: .NET SDK compatível com o `TargetFramework` dos
@@ -226,6 +249,17 @@ Para gerar um pacote completo para uma IDE:
 ```
 
 IDEs suportadas: `claude`, `copilot`, `devin`, `codex`.
+
+Porta Python, sem precisar do SDK do .NET — mesmo protocolo, mesmos arquivos `.harness/`:
+
+```bash
+./run-development-py.sh '{ "type": "text", "value": "start" }'
+./run-checks-py.sh
+```
+
+`run-checks-py.sh` roda `pytest src/python/tests` mais o mesmo smoke test ponta a ponta
+(transporte por inbox, workspace temporário) dirigido via `run-development-py.sh` em vez
+do binário .NET.
 
 ## Contrato do canal
 

@@ -1,0 +1,19 @@
+[project]
+name = "harness-python"
+version = "0.1.0"
+description = "Porta Python do Harness (Harness.Engine + Flows.Development) — motor de orquestração determinístico dirigido por prompt, sem dependência do .NET SDK."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["harness_engine*", "flows_development*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
