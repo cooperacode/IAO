@@ -73,6 +73,52 @@ public sealed class ListTasksEndpointTests : IAsyncLifetime
         Assert.Empty(tasks);
     }
 
+    [Theory]
+    [InlineData("pending", "Pending task", "pending")]
+    [InlineData("completed", "Completed task", "completed")]
+    public async Task GetTasks_filters_tasks_by_status(string status, string expectedTitle, string expectedStatus)
+    {
+        await SeedTaskAsync("Pending task", isCompleted: false);
+        await SeedTaskAsync("Completed task", isCompleted: true);
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync($"/tasks?status={status}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tasks = await response.Content.ReadFromJsonAsync<List<ListTaskResponse>>();
+        Assert.NotNull(tasks);
+        var task = Assert.Single(tasks);
+        Assert.Equal(expectedStatus, task.Status);
+        Assert.Equal(expectedTitle, task.Title);
+    }
+
+    [Fact]
+    public async Task GetTasks_returns_all_tasks_for_all_status()
+    {
+        await SeedTaskAsync("Pending task", isCompleted: false);
+        await SeedTaskAsync("Completed task", isCompleted: true);
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/tasks?status=all");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tasks = await response.Content.ReadFromJsonAsync<List<ListTaskResponse>>();
+        Assert.NotNull(tasks);
+        Assert.Equal(2, tasks.Count);
+    }
+
+    [Fact]
+    public async Task GetTasks_returns_bad_request_for_invalid_status()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/tasks?status=done");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ListTasksErrorResponse>();
+        Assert.Equal("Invalid status. Use pending, completed, or all.", error?.Error);
+    }
+
     public async Task InitializeAsync()
     {
         await using var command = _dataSource.CreateCommand("TRUNCATE TABLE tasks RESTART IDENTITY;");
@@ -97,4 +143,6 @@ public sealed class ListTasksEndpointTests : IAsyncLifetime
     }
 
     private sealed record ListTaskResponse(long Id, string Status, string Title);
+
+    private sealed record ListTasksErrorResponse(string Error);
 }
