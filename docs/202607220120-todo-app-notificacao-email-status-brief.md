@@ -4,22 +4,21 @@
 **Run-id (provisório):** `202607220120`
 
 ## Status
-**Rascunho, não ativo.** Guardado em `docs/draft/` de propósito — não é lido pelo `start`
-(glob não-recursivo em `docs/`). O app-alvo (`todoapp-webapi`) já existe, então este brief
+**Ativo — promovido para a raiz de `docs/`.** Será lido pelo próximo `start` (glob
+não-recursivo em `docs/`). O app-alvo (`todoapp-webapi`) já existe, então este brief
 descreve um **delta**, não o app inteiro — o `dev-initializer` deve cair no caminho brownfield
 do Step 0 (inspeção limitada a metadado, reaproveitar `$VERIFY_CMD` e convenções já
 estabelecidas, quebrar só o delta em features).
 
-Para disparar uma sessão real do harness com este brief, mova o arquivo para a raiz de `docs/`
-antes de rodar `start`. O run-id acima é provisório (gerado no momento em que este rascunho foi
-escrito); a branch de trabalho real ganha seu próprio run-id no Step 1 do `dev-initializer`
+O run-id acima é provisório (gerado no momento em que este rascunho foi escrito); a branch de
+trabalho real ganha seu próprio run-id no Step 1 do `dev-initializer`
 (`git checkout -b <YYYYMMDDHHMM>-<nome-descritivo>`), que não precisa coincidir com este.
 
 ## Contexto
 Delta sobre o TodoApp WebAPI já implementado — ver a decisão de arquitetura em
-[docs/adr-0001-vertical-slice.md](../adr-0001-vertical-slice.md), a visão de componentes em
-[docs/c4-diagrama-componentes.md](../c4-diagrama-componentes.md) e o brief original do app em
-[docs/202607211323-todo-app-brief.md](../202607211323-todo-app-brief.md). Hoje as
+[docs/adr-0001-vertical-slice.md](adr-0001-vertical-slice.md), a visão de componentes em
+[docs/c4-diagrama-componentes.md](c4-diagrama-componentes.md) e o brief original do app em
+[docs/202607211323-todo-app-brief.md](archive/202607211323-todo-app-brief.md). Hoje as
 mudanças de status de uma tarefa (concluir, editar, remover, filtrar) acontecem em silêncio —
 não existe nenhuma notificação externa quando o status muda. A escolha do e-mail como canal de
 notificação (em vez de SMS ou push) está registrada em

@@ -24,7 +24,9 @@ public static class PromptFormatter
             : output;
 
         return $"""
-        Execute the instruction inside the `input` tag. Then produce your reply as a SINGLE line of raw JSON matching the schema in the `response` tag, with the placeholders replaced by real values. Reply with the JSON ONLY: no markdown code fences, no comments, no text before or after it. {ReadSkills(skills)}
+        Execute the instruction inside the `input` tag. Then produce your reply as a SINGLE line of raw JSON matching the schema in the `response` tag, with the placeholders replaced by real values. Reply with the JSON ONLY: no markdown code fences, no comments, no text before or after it. 
+        
+        {ReadSkills(skills)}
         <input>
             {input}
         </input>
@@ -54,11 +56,7 @@ public static class PromptFormatter
             // Inline the content but preserve line breaks as literal "\n" markers
             content = content.Replace("\r\n", "\\n").Replace("\n", "\\n");
 
-            sb.Append($"""
-                <skill id="{skill.Key}">
-                    {content}
-                </skill>
-            """);
+            sb.Append($"""<skill id="{skill.Key}">{content}</skill>""");
         }
 
         return sb.Length == 0

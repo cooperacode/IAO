@@ -1,9 +1,9 @@
 # ADR-0002: Adotar E-mail como Canal de Notificação de Mudança de Status
 
 ## Status
-Proposto — rascunho, ainda não implementado. Acompanha o brief em
-`docs/draft/202607220120-todo-app-notificacao-email-status-brief.md`, que também está em
-`docs/draft/` até a sessão brownfield correspondente ser de fato iniciada.
+Proposto — decisão registrada, implementação ainda não iniciada. Acompanha o brief em
+`docs/202607220120-todo-app-notificacao-email-status-brief.md`, já promovido para a raiz de
+`docs/` e pronto para ser lido pelo próximo `start` da sessão brownfield correspondente.
 
 ## Contexto
 O TodoApp WebAPI não tem modelo de usuário nem autenticação (fora de escopo desde o brief
@@ -45,6 +45,6 @@ modelo de usuário). O disparo acontece dentro do slice do endpoint que muda o s
   outros sistemas.
 
 ## Referências
-- Brief: `docs/draft/202607220120-todo-app-notificacao-email-status-brief.md`
+- Brief: `docs/202607220120-todo-app-notificacao-email-status-brief.md`
 - Decisão de arquitetura base: `docs/adr-0001-vertical-slice.md`
-- Diagrama de componentes (delta): `docs/draft/c4-diagrama-componentes-notificacao-email.md`
+- Diagrama de componentes (delta): `docs/c4-diagrama-componentes-notificacao-email.md`

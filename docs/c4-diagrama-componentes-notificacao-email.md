@@ -1,8 +1,8 @@
 # Diagrama de Componentes (C4) — TodoApp WebAPI + Notificação por E-mail
 
-Complementa [docs/c4-diagrama-componentes.md](../c4-diagrama-componentes.md) (diagrama base,
+Complementa [docs/c4-diagrama-componentes.md](c4-diagrama-componentes.md) (diagrama base,
 ainda válido e inalterado) mostrando o delta descrito no brief
-[docs/draft/202607220120-todo-app-notificacao-email-status-brief.md](202607220120-todo-app-notificacao-email-status-brief.md)
+[docs/202607220120-todo-app-notificacao-email-status-brief.md](202607220120-todo-app-notificacao-email-status-brief.md)
 e decidido em [ADR-0002](adr-0002-notificacao-email.md): um novo componente `EmailNotifier`,
 acionado pelo slice `CompleteTask`, que dispara e-mail para um serviço SMTP externo à API.
 
@@ -59,5 +59,5 @@ graph TD
   para ele.
 - `EmailNotifier` usa o `Shared Kernel` (ex.: dados da `Task` para montar o corpo do e-mail),
   mas não introduz uma camada de "Service" genérica — mantém o mesmo princípio de vertical
-  slice do [ADR-0001](../adr-0001-vertical-slice.md), reforçado pelo [ADR-0002](adr-0002-notificacao-email.md)
+  slice do [ADR-0001](adr-0001-vertical-slice.md), reforçado pelo [ADR-0002](adr-0002-notificacao-email.md)
   ao decidir que o disparo vive dentro do próprio slice `CompleteTask`.
