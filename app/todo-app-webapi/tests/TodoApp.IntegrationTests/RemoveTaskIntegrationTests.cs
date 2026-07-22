@@ -5,7 +5,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class RemoveTaskIntegrationTests
+public class RemoveTaskIntegrationTests : IntegrationTestBase
 {
     [Fact]
     public async Task DeleteTask_removes_existing_task_from_postgres()

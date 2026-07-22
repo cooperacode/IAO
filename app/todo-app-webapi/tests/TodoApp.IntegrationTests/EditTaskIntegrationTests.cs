@@ -7,7 +7,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class EditTaskIntegrationTests
+public class EditTaskIntegrationTests : IntegrationTestBase
 {
     [Fact]
     public async Task PutTask_updates_existing_task_title_in_postgres()

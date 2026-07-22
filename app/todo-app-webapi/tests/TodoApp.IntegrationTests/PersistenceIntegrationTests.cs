@@ -8,7 +8,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class PersistenceIntegrationTests
+public class PersistenceIntegrationTests : IntegrationTestBase
 {
     [Fact]
     public async Task Task_created_before_api_restart_is_listed_after_new_api_instance()

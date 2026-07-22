@@ -5,7 +5,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class InfrastructureTests
+public class InfrastructureTests : IntegrationTestBase
 {
     [Fact]
     public async Task Startup_creates_tasks_table_in_postgres()

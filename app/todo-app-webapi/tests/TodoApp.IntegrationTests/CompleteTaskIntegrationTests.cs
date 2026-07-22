@@ -7,7 +7,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class CompleteTaskIntegrationTests
+public class CompleteTaskIntegrationTests : IntegrationTestBase
 {
     [Fact]
     public async Task PatchComplete_marks_existing_task_complete_in_postgres()

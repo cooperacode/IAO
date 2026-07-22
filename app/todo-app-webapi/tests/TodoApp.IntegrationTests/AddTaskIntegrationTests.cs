@@ -7,7 +7,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class AddTaskIntegrationTests
+public class AddTaskIntegrationTests : IntegrationTestBase
 {
     [Fact]
     public async Task PostTasks_creates_pending_task_in_postgres()

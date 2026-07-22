@@ -7,7 +7,7 @@ using TodoApp.Api.Shared;
 
 namespace TodoApp.IntegrationTests;
 
-public class ListTasksIntegrationTests
+public class ListTasksIntegrationTests : IntegrationTestBase
 {
     [Fact]
     public async Task GetTasks_lists_all_persisted_tasks_ordered_by_id()
