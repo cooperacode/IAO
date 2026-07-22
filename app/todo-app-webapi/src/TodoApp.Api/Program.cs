@@ -2,6 +2,7 @@ using Npgsql;
 using TodoApp.Api.Features.AddTask;
 using TodoApp.Api.Features.CompleteTask;
 using TodoApp.Api.Features.ListTasks;
+using TodoApp.Api.Features.RemoveTask;
 using TodoApp.Api.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapAddTask();
 app.MapCompleteTask();
 app.MapListTasks();
+app.MapRemoveTask();
 
 app.Run();
 
