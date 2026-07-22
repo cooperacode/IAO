@@ -54,6 +54,55 @@ public class ListTasksIntegrationTests
         Assert.Empty(tasks);
     }
 
+    [Theory]
+    [InlineData("pending", "Buy milk")]
+    [InlineData("completed", "Read docs")]
+    public async Task GetTasks_filters_by_status(string status, string expectedTitle)
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        await ClearTasksAsync();
+        await InsertTaskAsync("Buy milk", isComplete: false);
+        await InsertTaskAsync("Read docs", isComplete: true);
+
+        var response = await client.GetAsync($"/tasks?status={status}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tasks = await response.Content.ReadFromJsonAsync<ListTaskResponse[]>();
+        Assert.NotNull(tasks);
+        var task = Assert.Single(tasks);
+        Assert.Equal(status, task.Status);
+        Assert.Equal(expectedTitle, task.Title);
+    }
+
+    [Fact]
+    public async Task GetTasks_accepts_all_status_filter()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        await ClearTasksAsync();
+        await InsertTaskAsync("Buy milk", isComplete: false);
+        await InsertTaskAsync("Read docs", isComplete: true);
+
+        var response = await client.GetAsync("/tasks?status=all");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tasks = await response.Content.ReadFromJsonAsync<ListTaskResponse[]>();
+        Assert.NotNull(tasks);
+        Assert.Equal(2, tasks.Length);
+    }
+
+    [Fact]
+    public async Task GetTasks_rejects_invalid_status_filter()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/tasks?status=archived");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private static async Task ClearTasksAsync()
     {
         await using var dataSource = CreateDataSource();
