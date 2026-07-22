@@ -13,6 +13,11 @@ var connectionString = Database.ResolveConnectionString(
 var dataSource = NpgsqlDataSource.Create(connectionString);
 builder.Services.AddSingleton(dataSource);
 
+var emailNotificationOptions = EmailNotificationOptions.Resolve(
+    builder.Configuration[EmailNotificationOptions.SenderEnvironmentVariable],
+    builder.Configuration[EmailNotificationOptions.RecipientEnvironmentVariable]);
+builder.Services.AddSingleton(emailNotificationOptions);
+
 var app = builder.Build();
 
 await Database.EnsureCreatedAsync(dataSource);
