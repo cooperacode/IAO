@@ -17,6 +17,8 @@ var emailNotificationOptions = EmailNotificationOptions.Resolve(
     builder.Configuration[EmailNotificationOptions.SenderEnvironmentVariable],
     builder.Configuration[EmailNotificationOptions.RecipientEnvironmentVariable]);
 builder.Services.AddSingleton(emailNotificationOptions);
+builder.Services.AddSingleton<ITaskStatusEmailSender, NoOpTaskStatusEmailSender>();
+builder.Services.AddSingleton<EmailNotifier>();
 
 var app = builder.Build();
 

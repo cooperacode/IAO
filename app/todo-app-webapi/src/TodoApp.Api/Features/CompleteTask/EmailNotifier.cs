@@ -44,6 +44,14 @@ public interface ITaskStatusEmailSender
     Task SendAsync(TaskStatusEmailMessage message, CancellationToken cancellationToken = default);
 }
 
+public sealed class NoOpTaskStatusEmailSender : ITaskStatusEmailSender
+{
+    public Task SendAsync(TaskStatusEmailMessage message, CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+}
+
 public sealed record TaskStatusChangedNotification(
     long TaskId,
     string Title,
