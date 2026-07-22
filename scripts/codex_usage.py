@@ -30,7 +30,11 @@ from pathlib import Path
 from typing import Iterable
 
 UNKNOWN_MODEL = "<unknown>"
-LONG_CONTEXT_THRESHOLD = 128_000
+# Fonte: paginas de modelo em https://developers.openai.com/api/docs/models/*
+# (gpt-5.4, gpt-5.4-pro, gpt-5.5, gpt-5.6-sol/terra/luna), conferido em
+# 2026-07-22: "prompts with >272K input tokens are priced at 2x input and
+# 1.5x output". A tabela de pricing nao mostra esse numero explicitamente.
+LONG_CONTEXT_THRESHOLD = 272_000
 
 
 @dataclass(frozen=True)
@@ -832,7 +836,7 @@ def main() -> None:
         "--context-rate",
         choices=["auto", "short", "long"],
         default="auto",
-        help="Escolhe preco short/long context; auto usa model_context_window > 128k",
+        help="Escolhe preco short/long context; auto usa model_context_window > 272k",
     )
     parser.add_argument(
         "--by-session",
