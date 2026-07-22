@@ -1,0 +1,9 @@
+# TodoApp WebAPI progress
+
+- Initialized greenfield target at `app/todo-app-webapi`.
+- Working branch: `202607221112-todo-app-webapi`.
+- Verification command captured for the harness: `./init.sh`.
+- Stack scaffolded: ASP.NET Core Web API, xUnit unit tests, xUnit integration tests, Docker Compose Postgres.
+- Architecture direction: vertical slices with a minimal shared kernel.
+- [2026-07-22T11:18:48Z] Feature #1 implemented: configurable `TODO_DB_CONNECTION`, shared Postgres data source, automatic `tasks` schema creation at API startup, and unit/integration infrastructure tests. Verified with `./init.sh`.
+[2026-07-22 11:19 UTC] Feature #1 - Infraestrutura base: scaffold .NET Web API em `app/todo-app-webapi`, Docker Compose Postgres, `init.sh`, connection string `TODO_DB_CONNECTION` com default local, shared `NpgsqlDataSource`, criacao automatica da tabela `tasks` no startup, e testes unitarios/integracao de infraestrutura. Verificar com: `./init.sh`.

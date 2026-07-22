@@ -16,6 +16,11 @@ report/
 
 todo-*/
 app/
+!app/
+!app/todo-app-webapi/
+!app/todo-app-webapi/**
+app/todo-app-webapi/**/bin/
+app/todo-app-webapi/**/obj/
 .back_*/
 
 #Files
