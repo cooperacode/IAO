@@ -1,5 +1,6 @@
 using Npgsql;
 using TodoApp.Api.Features.AddTask;
+using TodoApp.Api.Features.CompleteTask;
 using TodoApp.Api.Features.ListTasks;
 using TodoApp.Api.Shared;
 
@@ -16,6 +17,7 @@ await Database.EnsureCreatedAsync(dataSource);
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapAddTask();
+app.MapCompleteTask();
 app.MapListTasks();
 
 app.Run();
