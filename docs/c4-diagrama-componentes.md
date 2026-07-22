@@ -44,7 +44,7 @@ graph TD
 
 ## Leitura do diagrama
 - Cada slice (`AddTask`, `ListTasks`, `CompleteTask`, `EditTask`, `RemoveTask`) corresponde
-  1:1 a um endpoint do backlog (`docs/todo-app.md`) e a um teste de integração próprio (via
+  1:1 a um endpoint do backlog (`docs/202607211323-todo-app-brief.md`) e a um teste de integração próprio (via
   HTTP contra a API real).
 - `Shared Kernel` é deliberadamente pequeno: só o que é genuinamente comum a todos os slices
   (entidade, conexão, exceções). Regra de negócio e acesso a dados específicos de cada
