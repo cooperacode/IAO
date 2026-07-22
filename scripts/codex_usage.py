@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Iterable
 
 UNKNOWN_MODEL = "<unknown>"
-LONG_CONTEXT_THRESHOLD = 128_000
+LONG_CONTEXT_THRESHOLD = 272_000
 
 
 @dataclass(frozen=True)
@@ -157,7 +157,8 @@ class UsageTotals:
         self.total_tokens += (
             reported_total
             if reported_total is not None
-            else (usage.get("input_tokens", 0) or 0) + (usage.get("output_tokens", 0) or 0)
+            else (usage.get("input_tokens", 0) or 0)
+            + (usage.get("output_tokens", 0) or 0)
         )
         if timestamp:
             if self.first_ts is None or timestamp < self.first_ts:
@@ -325,17 +326,23 @@ def load_rollout_events(
         payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
 
         if typ == "session_meta":
-            session.session_id = payload.get("id") or payload.get("session_id") or session.session_id
+            session.session_id = (
+                payload.get("id") or payload.get("session_id") or session.session_id
+            )
             session.cwd = payload.get("cwd") or session.cwd
             session.source = payload.get("source") or session.source
-            session.model_provider = payload.get("model_provider") or session.model_provider
+            session.model_provider = (
+                payload.get("model_provider") or session.model_provider
+            )
             _remember_ts(session, payload.get("timestamp") or ts)
             continue
 
         if typ == "turn_context":
             current_model = payload.get("model") or current_model
             session.cwd = payload.get("cwd") or session.cwd
-            current_context_window = payload.get("model_context_window") or current_context_window
+            current_context_window = (
+                payload.get("model_context_window") or current_context_window
+            )
             _remember_ts(session, ts)
             continue
 

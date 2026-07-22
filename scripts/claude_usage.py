@@ -41,17 +41,73 @@ class ModelPrice:
 # ---------------------------------------------------------------------------
 # TABELA DE PRECOS -- USD por 1.000.000 de tokens. Editar a mao quando a
 # Anthropic mudar os precos; nada mais no script precisa mudar.
-# Fonte: platform.claude.com/docs/en/pricing, conferido em 2026-07-19.
+# Fonte: https://platform.claude.com/docs/en/about-claude/pricing, conferido em 2026-07-22.
 # claude-sonnet-5 esta em preco promocional ($2/$10) ate 2026-08-31 --
 # trocar pela linha comentada (preco padrao $3/$15) depois dessa data.
 # ---------------------------------------------------------------------------
 PRICING: dict[str, ModelPrice] = {
+    "claude-fable-5": ModelPrice(
+        input=10.00,
+        output=50.00,
+        cache_write_5m=12.50,
+        cache_write_1h=20.00,
+        cache_read=1.00,
+    ),
+    "claude-mythos-5": ModelPrice(
+        input=10.00,
+        output=50.00,
+        cache_write_5m=12.50,
+        cache_write_1h=20.00,
+        cache_read=1.00,
+    ),
     "claude-opus-4-8": ModelPrice(
         input=5.00,
         output=25.00,
         cache_write_5m=6.25,
         cache_write_1h=10.00,
         cache_read=0.50,
+    ),
+    "claude-opus-4-7": ModelPrice(
+        input=5.00,
+        output=25.00,
+        cache_write_5m=6.25,
+        cache_write_1h=10.00,
+        cache_read=0.50,
+    ),
+    "claude-opus-4-6": ModelPrice(
+        input=5.00,
+        output=25.00,
+        cache_write_5m=6.25,
+        cache_write_1h=10.00,
+        cache_read=0.50,
+    ),
+    "claude-opus-4-5": ModelPrice(
+        input=5.00,
+        output=25.00,
+        cache_write_5m=6.25,
+        cache_write_1h=10.00,
+        cache_read=0.50,
+    ),
+    "claude-opus-4-5-20251101": ModelPrice(
+        input=5.00,
+        output=25.00,
+        cache_write_5m=6.25,
+        cache_write_1h=10.00,
+        cache_read=0.50,
+    ),
+    "claude-opus-4-1": ModelPrice(  # deprecated, retira 2026-08-05
+        input=15.00,
+        output=75.00,
+        cache_write_5m=18.75,
+        cache_write_1h=30.00,
+        cache_read=1.50,
+    ),
+    "claude-opus-4-1-20250805": ModelPrice(  # deprecated, retira 2026-08-05
+        input=15.00,
+        output=75.00,
+        cache_write_5m=18.75,
+        cache_write_1h=30.00,
+        cache_read=1.50,
     ),
     "claude-sonnet-5": ModelPrice(
         input=2.00,
@@ -61,6 +117,48 @@ PRICING: dict[str, ModelPrice] = {
         cache_read=0.20,
     ),
     # "claude-sonnet-5": ModelPrice(input=3.00, output=15.00, cache_write_5m=3.75, cache_write_1h=6.00, cache_read=0.30),  # padrao, pos 2026-08-31
+    "claude-sonnet-4-6": ModelPrice(
+        input=3.00,
+        output=15.00,
+        cache_write_5m=3.75,
+        cache_write_1h=6.00,
+        cache_read=0.30,
+    ),
+    "claude-sonnet-4-5": ModelPrice(
+        input=3.00,
+        output=15.00,
+        cache_write_5m=3.75,
+        cache_write_1h=6.00,
+        cache_read=0.30,
+    ),
+    "claude-sonnet-4-5-20250929": ModelPrice(
+        input=3.00,
+        output=15.00,
+        cache_write_5m=3.75,
+        cache_write_1h=6.00,
+        cache_read=0.30,
+    ),
+    "claude-haiku-4-5": ModelPrice(
+        input=1.00,
+        output=5.00,
+        cache_write_5m=1.25,
+        cache_write_1h=2.00,
+        cache_read=0.10,
+    ),
+    "claude-haiku-4-5-20251001": ModelPrice(
+        input=1.00,
+        output=5.00,
+        cache_write_5m=1.25,
+        cache_write_1h=2.00,
+        cache_read=0.10,
+    ),
+    "claude-3-5-haiku-20241022": ModelPrice(  # retirado 2026-02-19, so referencia p/ sessoes antigas
+        input=0.80,
+        output=4.00,
+        cache_write_5m=1.00,
+        cache_write_1h=1.60,
+        cache_read=0.08,
+    ),
 }
 
 
