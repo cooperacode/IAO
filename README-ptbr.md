@@ -1,5 +1,3 @@
-# Orquestração Agêntica Invertida (IAO)
-
 ![Visão geral da Orquestração Agêntica Invertida](assets/images/iao-banner.png)
 
 ## Definição

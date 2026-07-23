@@ -1,5 +1,3 @@
-# Inverted Agentic Orchestration (IAO)
-
 ![Inverted Agentic Orchestration overview](assets/images/iao-banner-en.png)
 
 ## Definition
