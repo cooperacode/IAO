@@ -13,6 +13,10 @@ Um handoff limpo é o que torna o loop retomável.
 Um working tree limpo é a garantia de que o próximo `git log`/bisect faz sentido. Não deixe
 mudanças não commitadas nem arquivos temporários.
 
+Não inclua logs completos no commit. Logs operacionais do harness devem ficar em
+`.harness/logs/`, que é estado local ignorado pelo Git; cite o caminho no `progress.txt`
+quando ele explicar como investigar uma falha/validação.
+
 ## 2. Atualizar o progresso
 Anexe uma linha ao `progress.txt` com: a feature concluída (id + título), o que foi
 feito, e como verificar. É o que a próxima sessão lê no `bearings` para se orientar.

@@ -24,8 +24,15 @@ public static class PromptFormatter
             : output;
 
         return $"""
-        Execute the instruction inside the `input` tag. Then produce your reply as a SINGLE line of raw JSON matching the schema in the `response` tag, with the placeholders replaced by real values. Reply with the JSON ONLY: no markdown code fences, no comments, no text before or after it. 
-        
+        Execute the instruction inside the `input` tag. Then reply with the result as JSON.
+
+        Output contract — a reply that breaks any of these rules is invalid and wastes a retry:
+        1. Output EXACTLY one JSON object, on a SINGLE line, matching the shape in the `response` tag with the placeholders replaced by real values.
+        2. The object is the ONLY thing you output: no markdown code fences, no comments, no prose before or after it, nothing.
+        3. Keep the same keys, types and nesting as the schema — do not add, remove, rename fields, or wrap the object in an array.
+        4. Every value must be valid JSON: use only double quotes for strings, escape `"` and `\` inside them, and replace any line break inside a value with the literal characters `\n` — never a raw newline. No trailing commas.
+        5. Before answering, mentally re-parse your own output as JSON; if it would fail to parse, fix it before sending.
+
         {ReadSkills(skills)}
         <input>
             {input}

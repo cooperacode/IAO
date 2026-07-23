@@ -12,7 +12,10 @@ reversível.
 - Faça a menor mudança que entrega a feature completa. Sem "já que estou aqui".
 - Não adiante outras features, mesmo que pareçam triviais — cada uma tem a sua vez.
 - Deixe o código buildando ao final; um passo intermediário quebrado atrapalha o self-verify.
+  Se rodar comandos com saída longa, grave o detalhe em `.harness/logs/` e leia só o trecho
+  relevante para decidir o próximo ajuste.
 - Se descobrir que a feature depende de algo ainda não feito, prefira o mínimo para
   destravá-la e registre a dependência no resumo — não expanda o escopo.
 
-Resuma em `$SUMMARY` o que mudou (arquivos e comportamento), objetivo e curto.
+Resuma em `$SUMMARY` o que mudou (arquivos e comportamento), objetivo e curto. Não cole logs,
+diffs completos ou saídas de teste no resumo; cite o caminho do log quando ele for útil.

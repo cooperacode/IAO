@@ -14,8 +14,21 @@ public class DevelopmentFlowTests : IDisposable
     private const string FeaturesJson =
         """[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]""";
 
-    public DevelopmentFlowTests() => Clean();
-    public void Dispose() => Clean();
+    private readonly string _targetDir;
+
+    public DevelopmentFlowTests()
+    {
+        Clean();
+        _targetDir = Path.Combine(Path.GetTempPath(), "development-flow-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_targetDir);
+    }
+
+    public void Dispose()
+    {
+        Clean();
+        if (Directory.Exists(_targetDir))
+            Directory.Delete(_targetDir, recursive: true);
+    }
 
     private static void Clean()
     {
@@ -27,11 +40,30 @@ public class DevelopmentFlowTests : IDisposable
     private static Envelope Cmd(string value, params string[] args) =>
         new(EnvelopeType.Command, value, args);
 
-    private static void Plan() =>
-        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", "src/app"));
+    private static string Git(string workingDirectory, params string[] args)
+    {
+        using var process = new System.Diagnostics.Process();
+        process.StartInfo.FileName = "git";
+        process.StartInfo.WorkingDirectory = workingDirectory;
+        process.StartInfo.RedirectStandardOutput = true;
+        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo.UseShellExecute = false;
+        foreach (var arg in args)
+            process.StartInfo.ArgumentList.Add(arg);
+
+        process.Start();
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, $"git {string.Join(' ', args)} failed: {stderr}{stdout}");
+        return stdout;
+    }
+
+    private void Plan() =>
+        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", _targetDir));
 
     /// <summary>Leva o flow até deixar uma feature escolhida e implementada (pronta p/ verify).</summary>
-    private static void AdvanceToVerify()
+    private void AdvanceToVerify()
     {
         Plan();
         DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
@@ -39,6 +71,15 @@ public class DevelopmentFlowTests : IDisposable
         DevelopmentTasks.Pick(Cmd("pick"));
         DevelopmentTasks.Implement(Cmd("implement", "implementei"));
     }
+
+    private static void WriteVerifyFeatureScript(string targetDir, string body)
+    {
+        Directory.CreateDirectory(targetDir);
+        File.WriteAllText(Path.Combine(targetDir, "verify-feature.sh"), body.Replace("\r\n", "\n"));
+    }
+
+    private static string VerifyLogPath(int featureId) =>
+        Path.Combine(".harness", "logs", $"verify-feature-{featureId}.log");
 
     [Fact]
     public void Start_SemFeaturePendente_ResetaFeatureListERunConfig()
@@ -72,7 +113,7 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Equal(2, FeatureStore.Load().Count); // intacta
         Assert.Equal(2, FeatureStore.PendingCount()); // nenhuma marcada como passando
         Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd); // intacto
-        Assert.Equal("src/app", RunConfigStore.Load().TargetDir);
+        Assert.Equal(_targetDir, RunConfigStore.Load().TargetDir);
     }
 
     [Fact]
@@ -125,13 +166,72 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Verify_Pass_SegueParaHandoff()
+    public void Verify_Pass_ExecutaHandoffAutomaticoEAvanca()
     {
         AdvanceToVerify();
 
         var result = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
 
-        Assert.Contains("\"value\":\"handoff\"", result);
+        Assert.Contains("NOVA SESSÃO", result); // ainda falta a id 1
+        Assert.DoesNotContain("\"value\":\"handoff\"", result);
+        Assert.Equal(1, FeatureStore.PendingCount());
+        Assert.Contains("Feature #2", File.ReadAllText(Path.Combine(_targetDir, "progress.txt")));
+    }
+
+    [Fact]
+    public void Implement_ComVerifyFeaturePassando_ExecutaVerifyEHandoffAutomaticos()
+    {
+        WriteVerifyFeatureScript(_targetDir,
+            """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "PASS: feature $1 verificada"
+            """);
+        Plan();
+        DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "baseline ok"));
+        DevelopmentTasks.Pick(Cmd("pick"));
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
+
+        Assert.Contains("NOVA SESSÃO", result);
+        Assert.DoesNotContain("\"value\":\"verify\"", result);
+        Assert.Equal(1, FeatureStore.PendingCount());
+        var progress = File.ReadAllText(Path.Combine(_targetDir, "progress.txt"));
+        Assert.Contains("Feature #2", progress);
+        Assert.Contains("PASS: feature 2 verificada", progress);
+        Assert.Contains(".harness/logs/verify-feature-2.log", progress);
+        Assert.Contains("command: bash ./verify-feature.sh 2", File.ReadAllText(VerifyLogPath(2)));
+    }
+
+    [Fact]
+    public void Implement_ComVerifyFeatureFalhando_VoltaParaFix()
+    {
+        WriteVerifyFeatureScript(_targetDir,
+            """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            echo "FAIL: feature $1 quebrou"
+            echo "LINHA DETALHADA QUE FICA SO NO LOG"
+            exit 7
+            """);
+        Plan();
+        DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "baseline ok"));
+        DevelopmentTasks.Pick(Cmd("pick"));
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
+
+        Assert.Contains("FALHOU", result);
+        Assert.Contains("feature 2 quebrou", result);
+        Assert.Contains(".harness/logs/verify-feature-2.log", result);
+        Assert.DoesNotContain("LINHA DETALHADA QUE FICA SO NO LOG", result);
+        var log = File.ReadAllText(VerifyLogPath(2));
+        Assert.Contains("FAIL: feature 2 quebrou", log);
+        Assert.Contains("LINHA DETALHADA QUE FICA SO NO LOG", log);
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal(2, FeatureStore.PendingCount());
+        Assert.False(File.Exists(Path.Combine(_targetDir, "progress.txt")));
     }
 
     [Fact]
@@ -150,7 +250,6 @@ public class DevelopmentFlowTests : IDisposable
     public void Handoff_Vazio_ReemiteHandoffENaoMarcaFeatureComoPassando()
     {
         AdvanceToVerify();
-        DevelopmentTasks.Verify(Cmd("verify", "PASS"));
 
         var result = DevelopmentTasks.Handoff(Cmd("handoff", ""));
 
@@ -163,8 +262,7 @@ public class DevelopmentFlowTests : IDisposable
     {
         // 1ª feature (id 2)
         AdvanceToVerify();
-        DevelopmentTasks.Verify(Cmd("verify", "PASS"));
-        var afterFirst = DevelopmentTasks.Handoff(Cmd("handoff", "abc123"));
+        var afterFirst = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
 
         Assert.Contains("NOVA SESSÃO", afterFirst); // ainda falta a id 1
         Assert.Equal(1, FeatureStore.PendingCount());
@@ -174,11 +272,48 @@ public class DevelopmentFlowTests : IDisposable
         DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
         DevelopmentTasks.Pick(Cmd("pick"));
         DevelopmentTasks.Implement(Cmd("implement", "feito"));
-        DevelopmentTasks.Verify(Cmd("verify", "PASS"));
-        var afterSecond = DevelopmentTasks.Handoff(Cmd("handoff", "def456"));
+        var afterSecond = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
 
         Assert.Equal("stop", afterSecond);
         Assert.True(FeatureStore.AllPassing());
+    }
+
+    [Fact]
+    public void Handoff_LegadoComHash_MarcaFeatureComoPassando()
+    {
+        AdvanceToVerify();
+
+        var result = DevelopmentTasks.Handoff(Cmd("handoff", "abc123"));
+
+        Assert.Contains("NOVA SESSÃO", result);
+        Assert.Equal(1, FeatureStore.PendingCount());
+    }
+
+    [Fact]
+    public void Verify_Pass_HandoffAutomaticoCommitaSoODiretorioAlvo()
+    {
+        var repo = Path.Combine(_targetDir, "repo");
+        var target = Path.Combine(repo, "app");
+        Directory.CreateDirectory(target);
+        Git(repo, "init");
+        Git(repo, "config", "user.email", "harness@example.test");
+        Git(repo, "config", "user.name", "Harness Test");
+
+        File.WriteAllText(Path.Combine(repo, "outside.txt"), "fora do target");
+
+        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", target));
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+        DevelopmentTasks.Pick(Cmd("pick"));
+        DevelopmentTasks.Implement(Cmd("implement", "feito no target"));
+
+        var result = DevelopmentTasks.Verify(Cmd("verify", "PASS: tudo verde"));
+
+        Assert.Contains("NOVA SESSÃO", result);
+        var committedFiles = Git(repo, "show", "--name-only", "--format=", "HEAD");
+        Assert.Contains("app/progress.txt", committedFiles);
+        Assert.DoesNotContain("outside.txt", committedFiles);
+        Assert.Contains("?? outside.txt", Git(repo, "status", "--short"));
     }
 
     [Fact]

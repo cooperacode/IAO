@@ -1,6 +1,9 @@
 """O loop por feature do flow de desenvolvimento: cada task decide o PRÓXIMO comando
 (padrão do gate de avaliação). Cobre as ramificações — verify FAIL↺implement, verify
-PASS→handoff, handoff→bearings (próxima feature) vs. stop — e a guarda por feature."""
+PASS→handoff automático, fallback handoff legado — e a guarda por feature."""
+
+import subprocess
+from pathlib import Path
 
 from flows_development import tasks
 from harness_engine import feature_store, run_config_store, state_store
@@ -16,6 +19,12 @@ def _cmd(value: str, *args: str) -> Envelope:
     return Envelope(EnvelopeType.COMMAND, value, args)
 
 
+def _git(cwd: Path, *args: str) -> str:
+    proc = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, check=False)
+    assert proc.returncode == 0, f"git {' '.join(args)} failed: {proc.stderr}{proc.stdout}"
+    return proc.stdout
+
+
 def _plan() -> str:
     return tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", "src/app"))
 
@@ -27,6 +36,15 @@ def _advance_to_verify() -> None:
     tasks.smoke(_cmd("smoke", "baseline ok"))
     tasks.pick(_cmd("pick"))
     tasks.implement(_cmd("implement", "implementei"))
+
+
+def _write_verify_feature_script(target_dir: Path, body: str) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "verify-feature.sh").write_text(body.replace("\r\n", "\n"))
+
+
+def _verify_log_path(feature_id: int) -> Path:
+    return Path(".harness/logs") / f"verify-feature-{feature_id}.log"
 
 
 def test_start_sem_feature_pendente_reseta_feature_list_e_run_config():
@@ -101,12 +119,63 @@ def test_verify_fail_volta_para_implement():
     assert '"value":"implement"' in result
 
 
-def test_verify_pass_segue_para_handoff():
+def test_verify_pass_executa_handoff_automatico_e_avanca():
     _advance_to_verify()
 
     result = tasks.verify(_cmd("verify", "PASS"))
 
-    assert '"value":"handoff"' in result
+    assert "NOVA SESSÃO" in result
+    assert '"value":"handoff"' not in result
+    assert feature_store.pending_count() == 1
+    assert "Feature #2" in Path("src/app/progress.txt").read_text()
+
+
+def test_implement_com_verify_feature_passando_executa_verify_e_handoff_automaticos():
+    _write_verify_feature_script(Path("src/app"), """#!/usr/bin/env bash
+set -euo pipefail
+echo "PASS: feature $1 verificada"
+""")
+    _plan()
+    tasks.bearings(_cmd("bearings", "orientado"))
+    tasks.smoke(_cmd("smoke", "baseline ok"))
+    tasks.pick(_cmd("pick"))
+
+    result = tasks.implement(_cmd("implement", "implementei"))
+
+    assert "NOVA SESSÃO" in result
+    assert '"value":"verify"' not in result
+    assert feature_store.pending_count() == 1
+    progress = Path("src/app/progress.txt").read_text()
+    assert "Feature #2" in progress
+    assert "PASS: feature 2 verificada" in progress
+    assert ".harness/logs/verify-feature-2.log" in progress
+    assert "command: bash ./verify-feature.sh 2" in _verify_log_path(2).read_text()
+
+
+def test_implement_com_verify_feature_falhando_volta_para_fix():
+    _write_verify_feature_script(Path("src/app"), """#!/usr/bin/env bash
+set -euo pipefail
+echo "FAIL: feature $1 quebrou"
+echo "LINHA DETALHADA QUE FICA SO NO LOG"
+exit 7
+""")
+    _plan()
+    tasks.bearings(_cmd("bearings", "orientado"))
+    tasks.smoke(_cmd("smoke", "baseline ok"))
+    tasks.pick(_cmd("pick"))
+
+    result = tasks.implement(_cmd("implement", "implementei"))
+
+    assert "FALHOU" in result
+    assert "feature 2 quebrou" in result
+    assert ".harness/logs/verify-feature-2.log" in result
+    assert "LINHA DETALHADA QUE FICA SO NO LOG" not in result
+    log = _verify_log_path(2).read_text()
+    assert "FAIL: feature 2 quebrou" in log
+    assert "LINHA DETALHADA QUE FICA SO NO LOG" in log
+    assert '"value":"implement"' in result
+    assert feature_store.pending_count() == 2
+    assert not Path("src/app/progress.txt").exists()
 
 
 def test_verify_veredito_invalido_reemite_verify():
@@ -121,7 +190,6 @@ def test_verify_veredito_invalido_reemite_verify():
 
 def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
     _advance_to_verify()
-    tasks.verify(_cmd("verify", "PASS"))
 
     result = tasks.handoff(_cmd("handoff", ""))
 
@@ -132,8 +200,7 @@ def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
 def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     # 1ª feature (id 2)
     _advance_to_verify()
-    tasks.verify(_cmd("verify", "PASS"))
-    after_first = tasks.handoff(_cmd("handoff", "abc123"))
+    after_first = tasks.verify(_cmd("verify", "PASS"))
 
     assert "NOVA SESSÃO" in after_first  # ainda falta a id 1
     assert feature_store.pending_count() == 1
@@ -143,11 +210,43 @@ def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     tasks.smoke(_cmd("smoke", "ok"))
     tasks.pick(_cmd("pick"))
     tasks.implement(_cmd("implement", "feito"))
-    tasks.verify(_cmd("verify", "PASS"))
-    after_second = tasks.handoff(_cmd("handoff", "def456"))
+    after_second = tasks.verify(_cmd("verify", "PASS"))
 
     assert after_second == "stop"
     assert feature_store.all_passing()
+
+
+def test_handoff_legado_com_hash_marca_feature_como_passando():
+    _advance_to_verify()
+
+    result = tasks.handoff(_cmd("handoff", "abc123"))
+
+    assert "NOVA SESSÃO" in result
+    assert feature_store.pending_count() == 1
+
+
+def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
+    repo = Path("repo")
+    target = repo / "app"
+    target.mkdir(parents=True)
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "harness@example.test")
+    _git(repo, "config", "user.name", "Harness Test")
+    (repo / "outside.txt").write_text("fora do target")
+
+    tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", str(target)))
+    tasks.bearings(_cmd("bearings", "ok"))
+    tasks.smoke(_cmd("smoke", "ok"))
+    tasks.pick(_cmd("pick"))
+    tasks.implement(_cmd("implement", "feito no target"))
+
+    result = tasks.verify(_cmd("verify", "PASS: tudo verde"))
+
+    assert "NOVA SESSÃO" in result
+    committed_files = _git(repo, "show", "--name-only", "--format=", "HEAD")
+    assert "app/progress.txt" in committed_files
+    assert "outside.txt" not in committed_files
+    assert "?? outside.txt" in _git(repo, "status", "--short")
 
 
 def test_guarda_por_feature_ao_exceder_o_teto_encerra():

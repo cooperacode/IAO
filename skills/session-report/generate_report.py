@@ -42,6 +42,20 @@ DRIVER_LABEL = {
     "codex": "Codex CLI",
     "copilot": "GitHub Copilot",
 }
+TOKEN_FIELDS = (
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_write_input_tokens",
+    "non_cached_input_tokens",
+    "output_tokens",
+    "reasoning_output_tokens",
+)
+ACTIVITY_FIELDS = (
+    "token_count_events",
+    "tool_calls",
+    "tool_outputs",
+    "agent_messages",
+)
 
 
 def run_json_script(script: Path, args: list[str], label: str) -> dict:
@@ -107,21 +121,147 @@ def fmt_mmss(seconds: float | None) -> str:
     return f"{m}m {s:02d}s"
 
 
+def parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def empty_activity() -> dict[str, int]:
+    return {field: 0 for field in ACTIVITY_FIELDS}
+
+
+def usage_breakdown(by_model: dict) -> dict[str, int]:
+    totals = {field: 0 for field in TOKEN_FIELDS}
+    for mv in by_model.values():
+        for field in TOKEN_FIELDS:
+            totals[field] += mv.get(field, 0) or 0
+
+    if not totals["non_cached_input_tokens"]:
+        totals["non_cached_input_tokens"] = max(
+            0,
+            totals["input_tokens"]
+            - totals["cached_input_tokens"]
+            - totals["cache_write_input_tokens"],
+        )
+    return totals
+
+
+def find_codex_rollout_path(session_id: str) -> Path | None:
+    data = run_json_script(USAGE_SCRIPT["codex"], ["--session", session_id], "codex_usage_activity")
+    sessions = data.get("per_session", {})
+    selected = sessions.get(session_id)
+    if selected is None:
+        matches = [v for k, v in sessions.items() if k.startswith(session_id)]
+        selected = matches[0] if len(matches) == 1 else None
+    path = selected.get("path") if isinstance(selected, dict) else None
+    return Path(path).expanduser().resolve(strict=False) if path else None
+
+
+def load_step_activity(driver: str, session_id: str, steps: list[dict]) -> tuple[list[dict[str, int]], list[str]]:
+    """Conta atividade local do driver nas mesmas janelas de tempo do correlator.
+
+    Hoje a contagem de tool calls/eventos de token e suportada para Codex, porque
+    o rollout JSONL local registra `response_item.function_call` e
+    `event_msg.token_count` com timestamps confiaveis.
+    """
+    activity = [empty_activity() for _ in steps]
+    notes: list[str] = []
+    if driver != "codex" or not steps:
+        if driver != "codex":
+            notes.append(
+                "Telemetria de tool calls/eventos de token por fase atualmente e preenchida apenas para Codex."
+            )
+        return activity, notes
+
+    rollout_path = find_codex_rollout_path(session_id)
+    if rollout_path is None or not rollout_path.is_file():
+        notes.append("Rollout local do Codex nao encontrado; tool calls/eventos de token ficaram zerados.")
+        return activity, notes
+
+    step_times = [parse_ts(s.get("timestamp")) for s in steps]
+    if any(t is None for t in step_times):
+        notes.append("Timestamps do trace invalidos; tool calls/eventos de token ficaram zerados.")
+        return activity, notes
+
+    try:
+        lines = rollout_path.read_text().splitlines()
+    except OSError as exc:
+        notes.append(f"Nao foi possivel ler o rollout local do Codex ({rollout_path}): {exc}")
+        return activity, notes
+
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event_ts = parse_ts(obj.get("timestamp"))
+        if event_ts is None:
+            continue
+
+        idx = 0
+        while idx < len(step_times) and event_ts > step_times[idx]:
+            idx += 1
+        if idx >= len(step_times):
+            continue
+        if idx > 0 and event_ts <= step_times[idx - 1]:
+            continue
+
+        typ = obj.get("type")
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        payload_type = payload.get("type")
+        if typ == "event_msg" and payload_type == "token_count":
+            activity[idx]["token_count_events"] += 1
+        elif typ == "response_item" and payload_type == "function_call":
+            activity[idx]["tool_calls"] += 1
+        elif typ == "response_item" and payload_type == "function_call_output":
+            activity[idx]["tool_outputs"] += 1
+        elif typ == "event_msg" and payload_type == "agent_message":
+            activity[idx]["agent_messages"] += 1
+
+    return activity, notes
+
+
 def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict) -> dict:
     is_copilot = driver == "copilot"
     steps_raw = correlate.get("steps", [])
     unattributed = correlate.get("unattributed", {})
     warnings = list(correlate.get("warnings", []))
 
-    model_totals: dict[str, dict] = defaultdict(lambda: {"tokens": 0, "cost": 0.0})
+    activity_by_step, activity_notes = load_step_activity(driver, session_id, steps_raw)
+    warnings.extend(activity_notes)
+
+    model_totals: dict[str, dict] = defaultdict(
+        lambda: {
+            "tokens": 0,
+            "cost": 0.0,
+            **{field: 0 for field in TOKEN_FIELDS},
+        }
+    )
     unpriced_seen: set[str] = set()
 
     steps = []
-    for s in steps_raw:
+    previous_ts: datetime | None = None
+    for i, s in enumerate(steps_raw):
+        breakdown = usage_breakdown(s.get("by_model", {}))
         for model, mv in s.get("by_model", {}).items():
             model_totals[model]["tokens"] += mv["total_tokens"]
             model_totals[model]["cost"] += mv.get("cost") or 0.0
+            for field in TOKEN_FIELDS:
+                model_totals[model][field] += mv.get(field, 0) or 0
         unpriced_seen.update(s.get("unpriced_models", []))
+
+        current_ts = parse_ts(s.get("timestamp"))
+        duration_seconds = (
+            None
+            if current_ts is None or previous_ts is None
+            else (current_ts - previous_ts).total_seconds()
+        )
+        previous_ts = current_ts
+
         steps.append(
             {
                 "step": s["step"],
@@ -131,30 +271,55 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
                 "timestamp": s["timestamp"],
                 "tokens": s["tokens"],
                 "cost": s["cost"],
+                "duration_seconds": duration_seconds,
+                **breakdown,
+                **activity_by_step[i],
             }
         )
 
     for model, mv in unattributed.get("by_model", {}).items():
         model_totals[model]["tokens"] += mv["total_tokens"]
         model_totals[model]["cost"] += mv.get("cost") or 0.0
+        for field in TOKEN_FIELDS:
+            model_totals[model][field] += mv.get(field, 0) or 0
     unpriced_seen.update(unattributed.get("unpriced_models", []))
 
     models = [
-        {"name": name, "tokens": v["tokens"], "cost": None if is_copilot else v["cost"]}
+        {
+            "name": name,
+            "tokens": v["tokens"],
+            "cost": None if is_copilot else v["cost"],
+            **{field: v[field] for field in TOKEN_FIELDS},
+        }
         for name, v in sorted(model_totals.items(), key=lambda kv: -kv[1]["tokens"])
     ]
 
-    commands_acc: dict[str, dict] = defaultdict(lambda: {"cost": 0.0, "tokens": 0, "steps": 0, "errors": 0})
+    commands_acc: dict[str, dict] = defaultdict(
+        lambda: {
+            "cost": 0.0,
+            "tokens": 0,
+            "steps": 0,
+            "errors": 0,
+            "duration_seconds": 0.0,
+            **{field: 0 for field in TOKEN_FIELDS},
+            **{field: 0 for field in ACTIVITY_FIELDS},
+        }
+    )
     for s in steps:
         c = commands_acc[s["command"]]
         c["cost"] += s["cost"]
         c["tokens"] += s["tokens"]
         c["steps"] += 1
+        c["duration_seconds"] += s["duration_seconds"] or 0.0
+        for field in TOKEN_FIELDS:
+            c[field] += s[field]
+        for field in ACTIVITY_FIELDS:
+            c[field] += s[field]
         if s["outcome"] == "error":
             c["errors"] += 1
     commands = sorted(
         ({"cmd": k, **v} for k, v in commands_acc.items()),
-        key=lambda c: -c["cost"],
+        key=lambda c: (-c["cost"], -c["tokens"]),
     )
 
     errors = [s for s in steps if s["outcome"] == "error"]
@@ -169,7 +334,7 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
     duration_seconds = None
     if first_ts and last_ts:
         duration_seconds = (
-            datetime.fromisoformat(last_ts) - datetime.fromisoformat(first_ts)
+            parse_ts(last_ts) - parse_ts(first_ts)
         ).total_seconds()
 
     notes = warnings
@@ -214,6 +379,10 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
             "duration_seconds": duration_seconds,
             "first_ts": first_ts,
             "last_ts": last_ts,
+            "token_count_events": sum(s["token_count_events"] for s in steps),
+            "tool_calls": sum(s["tool_calls"] for s in steps),
+            "tool_outputs": sum(s["tool_outputs"] for s in steps),
+            "agent_messages": sum(s["agent_messages"] for s in steps),
         },
     }
 
@@ -326,6 +495,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .legend-mark{ width:10px; height:10px; border-radius:50%; border:2px solid var(--critical); background:none; flex:none; }
   .table-scroll{ overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
   table{ border-collapse:collapse; width:100%; min-width:640px; font-size:13px; }
+  table.wide{ min-width:1040px; }
+  table.xwide{ min-width:1240px; }
   thead th{ position:sticky; top:0; background:var(--surface-2); text-align:left; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); padding:10px 14px; border-bottom:1px solid var(--border); white-space:nowrap; }
   tbody td{ padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:top; color:var(--text-secondary); }
   tbody tr:last-child td{ border-bottom:none; }
@@ -418,6 +589,32 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <section>
     <div class="section-head">
+      <h2>Telemetria por comando</h2>
+      <p class="section-note">Quebra de tokens e atividade do driver nas mesmas janelas de tempo usadas para atribuir custo. Tool calls/eventos sao preenchidos quando o rollout local do driver expoe esses eventos.</p>
+    </div>
+    <div class="table-scroll">
+      <table class="xwide">
+        <thead>
+          <tr>
+            <th>Comando</th>
+            <th class="num">Duracao</th>
+            <th class="num">Eventos token</th>
+            <th class="num">Tool calls</th>
+            <th class="num">Input</th>
+            <th class="num">Cache</th>
+            <th class="num">Nao cache</th>
+            <th class="num">Output</th>
+            <th class="num">Raciocinio</th>
+            <th class="num">Tokens / passo</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-telemetry"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
       <h2>Custo por passo ao longo da execucao</h2>
       <p class="section-note">Cada ponto e um passo do trace. Os aneis vermelhos marcam passos com outcome = error.</p>
     </div>
@@ -444,8 +641,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <p class="section-note">Consumo agregado por modelo dentro da janela da sessao (passos + nao atribuido).</p>
     </div>
     <div class="table-scroll">
-      <table>
-        <thead><tr><th>Modelo</th><th class="num">Tokens</th><th class="num">Custo</th></tr></thead>
+      <table class="wide">
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th class="num">Tokens</th>
+            <th class="num">Input</th>
+            <th class="num">Cache</th>
+            <th class="num">Nao cache</th>
+            <th class="num">Output</th>
+            <th class="num">Raciocinio</th>
+            <th class="num">Custo</th>
+          </tr>
+        </thead>
         <tbody id="tbl-models"></tbody>
       </table>
     </div>
@@ -459,9 +667,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <details>
       <summary>Expandir os passos</summary>
       <div class="table-scroll" style="margin-top:12px; max-height:520px; overflow-y:auto;">
-        <table>
+        <table class="xwide">
           <thead>
-            <tr><th class="num">Passo</th><th>Comando</th><th>Outcome</th><th class="num">Chars instrucao</th><th class="num">Tokens</th><th class="num">Custo</th></tr>
+            <tr>
+              <th class="num">Passo</th>
+              <th>Comando</th>
+              <th>Outcome</th>
+              <th class="num">Duracao</th>
+              <th class="num">Chars instrucao</th>
+              <th class="num">Tokens</th>
+              <th class="num">Input</th>
+              <th class="num">Cache</th>
+              <th class="num">Output</th>
+              <th class="num">Eventos token</th>
+              <th class="num">Tool calls</th>
+              <th class="num">Custo</th>
+            </tr>
           </thead>
           <tbody id="tbl-log"></tbody>
         </table>
@@ -488,6 +709,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const fmtUSD = v => v == null ? 'n/d' : ('$' + v.toFixed(4));
   const fmtUSD2 = v => v == null ? 'n/d' : ('$' + v.toFixed(2));
   const fmtInt = v => v.toLocaleString('pt-BR');
+  const fmtDuration = v => {
+    if (v == null) return 'n/d';
+    const total = Math.max(0, Math.round(v));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return m ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
+  };
 
   const tooltip = $('#tooltip');
   function showTip(evt, html){
@@ -526,11 +754,31 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <td class="num">${fmtUSD(c.cost)}</td>
     </tr>`).join('');
 
+  // ---------- table: command telemetry ----------
+  $('#tbl-telemetry').innerHTML = commands.map(c => `
+    <tr>
+      <td><span class="cmd-tag" style="background:${colorOf(c.cmd)}">${c.cmd}</span></td>
+      <td class="num">${fmtDuration(c.duration_seconds)}</td>
+      <td class="num">${fmtInt(c.token_count_events || 0)}</td>
+      <td class="num">${fmtInt(c.tool_calls || 0)}</td>
+      <td class="num">${fmtInt(c.input_tokens || 0)}</td>
+      <td class="num">${fmtInt(c.cached_input_tokens || 0)}</td>
+      <td class="num">${fmtInt(c.non_cached_input_tokens || 0)}</td>
+      <td class="num">${fmtInt(c.output_tokens || 0)}</td>
+      <td class="num">${fmtInt(c.reasoning_output_tokens || 0)}</td>
+      <td class="num">${fmtInt(Math.round((c.tokens || 0) / Math.max(1, c.steps || 1)))}</td>
+    </tr>`).join('');
+
   // ---------- table: models ----------
   $('#tbl-models').innerHTML = models.map(m => `
     <tr>
       <td class="mono-cell">${m.name}</td>
       <td class="num">${fmtInt(m.tokens)}</td>
+      <td class="num">${fmtInt(m.input_tokens || 0)}</td>
+      <td class="num">${fmtInt(m.cached_input_tokens || 0)}</td>
+      <td class="num">${fmtInt(m.non_cached_input_tokens || 0)}</td>
+      <td class="num">${fmtInt(m.output_tokens || 0)}</td>
+      <td class="num">${fmtInt(m.reasoning_output_tokens || 0)}</td>
       <td class="num">${fmtUSD(m.cost)}</td>
     </tr>`).join('');
 
@@ -541,8 +789,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <td class="num mono-cell">${s.step}</td>
       <td><span class="cmd-tag" style="background:${colorOf(s.command)}">${s.command}</span></td>
       <td>${pill}</td>
+      <td class="num">${fmtDuration(s.duration_seconds)}</td>
       <td class="num">${fmtInt(s.instruction_chars)}</td>
       <td class="num">${fmtInt(s.tokens)}</td>
+      <td class="num">${fmtInt(s.input_tokens || 0)}</td>
+      <td class="num">${fmtInt(s.cached_input_tokens || 0)}</td>
+      <td class="num">${fmtInt(s.output_tokens || 0)}</td>
+      <td class="num">${fmtInt(s.token_count_events || 0)}</td>
+      <td class="num">${fmtInt(s.tool_calls || 0)}</td>
       <td class="num">${fmtUSD(s.cost)}</td>
     </tr>`;
   }).join('');
@@ -588,6 +842,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const i = +hit.dataset.i, c = commands[i];
       hit.addEventListener('mousemove', e => showTip(e, `<b>${c.cmd}</b>
         <div class="tt-row"><span>custo total</span><span>${fmtUSD(c.cost)}</span></div>
+        <div class="tt-row"><span>tokens</span><span>${fmtInt(c.tokens)}</span></div>
+        <div class="tt-row"><span>tool calls</span><span>${fmtInt(c.tool_calls || 0)}</span></div>
+        <div class="tt-row"><span>eventos token</span><span>${fmtInt(c.token_count_events || 0)}</span></div>
         <div class="tt-row"><span>passos</span><span>${c.steps}</span></div>
         <div class="tt-row"><span>erros</span><span>${c.errors}</span></div>
         <div class="tt-row"><span>share do custo</span><span>${totalAll ? ((c.cost/totalAll)*100).toFixed(1) : '0.0'}%</span></div>`));
@@ -638,6 +895,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const i = +hit.dataset.i, s = steps[i];
       hit.addEventListener('mousemove', e => showTip(e, `<b>passo ${s.step} · ${s.command}</b>
         <div class="tt-row"><span>outcome</span><span>${s.outcome}</span></div>
+        <div class="tt-row"><span>duracao</span><span>${fmtDuration(s.duration_seconds)}</span></div>
         <div class="tt-row"><span>custo</span><span>${fmtUSD(s.cost)}</span></div>
         <div class="tt-row"><span>tokens</span><span>${fmtInt(s.tokens)}</span></div>`));
       hit.addEventListener('mouseleave', hideTip);

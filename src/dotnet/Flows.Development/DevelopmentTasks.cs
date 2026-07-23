@@ -7,11 +7,11 @@ namespace Flows.Development;
 /// Anthropic). Um inicializador (session 0) expande o brief numa lista priorizada de features;
 /// depois um loop de sessões de contexto fresco implementa UMA feature por vez:
 ///
-///   start → plan → [bearings → smoke → pick → implement → verify → handoff]*
+///   start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 ///
 /// O estado que atravessa os hard resets vive em artefatos persistentes: a
 /// <see cref="FeatureStore"/> (feature_list.json, do harness) e o progress.txt + git
-/// (do driver). Cada task só faz efeitos e decide o PRÓXIMO comando (o <c>output</c> Envelope)
+/// (do diretório-alvo). Cada task só faz efeitos e decide o PRÓXIMO comando (o <c>output</c> Envelope)
 /// — a orquestração (dispatch, guardas globais, transporte) fica em Harness.Engine.
 ///
 /// Prompts em <c>DevelopmentTasks.Prompt.cs</c> (partial).
@@ -117,8 +117,26 @@ public static partial class DevelopmentTasks
         return ImplementPrompt(next);
     }
 
-    public static string Implement(Envelope? envelope) =>
-        OverFeatureBudget() ? Stop("guarda por feature") : VerifyPrompt();
+    public static string Implement(Envelope? envelope)
+    {
+        if (OverFeatureBudget())
+            return Stop("guarda por feature");
+
+        var summary = Arg(envelope).Trim();
+        if (!string.IsNullOrWhiteSpace(summary))
+            StateStore.Set("current_feature_summary", summary);
+
+        var autoVerify = TryAutomatedVerify();
+        if (autoVerify.Attempted)
+        {
+            StateStore.Set("current_feature_verify", autoVerify.Result);
+            return autoVerify.Success
+                ? CompleteVerifiedFeature(autoVerify.Result)
+                : FixPrompt(autoVerify.Result);
+        }
+
+        return VerifyPrompt();
+    }
 
     public static string Verify(Envelope? envelope)
     {
@@ -126,13 +144,17 @@ public static partial class DevelopmentTasks
             return Stop("guarda por feature");
 
         // FALHOU → volta a implementar a MESMA feature (loop de correção, limitado pela guarda).
-        // PASSOU → segue para o handoff (deixar estado limpo).
+        // PASSOU → o harness faz o handoff determinístico (progress + git) sem gastar um
+        // turno do modelo; se falhar, cai no prompt legado de reparo manual.
         var result = Arg(envelope).Trim();
         if (result.StartsWith("FAIL", StringComparison.OrdinalIgnoreCase))
-            return FixPrompt();
+            return FixPrompt(result);
 
         if (result.StartsWith("PASS", StringComparison.OrdinalIgnoreCase))
-            return HandoffPrompt();
+        {
+            StateStore.Set("current_feature_verify", result);
+            return CompleteVerifiedFeature(result);
+        }
 
         return VerifyRetryPrompt();
     }

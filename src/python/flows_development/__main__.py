@@ -1,7 +1,7 @@
 """Padrão "long-running agent": inicializador + loop de sessões frescas, uma feature por
 vez. Nenhuma orquestração aqui — dispatch, guardas e transporte vivem em harness_engine.
 
-    start → plan → [bearings → smoke → pick → implement → verify → handoff]*
+    start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 """
 
 from __future__ import annotations
@@ -26,12 +26,12 @@ TASKS = {
 # `pick` não tem validador — não carrega artefato do driver (a seleção é do harness).
 VALIDATORS = {
     "plan": envelope_validation.not_empty("o array JSON de features [{id,title,priority}]"),
-    "bearings": envelope_validation.not_empty("o resumo da orientação (pwd, progress, git log)"),
-    "smoke": envelope_validation.not_empty("o resultado do smoke test (init.sh)"),
-    "implement": envelope_validation.not_empty("o resumo do que foi implementado"),
+    "bearings": envelope_validation.not_empty("o resumo curto da orientação (pwd, progress, git log)"),
+    "smoke": envelope_validation.not_empty("o resultado compacto do smoke test (init.sh + caminho do log)"),
+    "implement": envelope_validation.not_empty("o resumo curto do que foi implementado"),
     "verify": envelope_validation.matches(
         r"^(PASS\b|FAIL\b)",
-        "o veredito do self-verify começando com PASS ou FAIL: motivo",
+        "o veredito compacto do self-verify começando com PASS ou FAIL: motivo",
     ),
     "handoff": envelope_validation.matches(
         r"^([0-9a-f]{6,40}\b|NO_GIT:\s+\S.*)$",

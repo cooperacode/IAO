@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wrapper de invocação estável do flow de desenvolvimento long-running.
-# start → plan → [bearings → smoke → pick → implement → verify → handoff]*
+# start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 #
 # Sem artefato publicado, builda a DLL sob demanda na primeira chamada (dotnet build).
 # Para pacote distribuído sem runtime .NET, publique Native AOT antes:

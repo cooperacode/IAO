@@ -60,12 +60,17 @@ snapshot idêntico da última execução).
   consumo pós-último-passo, "não atribuído"), tokens totais, custo médio/passo.
 - **Custo por comando** — gráfico de barras horizontal + tabela (cores atribuídas
   dinamicamente aos comandos vistos no trace, não fixas).
+- **Telemetria por comando** — duração da janela correlacionada, eventos de token,
+  tool calls, input tokens, cached input tokens, non-cached input tokens, output tokens,
+  reasoning output tokens e média de tokens por passo. A contagem de tool calls/eventos
+  depende do rollout local do driver; hoje é preenchida para Codex.
 - **Custo por passo ao longo da execução** — gráfico de linha; passos com `outcome: error`
   aparecem com anel vermelho.
 - **Erros registrados** — lista dos passos com `outcome: error` (oculta se não houver nenhum).
 - **Tokens e custo por modelo** — agregado dentro da janela da sessão (passos + não
-  atribuído).
-- **Log completo** — tabela colapsável com todos os passos, na ordem original.
+  atribuído), com quebra de input/cache/output/raciocínio.
+- **Log completo** — tabela colapsável com todos os passos, na ordem original, incluindo
+  duração, quebra de tokens e contadores de atividade quando disponíveis.
 - **Avisos** — warnings dos scripts de usage/correlate, modelos sem preço cadastrado, e a nota
   de custo do Copilot (fatura por premium request, não por token — sem `$` estimado).
 

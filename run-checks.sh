@@ -40,20 +40,34 @@ dev_step() {  # tipo valor [args...] → escreve a inbox (JSON) e roda um passo;
 FEATURES='[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'
 dev_step text start                                  >/dev/null
 dev_step command plan "$FEATURES" "true" "app"       >/dev/null
+mkdir -p "$SMOKE_DIR/app"
+cat > "$SMOKE_DIR/app/init.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+SH
+chmod +x "$SMOKE_DIR/app/init.sh"
+cat > "$SMOKE_DIR/app/verify-feature.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+./init.sh
+true
+echo "PASS: feature ${1:-all} verificada"
+SH
+chmod +x "$SMOKE_DIR/app/verify-feature.sh"
 LAST=""
 for feature in 1 2; do
   dev_step command bearings  "orientado"  >/dev/null
   dev_step command smoke     "baseline ok" >/dev/null
   dev_step command pick                    >/dev/null
-  dev_step command implement "feito"       >/dev/null
-  dev_step command verify    "PASS"        >/dev/null
-  LAST="$(dev_step command handoff "sha-$feature")"
+  LAST="$(dev_step command implement "feito")"
 done
 
 [[ "$LAST" == "stop" ]] || { echo "[smoke] esperava 'stop' ao fim do loop, veio: '$LAST'" >&2; exit 1; }
 grep -q '"passes":true' "$SMOKE_DIR/.harness/feature_list.json" \
   && ! grep -q '"passes":false' "$SMOKE_DIR/.harness/feature_list.json" \
   || { echo "[smoke] feature_list.json não fechou com todas passando" >&2; exit 1; }
+[[ -s "$SMOKE_DIR/.harness/logs/verify-feature-2.log" ]] \
+  || { echo "[smoke] log de verify-feature não foi criado" >&2; exit 1; }
 echo "    loop fechou em stop e todas as features passam ✓"
 
 echo "==> OK — testes verdes, golden set e smoke como esperado."

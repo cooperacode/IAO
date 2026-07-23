@@ -38,15 +38,26 @@ da criação (ex.: `202607211830`) e `<nome-descritivo>` reflete o objetivo do p
 ## 2. Escafoldar o ambiente
 **Greenfield:** o diretório-alvo segue sempre o padrão `app/<nome-descritivo>` — só a parte
 descritiva do nome da branch do passo 1, **sem** o prefixo de timestamp. Crie-o se não existir.
-Dentro dele, crie um `init.sh` **idempotente** que deixe o projeto pronto para rodar do zero:
-instalar dependências, restaurar/buildar e (se aplicável) subir o app. Deve poder ser rodado
-várias vezes sem quebrar. Crie também a estrutura mínima de pastas do projeto.
+Dentro dele, crie:
+- um `init.sh` **idempotente** que deixe o projeto pronto para rodar do zero: instalar
+  dependências, restaurar/buildar e (se aplicável) subir o app. Deve poder ser rodado várias
+  vezes sem quebrar;
+- um `verify-feature.sh <id>` **idempotente** que verifica a feature indicada. No começo ele
+  pode rodar a suite completa (`./init.sh` e depois o `$VERIFY_CMD`), sem exigir filtros por
+  feature. Ele deve imprimir uma linha começando com `PASS` quando tudo passar, ou uma linha
+  no formato `FAIL: <motivo>` quando falhar, e sair com código 0/não-zero de acordo com o
+  resultado. Evite prosa longa no stdout; o harness captura stdout/stderr completos em
+  `.harness/logs/verify-feature-<id>.log`.
+
+Crie também a estrutura mínima de pastas do projeto.
 
 **Brownfield:** o diretório-alvo é onde o app já vive (não necessariamente
 `app/<nome-descritivo>`). **Não** recrie nem sobrescreva o que já existe: se já houver um
 `init.sh` (ou pipeline equivalente — Makefile, script de bootstrap), reaproveite-o, ajustando
 só o mínimo necessário para a mudança pedida. Só crie um `init.sh` do zero se realmente não
-existir nada equivalente.
+existir nada equivalente. Garanta também um `verify-feature.sh <id>` no diretório-alvo; se já
+houver um wrapper de verificação equivalente, reaproveite-o ou faça um adaptador mínimo. Se
+não houver convenção de filtro por feature, o wrapper deve rodar a suite completa.
 
 ## 3. Expandir em features
 **Greenfield:** quebre o objetivo (o app inteiro) em features **pequenas, verticais e
@@ -71,3 +82,9 @@ sozinha está grande demais — quebre.
   propor um novo.
 - `$TARGET_DIR`: `app/<nome-descritivo>` em greenfield; em brownfield, o caminho real onde o
   app já vive.
+
+Observação: `$VERIFY_CMD` continua sendo o comando canônico do projeto. O
+`verify-feature.sh <id>` é um wrapper operacional para o harness chamar sem outro turno do
+modelo; inicialmente ele pode apenas executar esse comando canônico para todas as features.
+O wrapper deve produzir um veredito curto (`PASS`/`FAIL`) e deixar logs detalhados no arquivo
+capturado pelo harness.
