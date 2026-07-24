@@ -106,6 +106,12 @@ mkdir -p "$OUT/bin"
 cp -R skills "$OUT/skills"
 cp harness.json "$OUT/harness.json"   # config das variáveis do harness (tetos, docs)
 
+# scripts/ — dependência de skills/session-report/generate_report.py (REPO_ROOT/"scripts",
+# relativo à própria posição do arquivo dentro do pacote). Sem isto, o passo final do agente
+# ("gerar o relatório de uso e custo") falha por não achar scripts/<driver>_usage.py.
+mkdir -p "$OUT/scripts"
+cp scripts/*.py "$OUT/scripts/"
+
 # ---- por fluxo: publish AOT, binário, wrapper(s) e adaptador ----
 for flow in "${FLOWS[@]}"; do
   project="$(project_for "$flow")"
@@ -237,6 +243,7 @@ O binário deve imprimir um bloco \`<input>\`/\`<response>\` no stdout (ou \`sto
 |---|---|
 | \`bin/Flows.Development$WINEXT\` | binário nativo do fluxo de desenvolvimento |
 | \`skills/\` | skills injetadas em runtime |
+| \`scripts/\` | usage/correlate dos drivers — dependência do relatório de custo (\`skills/session-report\`) |
 | \`harness.json\` | config do harness: tetos de passos/custo/tempo e pasta de docs |
 | \`run-development.sh\` | wrapper de execução |
 $WINROW| \`$DEV_REL\` | adaptador de desenvolvimento da IDE escolhida |
