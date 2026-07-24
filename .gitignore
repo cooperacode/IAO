@@ -17,6 +17,7 @@ report/
 todo-*/
 app/
 .back_*/
+dist/
 
 #Files
 .DS_Store

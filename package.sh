@@ -105,7 +105,6 @@ rm -rf "$OUT"
 mkdir -p "$OUT/bin"
 cp -R skills "$OUT/skills"
 cp harness.json "$OUT/harness.json"   # config das variáveis do harness (tetos, docs)
-cp AGENTS.md "$OUT/AGENTS.md"         # instruções de projeto para Codex e outros agentes que leem AGENTS.md
 
 # ---- por fluxo: publish AOT, binário, wrapper(s) e adaptador ----
 for flow in "${FLOWS[@]}"; do
