@@ -196,7 +196,78 @@ Verificação local:
 - **Adaptadores de IDE**: Codex, Claude Code, GitHub Copilot e Devin usando o
   mesmo protocolo de runner e inbox.
 
-Referência:
+## Padrões relacionados
+
+- **State Machine**: a sequência de estados é explícita e determinística.
+- **Interpreter**: o agente interpreta instruções emitidas pelo harness e
+  devolve respostas estruturadas.
+- **Command**: cada envelope representa um comando com argumentos e contrato de
+  resposta.
+- **Template Method**: `HarnessHost` e `TaskRegistry` fornecem o esqueleto
+  comum, enquanto cada flow define suas tasks de domínio.
+- **Ports and Adapters**: o runner de shell e os adaptadores de IDE isolam o
+  protocolo do agente concreto.
+- **Workflow Engine / Process Manager**: o harness governa uma execução longa,
+  persistente e reentrante.
+
+## Experimento
+
+O experimento `GF-V2` compara dois drivers de IDE executando o harness de
+desenvolvimento, usando os relatórios de sessão gerados como evidência.
+
+**Contexto das features***: o alvo do experimento foi uma Todo Web API em .NET `net10.0`, apoiada por um Postgres real, organizada em vertical slices e verificada com testes de unidade e integração. A sessão 0 escafoldou a solution, os runners de shell e os projetos de teste. Em seguida, o backlog principal entregou oito features:
+
+1. Infraestrutura Postgres com `docker-compose.yml`, healthcheck, volume
+   persistente e criação automática do schema `tasks`.
+2. `POST /tasks` para adicionar tarefa, validando título obrigatório e
+   persistindo novas tarefas com status `pending`.
+3. `GET /tasks` para listar tarefas do Postgres, ordenadas por id.
+4. `PATCH /tasks/{id}/complete` para mudar a tarefa para `completed`, retornando
+   `404` para ids inexistentes.
+5. Persistência entre reinicializações do processo da API, verificada por testes
+   de integração contra o mesmo banco Postgres.
+6. `DELETE /tasks/{id}` para remover tarefa, retornando `404` para ids
+   inexistentes.
+7. `PUT /tasks/{id}` para editar o título, rejeitando títulos em branco com
+   `400` e ids inexistentes com `404`.
+8. `GET /tasks?status=...` para filtrar por `pending` ou `completed`, listar
+   tudo quando o filtro está ausente ou em branco, e retornar `400` para valores
+   inválidos.
+
+O mesmo log de progresso também registra um delta de notificação por e-mail
+após o backlog principal da Todo API: um componente `EmailNotifier` monta o
+conteúdo de e-mail de mudança de status e resolve remetente/destinatário por
+variáveis de ambiente, e `PATCH /tasks/{id}/complete` envia um e-mail síncrono
+best-effort por meio da abstração `ISmtpEmailClient`. A verificação final
+registrada nesse delta passou 43 testes de unidade e 20 testes de integração.
+
+### Resumo:
+
+| Driver | Sessão | Modelo | Passos | Erros | Duração | Tokens totais | Custo atribuído | Custo total da sessão | Custo médio / passo |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Codex CLI | `019f9021` | `gpt-5.5` | 35 | 0 | 24m 36s | 13.467.746 | $8.93 | $9.08 | $0.26 |
+| Claude Code | `90c48615` | `claude-sonnet-5` | 34 | 0 | 34m 12s | 21.055.922 | $8.21 | $8.33 | $0.24 |
+
+Custo por comando do harness:
+
+| Comando | Codex CLI | Claude Code |
+|---|---:|---:|
+| `implement` | 9 passos, $4.40 | 8 passos, $3.37 |
+| `bearings` | 8 passos, $1.28 | 8 passos, $2.84 |
+| `plan` | 1 passo, $0.79 | 1 passo, $1.44 |
+| `smoke` | 8 passos, $1.58 | 8 passos, $0.31 |
+| `pick` | 8 passos, $0.76 | 8 passos, $0.12 |
+| `start` | 1 passo, $0.12 | 1 passo, $0.14 |
+
+As duas sessões terminaram com zero erros de protocolo do harness. O Codex
+concluiu a janela rastreada mais rápido, enquanto o Claude teve menor custo
+total estimado apesar de usar mais tokens. Os relatórios também registram uso
+pós-trace não atribuído a comandos: 254.945 tokens ($0.15) no Codex e 335.019
+tokens ($0.12) no Claude. Os custos são estimativas com base na tabela pública
+de preços embutida nos scripts de relatório; a telemetria de tool calls e
+eventos de token do Claude não foi preenchida nesta versão do relatório.
+
+## Referências
 
 Justino, Y. (2026). *Inverted Orchestration in Software Development: A
 Deterministic Harness and Looping Engineering under Enterprise Constraints*
@@ -214,17 +285,3 @@ Deterministic Harness and Looping Engineering under Enterprise Constraints*
   url       = {https://doi.org/10.5281/zenodo.21421908}
 }
 ```
-
-## Padrões relacionados
-
-- **State Machine**: a sequência de estados é explícita e determinística.
-- **Interpreter**: o agente interpreta instruções emitidas pelo harness e
-  devolve respostas estruturadas.
-- **Command**: cada envelope representa um comando com argumentos e contrato de
-  resposta.
-- **Template Method**: `HarnessHost` e `TaskRegistry` fornecem o esqueleto
-  comum, enquanto cada flow define suas tasks de domínio.
-- **Ports and Adapters**: o runner de shell e os adaptadores de IDE isolam o
-  protocolo do agente concreto.
-- **Workflow Engine / Process Manager**: o harness governa uma execução longa,
-  persistente e reentrante.
