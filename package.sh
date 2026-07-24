@@ -121,6 +121,7 @@ for flow in "${FLOWS[@]}"; do
   bin="$assembly$WINEXT"
 
   echo "[package] publicando Native AOT — $flow ($RID)…"
+  used_fallback=false
   if ! dotnet publish "$project" -c Release -r "$RID" -p:PublishAot=true; then
     # Falha comum: falta o toolchain nativo do host (ex.: Xcode Command Line Tools/clang no
     # macOS, clang+zlib1g-dev no Linux) ou o RID alvo é de outro SO (AOT não faz cross-compile
@@ -129,12 +130,22 @@ for flow in "${FLOWS[@]}"; do
     # nativo por um apphost maior e com startup via JIT em vez de código de máquina direto.
     echo "[package] [aviso] publish AOT falhou para '$flow' ($RID); tentando fallback self-contained (sem AOT)…" >&2
     dotnet publish "$project" -c Release -r "$RID" --self-contained true -p:PublishAot=false
+    used_fallback=true
     AOT_FALLBACK_FLOWS+=("$flow")
   fi
 
   pubdir="$(dirname "$project")/bin/Release/net10.0/$RID/publish"
   [[ -f "$pubdir/$bin" ]] || { echo "[erro] binário não encontrado em $pubdir/$bin" >&2; exit 1; }
-  cp "$pubdir/$bin" "$OUT/bin/"
+  if [[ "$used_fallback" == true ]]; then
+    # Self-contained NÃO é um binário único: o apphost ($bin) carrega a .dll companheira,
+    # o *.deps.json/*.runtimeconfig.json e as libs nativas do runtime, todos no mesmo
+    # diretório. Copiar só o apphost quebra a execução ("application to execute does not
+    # exist: ...dll") — precisa do publish/ inteiro.
+    cp -R "$pubdir/." "$OUT/bin/"
+  else
+    # Native AOT é de fato um binário único e autocontido — só ele.
+    cp "$pubdir/$bin" "$OUT/bin/"
+  fi
 
   # wrapper .sh
   cat > "$OUT/$wrapper" <<EOF
