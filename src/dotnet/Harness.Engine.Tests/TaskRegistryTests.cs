@@ -15,8 +15,17 @@ public class TaskRegistryTests : IDisposable
         ["finalize"] = _ => "stop",
     };
 
-    public TaskRegistryTests() => StateStore.Reset();
-    public void Dispose() => StateStore.Reset();
+    public TaskRegistryTests()
+    {
+        StateStore.Reset();
+        Trace.Reset();
+    }
+
+    public void Dispose()
+    {
+        StateStore.Reset();
+        Trace.Reset();
+    }
 
     [Fact]
     public void Dispatch_ComandoRegistrado_ExecutaAAction()
@@ -92,6 +101,32 @@ public class TaskRegistryTests : IDisposable
 
         // start reseta e então conta a si mesmo como passo 1.
         Assert.Equal(1, StateStore.Load().Step);
+    }
+
+    [Fact]
+    public void Dispatch_Start_ComShouldResetOnStartFalso_NaoTruncaStateNemTrace()
+    {
+        // "start" também chega numa RETOMADA (sessão fresca reabrindo um run em andamento) —
+        // o flow sinaliza isso via shouldResetOnStart, e o Dispatch não pode truncar nada.
+        for (var i = 0; i < 3; i++)
+            TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
+        Trace.Append(99, "handoff", TraceOutcome.Instruction, 5);
+
+        TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks, shouldResetOnStart: () => false);
+
+        Assert.Equal(4, StateStore.Load().Step); // 3 anteriores + o próprio "start", sem reset
+        Assert.Contains(Trace.Load(), e => e is { Step: 99, Command: "handoff" });
+    }
+
+    [Fact]
+    public void Dispatch_Start_SemPredicado_MantemComportamentoPadraoDeSempreResetar()
+    {
+        for (var i = 0; i < 3; i++)
+            TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
+
+        TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks);
+
+        Assert.Equal(1, StateStore.Load().Step); // retrocompatível: sem predicado, sempre reseta
     }
 
     [Fact]

@@ -4,7 +4,7 @@ tasks e chamar `run` — toda a orquestração (dispatch, guardas, transporte) f
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Callable, Mapping
 
 from harness_engine import state_store, task_registry, trace
 from harness_engine.task_registry import Action, Validator
@@ -17,8 +17,9 @@ def run(
     state_snapshot_path: str = state_store.LAST_RUN_STATE_PATH,
     validators: Mapping[str, Validator] | None = None,
     max_steps: int | None = None,
+    should_reset_on_start: Callable[[], bool] | None = None,
 ) -> int:
-    result = task_registry.dispatch(args, tasks, validators, max_steps)
+    result = task_registry.dispatch(args, tasks, validators, max_steps, should_reset_on_start)
 
     # Run concluído: congela trajetória E estado final como evidência para a avaliação
     # posterior, antes que um próximo flow resete o trace e o state vivos. Cada flow

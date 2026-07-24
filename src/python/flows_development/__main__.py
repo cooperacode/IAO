@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 
 from flows_development import tasks
-from harness_engine import envelope_validation, harness_host
+from harness_engine import envelope_validation, feature_store, harness_host
 
 TASKS = {
     "start": lambda _envelope: tasks.start(),
@@ -46,6 +46,8 @@ def main(argv: list[str]) -> int:
     # seu próprio caminho.
     # max_steps: override do teto global (12) — este flow é long-running e precisa de
     # folga p/ o loop.
+    # should_reset_on_start: um "start" também chega no hard reset por feature (sessão fresca
+    # que reabre um run em andamento) — só é run novo de verdade quando não há feature pendente.
     return harness_host.run(
         argv,
         TASKS,
@@ -53,6 +55,7 @@ def main(argv: list[str]) -> int:
         state_snapshot_path=".harness/last-development.state.json",
         validators=VALIDATORS,
         max_steps=tasks.STEP_BUDGET,
+        should_reset_on_start=lambda: feature_store.pending_count() == 0,
     )
 
 

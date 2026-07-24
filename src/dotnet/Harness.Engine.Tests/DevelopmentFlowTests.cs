@@ -33,9 +33,26 @@ public class DevelopmentFlowTests : IDisposable
     private static void Clean()
     {
         StateStore.Reset();
+        Trace.Reset();
         FeatureStore.Reset();
         RunConfigStore.Reset();
     }
+
+    // Espelha a fiação real de Flows.Development/Program.cs: só reseta StateStore/Trace no
+    // "start" quando não há feature pendente — sessão fresca do hard reset por feature deve
+    // RETOMAR, não apagar a trajetória/step acumulados das features anteriores.
+    private static readonly Dictionary<string, Func<Envelope?, string>> DispatchTasks = new()
+    {
+        ["start"] = _ => DevelopmentTasks.Start(),
+        ["plan"] = e => DevelopmentTasks.Plan(e),
+        ["bearings"] = e => DevelopmentTasks.Bearings(e),
+        ["smoke"] = e => DevelopmentTasks.Smoke(e),
+        ["pick"] = e => DevelopmentTasks.Pick(e),
+        ["implement"] = e => DevelopmentTasks.Implement(e),
+    };
+
+    private static string DispatchJson(string json) =>
+        TaskRegistry.Dispatch([json], DispatchTasks, shouldResetOnStart: () => FeatureStore.PendingCount() == 0);
 
     private static Envelope Cmd(string value, params string[] args) =>
         new(EnvelopeType.Command, value, args);
@@ -103,10 +120,6 @@ public class DevelopmentFlowTests : IDisposable
         // pendente). "start" não pode apagar nada - deve rotear direto para bearings.
         AdvanceToVerify(); // ...→ implement, sessão "morre" aqui, antes do verify
 
-        // TaskRegistry.Dispatch sempre reseta state.json incondicionalmente antes de chamar o
-        // Start() do domínio - reproduz isso aqui, já que este teste chama Start() diretamente.
-        StateStore.Reset();
-
         var result = DevelopmentTasks.Start();
 
         Assert.Contains("NOVA SESSÃO", result); // bearings_prompt, não o inicializador
@@ -114,6 +127,37 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Equal(2, FeatureStore.PendingCount()); // nenhuma marcada como passando
         Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd); // intacto
         Assert.Equal(_targetDir, RunConfigStore.Load().TargetDir);
+    }
+
+    [Fact]
+    public void Dispatch_StartComFeaturePendente_NaoTruncaTraceNemStep()
+    {
+        // Reproduz o hard reset por feature: uma feature ainda pendente ("B") e um trace/step
+        // já acumulados por features anteriores, quando a sessão fresca reabre com "start".
+        AdvanceToVerify(); // deixa a feature "B" pendente, sessão "morre" antes do verify
+        Trace.Append(41, "handoff", TraceOutcome.Instruction, 10); // trajetória de features passadas
+        var stepAntesDoStart = StateStore.Load().Step;
+
+        var result = DispatchJson("""{"type":"text","value":"start"}""");
+
+        Assert.Contains("NOVA SESSÃO", result); // retomou via bearings, não reiniciou
+        Assert.Contains(Trace.Load(), e => e is { Step: 41, Command: "handoff" }); // trace preservado
+        Assert.Equal(stepAntesDoStart + 1, StateStore.Load().Step); // contador continuou, não voltou a 1
+    }
+
+    [Fact]
+    public void Dispatch_StartSemFeaturePendente_TruncaTraceEStep()
+    {
+        // Sem run em andamento, "start" É um início de verdade e deve truncar trace/step.
+        Plan();
+        foreach (var f in FeatureStore.Load())
+            FeatureStore.MarkPassed(f.Id);
+        Trace.Append(41, "handoff", TraceOutcome.Instruction, 10);
+
+        DispatchJson("""{"type":"text","value":"start"}""");
+
+        Assert.DoesNotContain(Trace.Load(), e => e.Step == 41);
+        Assert.Equal(1, StateStore.Load().Step);
     }
 
     [Fact]

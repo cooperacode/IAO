@@ -11,7 +11,8 @@ public static class TaskRegistry
         IReadOnlyList<string> args,
         IReadOnlyDictionary<string, Func<Envelope?, string>> actions,
         IReadOnlyDictionary<string, Func<Envelope, ValidationResult>>? validators = null,
-        int? maxSteps = null)
+        int? maxSteps = null,
+        Func<bool>? shouldResetOnStart = null)
     {
         // Argv presente → transporte clássico (retrocompatível). Argv vazio → lê o envelope
         // da inbox em arquivo, o transporte que elimina o hang de aspas do shell (ver Inbox).
@@ -27,14 +28,23 @@ public static class TaskRegistry
         if (fromInbox && envelope is not null)
             Inbox.Consume();
 
-        // Novo workflow começa do zero — estado e trace são truncados juntos.
         if (envelope is not null && envelope.Value == "start")
         {
-            StateStore.Reset();
-            Trace.Reset();
+            // Novo workflow começa do zero — estado e trace são truncados juntos. Mas um
+            // "start" também chega quando uma sessão fresca (ex.: hard reset por feature do
+            // Development) reabre um run em andamento — nesse caso é RETOMADA, não início, e
+            // truncar aqui apagaria o trace/step acumulados de features anteriores. O flow
+            // decide via shouldResetOnStart (ele sabe se há trabalho pendente); sem predicado,
+            // o padrão é sempre resetar (retrocompatível com flows single-shot).
+            if (shouldResetOnStart?.Invoke() ?? true)
+            {
+                StateStore.Reset();
+                Trace.Reset();
+            }
 
             // Contexto do driver (ex.: {"driver":"claude code"}) nasce aqui e sobrevive no
             // StateStore — PromptFormatter o reinjeta em toda saída até o próximo "start".
+            // Independe do reset acima: mesmo numa retomada, o driver atual deve prevalecer.
             if (envelope.Context is { Count: > 0 } context)
                 StateStore.SetContext(context);
         }

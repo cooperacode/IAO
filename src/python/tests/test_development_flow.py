@@ -6,10 +6,28 @@ import subprocess
 from pathlib import Path
 
 from flows_development import tasks
-from harness_engine import feature_store, run_config_store, state_store
+from harness_engine import feature_store, run_config_store, state_store, task_registry, trace
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 from harness_engine.run_config_store import RunConfig
+
+# Espelha a fiação real de flows_development/__main__.py: só reseta state_store/trace no
+# "start" quando não há feature pendente — sessão fresca do hard reset por feature deve
+# RETOMAR, não apagar a trajetória/step acumulados das features anteriores.
+DISPATCH_TASKS = {
+    "start": lambda _e: tasks.start(),
+    "plan": tasks.plan,
+    "bearings": tasks.bearings,
+    "smoke": tasks.smoke,
+    "pick": tasks.pick,
+    "implement": tasks.implement,
+}
+
+
+def _dispatch_json(json_str: str) -> str:
+    return task_registry.dispatch(
+        [json_str], DISPATCH_TASKS, should_reset_on_start=lambda: feature_store.pending_count() == 0
+    )
 
 # id 1 tem prioridade 2; id 2 tem prioridade 1 → a de maior prioridade é a id 2.
 FEATURES_JSON = '[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'
@@ -65,10 +83,6 @@ def test_start_com_feature_pendente_retoma_via_bearings_em_vez_de_resetar():
     # pendente). "start" não pode apagar nada - deve rotear direto para bearings.
     _advance_to_verify()  # ...→ implement, sessão "morre" aqui, antes do verify
 
-    # task_registry.dispatch sempre reseta state.json incondicionalmente antes de chamar
-    # o start() do domínio - reproduz isso aqui, já que este teste chama start() diretamente.
-    state_store.reset()
-
     result = tasks.start()
 
     assert "NOVA SESSÃO" in result  # bearings_prompt, não o inicializador
@@ -76,6 +90,33 @@ def test_start_com_feature_pendente_retoma_via_bearings_em_vez_de_resetar():
     assert feature_store.pending_count() == 2  # nenhuma marcada como passando
     assert run_config_store.load().verify_cmd == "dotnet test"  # intacto
     assert run_config_store.load().target_dir == "src/app"
+
+
+def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():
+    # Reproduz o hard reset por feature: uma feature ainda pendente ("B") e um trace/step já
+    # acumulados por features anteriores, quando a sessão fresca reabre com "start".
+    _advance_to_verify()  # deixa a feature "B" pendente, sessão "morre" antes do verify
+    trace.append(41, "handoff", trace.TraceOutcome.INSTRUCTION, 10)  # trajetória de features passadas
+    step_antes_do_start = state_store.load().step
+
+    result = _dispatch_json('{"type":"text","value":"start"}')
+
+    assert "NOVA SESSÃO" in result  # retomou via bearings, não reiniciou
+    assert any(e.step == 41 and e.command == "handoff" for e in trace.load())  # trace preservado
+    assert state_store.load().step == step_antes_do_start + 1  # contador continuou, não voltou a 1
+
+
+def test_dispatch_start_sem_feature_pendente_trunca_trace_e_step():
+    # Sem run em andamento, "start" É um início de verdade e deve truncar trace/step.
+    _plan()
+    for f in feature_store.load():
+        feature_store.mark_passed(f.id)
+    trace.append(41, "handoff", trace.TraceOutcome.INSTRUCTION, 10)
+
+    _dispatch_json('{"type":"text","value":"start"}')
+
+    assert all(e.step != 41 for e in trace.load())
+    assert state_store.load().step == 1
 
 
 def test_plan_persiste_features_e_roteia_para_bearings():

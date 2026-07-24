@@ -1,7 +1,7 @@
 """Regressões do endurecimento: erro NUNCA pode virar "stop" silencioso, e o teto de
 passos precisa cortar loop infinito (guarda de token)."""
 
-from harness_engine import prompt_formatter, state_store, task_registry
+from harness_engine import prompt_formatter, state_store, task_registry, trace
 from harness_engine.envelope import Envelope, EnvelopeType
 
 TASKS = {
@@ -68,6 +68,31 @@ def test_dispatch_start_reinicia_o_contador_de_passos():
     task_registry.dispatch(['{"type":"text","value":"start"}'], TASKS)
 
     # start reseta e então conta a si mesmo como passo 1.
+    assert state_store.load().step == 1
+
+
+def test_dispatch_start_com_should_reset_on_start_falso_nao_trunca_state_nem_trace():
+    # "start" também chega numa RETOMADA (sessão fresca reabrindo um run em andamento) — o
+    # flow sinaliza isso via should_reset_on_start, e o dispatch não pode truncar nada.
+    for _ in range(3):
+        task_registry.dispatch(['{"type":"tool","value":"classify","args":["x"]}'], TASKS)
+    trace.append(99, "handoff", trace.TraceOutcome.INSTRUCTION, 5)
+
+    task_registry.dispatch(
+        ['{"type":"text","value":"start"}'], TASKS, should_reset_on_start=lambda: False
+    )
+
+    assert state_store.load().step == 4  # 3 anteriores + o próprio "start", sem reset
+    assert any(e.step == 99 and e.command == "handoff" for e in trace.load())
+
+
+def test_dispatch_start_sem_predicado_mantem_comportamento_padrao_de_sempre_resetar():
+    for _ in range(3):
+        task_registry.dispatch(['{"type":"tool","value":"classify","args":["x"]}'], TASKS)
+
+    task_registry.dispatch(['{"type":"text","value":"start"}'], TASKS)
+
+    # retrocompatível: sem predicado, sempre reseta
     assert state_store.load().step == 1
 
 

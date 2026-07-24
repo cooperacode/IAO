@@ -13,9 +13,10 @@ public static class HarnessHost
         string traceSnapshotPath = Trace.LastRunPath,
         string stateSnapshotPath = StateStore.LastRunStatePath,
         IReadOnlyDictionary<string, Func<Envelope, ValidationResult>>? validators = null,
-        int? maxSteps = null)
+        int? maxSteps = null,
+        Func<bool>? shouldResetOnStart = null)
     {
-        var result = TaskRegistry.Dispatch(args, tasks, validators, maxSteps);
+        var result = TaskRegistry.Dispatch(args, tasks, validators, maxSteps, shouldResetOnStart);
 
         // Run concluído: congela trajetória E estado final como evidência para a avaliação
         // posterior, antes que um próximo flow resete o trace e o state vivos. Cada flow

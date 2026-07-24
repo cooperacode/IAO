@@ -26,6 +26,7 @@ def dispatch(
     actions: Mapping[str, Action],
     validators: Mapping[str, Validator] | None = None,
     max_steps: int | None = None,
+    should_reset_on_start: Callable[[], bool] | None = None,
 ) -> str:
     # Argv presente → transporte clássico (retrocompatível). Argv vazio → lê o envelope da
     # inbox em arquivo, o transporte que elimina o hang de aspas do shell (ver inbox).
@@ -39,13 +40,20 @@ def dispatch(
     if from_inbox and envelope is not None:
         inbox.consume()
 
-    # Novo workflow começa do zero — estado e trace são truncados juntos.
     if envelope is not None and envelope.value == "start":
-        state_store.reset()
-        trace.reset()
+        # Novo workflow começa do zero — estado e trace são truncados juntos. Mas um "start"
+        # também chega quando uma sessão fresca (ex.: hard reset por feature do Development)
+        # reabre um run em andamento — nesse caso é RETOMADA, não início, e truncar aqui
+        # apagaria o trace/step acumulados de features anteriores. O flow decide via
+        # should_reset_on_start (ele sabe se há trabalho pendente); sem predicado, o padrão é
+        # sempre resetar (retrocompatível com flows single-shot).
+        if should_reset_on_start is None or should_reset_on_start():
+            state_store.reset()
+            trace.reset()
 
         # Contexto do driver (ex.: {"driver":"claude code"}) nasce aqui e sobrevive no
         # state_store — prompt_formatter o reinjeta em toda saída até o próximo "start".
+        # Independe do reset acima: mesmo numa retomada, o driver atual deve prevalecer.
         if envelope.context:
             state_store.set_context(envelope.context)
 

@@ -36,9 +36,12 @@ var validators = new Dictionary<string, Func<Envelope, ValidationResult>>
 // workspace), ele NÃO pode sobrescrever o last-run.* que a avaliação consome. Congela no seu
 // próprio caminho — como a avaliação faz com last-evaluation.*.
 // maxSteps: override do teto global (12) — este flow é long-running e precisa de folga p/ o loop.
+// shouldResetOnStart: um "start" também chega no hard reset por feature (sessão fresca que
+// reabre um run em andamento) — só é run novo de verdade quando não há feature pendente.
 return HarnessHost.Run(
     args, tasks,
     traceSnapshotPath: ".harness/last-development.trace.jsonl",
     stateSnapshotPath: ".harness/last-development.state.json",
     validators: validators,
-    maxSteps: DevelopmentTasks.StepBudget);
+    maxSteps: DevelopmentTasks.StepBudget,
+    shouldResetOnStart: () => FeatureStore.PendingCount() == 0);
