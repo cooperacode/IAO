@@ -46,14 +46,25 @@ contract and no real need to govern multiple iterations.
 ## Structure
 
 ```mermaid
-flowchart LR
-    brief["Brief<br/>docs/*.md or docs/*.txt"]
+graph TB
+    subgraph "Inverted Agentic Orchestration"
+    direction LR
+    brief[/"Brief<br/>docs/*.md or docs/*.txt"/]
     harness["Deterministic harness<br/>state machine + validation"]
+    state[(.harness/<br/>state, trace, feature list, log)]
+    end
+
+    subgraph "Protocol"
+    direction TD
+    response["stdin<br/>JSON contract"]
     stdout["stdout<br/>next instruction"]
-    agent["IDE agent<br/>Codex, Claude, Copilot, or Devin"]
-    response["Structured response<br/>JSON contract"]
-    state[".harness/<br/>state, trace, feature list"]
-    code["Project code<br/>changes + verification"]
+    end
+
+    subgraph "Driver"
+    direction LR
+    agent["IDE agent<br/>Codex, Claude, Copilot etc."]
+    code[/"Project code<br/>changes + verification"/]
+    end
 
     brief --> harness
     harness --> stdout

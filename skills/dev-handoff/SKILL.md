@@ -18,12 +18,24 @@ Não inclua logs completos no commit. Logs operacionais do harness devem ficar e
 quando ele explicar como investigar uma falha/validação.
 
 ## 2. Atualizar o progresso
-Anexe uma linha ao `progress.txt` com: a feature concluída (id + título), o que foi
-feito, e como verificar. É o que a próxima sessão lê no `bearings` para se orientar.
+Anexe **uma única linha física** ao `progress.txt` com: a feature concluída (id + título), o
+que foi feito, e como verificar. É o que a próxima sessão lê no `bearings` para se orientar —
+um `tail -n 20` só funciona como resumo rápido se cada entrada couber numa linha.
 
-Prefixe a linha com um timestamp UTC entre colchetes (`date -u +"%Y-%m-%d %H:%M UTC"`) — é o
-separador leve entre sessões, sem precisar de cabeçalhos ou blocos multi-linha:
+Antes de escrever, rode de fato `date -u +"%Y-%m-%d %H:%M UTC"` no shell e use a saída literal
+como prefixo entre colchetes — nunca escreva `UTC` sem hora (isso quebra o parsing do
+timestamp e o propósito do prefixo como separador entre sessões):
 `[2026-07-21 20:18 UTC] Feature #8 - Filtrar listagem...: <o que foi feito>. Verificar com: ...`
+
+Nunca quebre a entrada em parágrafos/blocos multi-linha, por mais detalhado que seja o que foi
+feito — resuma. Se sentir necessidade de mais detalhe do que cabe numa linha, esse detalhe
+pertence a `.harness/logs/` (citado por caminho), não ao `progress.txt`.
+
+Antes de anexar, confira as últimas linhas do `progress.txt`: se o handoff automático do
+harness já registrou uma entrada `[data HH:MM UTC] Feature #<id> - ...` para esta mesma
+feature, não crie uma segunda — isso duplica o registro em dois formatos diferentes para o
+mesmo trabalho. Este passo manual é para preencher a lacuna quando o handoff automático falhou
+ou não rodou, não para complementar uma entrada que já existe.
 
 Escreva de forma que alguém sem o seu contexto entenda em 10 segundos onde o trabalho está.
 

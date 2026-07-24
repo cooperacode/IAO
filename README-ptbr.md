@@ -48,14 +48,25 @@ contrato de retorno e sem necessidade real de governar várias iterações.
 ## Estrutura
 
 ```mermaid
-flowchart LR
-    brief["Brief<br/>docs/*.md ou docs/*.txt"]
-    harness["Harness determinístico<br/>máquina de estados + validação"]
-    stdout["stdout<br/>próxima instrução"]
-    agent["Agente de IDE<br/>Codex, Claude, Copilot ou Devin"]
-    response["Resposta estruturada<br/>contrato JSON"]
-    state[".harness/<br/>estado, trace, lista de features"]
-    code["Código do projeto<br/>alterações + verificação"]
+graph TB
+    subgraph "Inverted Agentic Orchestration"
+    direction LR
+    brief[/"Brief<br/>docs/*.md or docs/*.txt"/]
+    harness["Deterministic harness<br/>state machine + validation"]
+    state[(.harness/<br/>state, trace, feature list, log)]
+    end
+
+    subgraph "Protocol"
+    direction TD
+    response["stdin<br/>JSON contract"]
+    stdout["stdout<br/>next instruction"]
+    end
+
+    subgraph "Driver"
+    direction LR
+    agent["IDE agent<br/>Codex, Claude, Copilot etc."]
+    code[/"Project code<br/>changes + verification"/]
+    end
 
     brief --> harness
     harness --> stdout
@@ -64,8 +75,9 @@ flowchart LR
     agent --> response
     response --> harness
     harness <--> state
-    harness -->|stop| done["Fluxo concluído"]
+    harness -->|stop| done["Flow complete"]
 ```
+
 
 Fluxo de desenvolvimento:
 
