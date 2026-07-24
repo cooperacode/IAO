@@ -112,7 +112,8 @@ cp harness.json "$OUT/harness.json"   # config das variáveis do harness (tetos,
 mkdir -p "$OUT/scripts"
 cp scripts/*.py "$OUT/scripts/"
 
-# ---- por fluxo: publish AOT, binário, wrapper(s) e adaptador ----
+# ---- por fluxo: publish AOT (com fallback self-contained), binário, wrapper(s) e adaptador ----
+AOT_FALLBACK_FLOWS=()
 for flow in "${FLOWS[@]}"; do
   project="$(project_for "$flow")"
   assembly="$(assembly_for "$flow")"
@@ -120,7 +121,16 @@ for flow in "${FLOWS[@]}"; do
   bin="$assembly$WINEXT"
 
   echo "[package] publicando Native AOT — $flow ($RID)…"
-  dotnet publish "$project" -c Release -r "$RID" -p:PublishAot=true
+  if ! dotnet publish "$project" -c Release -r "$RID" -p:PublishAot=true; then
+    # Falha comum: falta o toolchain nativo do host (ex.: Xcode Command Line Tools/clang no
+    # macOS, clang+zlib1g-dev no Linux) ou o RID alvo é de outro SO (AOT não faz cross-compile
+    # — ver aviso acima). Fallback: publish self-contained SEM AOT — ainda roda sem exigir
+    # .NET instalado na máquina-alvo (runtime vai embutido no pacote), só troca o binário
+    # nativo por um apphost maior e com startup via JIT em vez de código de máquina direto.
+    echo "[package] [aviso] publish AOT falhou para '$flow' ($RID); tentando fallback self-contained (sem AOT)…" >&2
+    dotnet publish "$project" -c Release -r "$RID" --self-contained true -p:PublishAot=false
+    AOT_FALLBACK_FLOWS+=("$flow")
+  fi
 
   pubdir="$(dirname "$project")/bin/Release/net10.0/$RID/publish"
   [[ -f "$pubdir/$bin" ]] || { echo "[erro] binário não encontrado em $pubdir/$bin" >&2; exit 1; }
@@ -218,6 +228,18 @@ if [[ "$RID" == win-* ]]; then
 "
 fi
 
+FALLBACK_NOTE=""
+if [[ ${#AOT_FALLBACK_FLOWS[@]} -gt 0 ]]; then
+  FALLBACK_NOTE="
+**Aviso — fallback sem Native AOT.** O publish AOT falhou nesta máquina para: ${AOT_FALLBACK_FLOWS[*]}.
+O(s) binário(s) desse(s) fluxo(s) foi(ram) publicado(s) em modo *self-contained* (runtime .NET
+embutido no pacote — a máquina-alvo continua sem precisar instalar o .NET), só maior e com
+startup via JIT em vez de código nativo direto. Para obter o binário Native AOT de verdade,
+rode \`./package.sh\` num host com o toolchain de AOT instalado (Xcode Command Line Tools no
+macOS, clang + zlib1g-dev no Linux) e no mesmo SO do RID alvo (AOT não faz cross-compile).
+"
+fi
+
 cat > "$OUT/START-HERE.md" <<EOF
 # Fluxos — pacote nativo ($RID · v$VERSION · IDE: $IDE)
 
@@ -225,7 +247,7 @@ Pacote autocontido com o fluxo de desenvolvimento em binário nativo (sem runtim
 mais as skills e o adaptador da IDE correspondente. O desenvolvimento constrói o projeto
 feature a feature e salva snapshots em \`last-development.*\` para não colidir com outros
 fluxos do workspace.
-
+$FALLBACK_NOTE
 ## Começar
 
 $START
@@ -249,6 +271,10 @@ O binário deve imprimir um bloco \`<input>\`/\`<response>\` no stdout (ou \`sto
 $WINROW| \`$DEV_REL\` | adaptador de desenvolvimento da IDE escolhida |
 $CONFROW
 EOF
+
+if [[ ${#AOT_FALLBACK_FLOWS[@]} -gt 0 ]]; then
+  echo "[package] [aviso] publicado em fallback self-contained (sem Native AOT) para: ${AOT_FALLBACK_FLOWS[*]} — ver START-HERE.md" >&2
+fi
 
 echo "[package] pronto ✓  → $OUT"
 echo "[package] conteúdo:"
