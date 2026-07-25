@@ -1,9 +1,11 @@
 pub mod artifact_store;
 pub mod artifact_template;
+pub mod batch_evaluator;
 pub mod docs_reader;
 pub mod envelope;
 pub mod envelope_validation;
 pub mod errors;
+pub mod evaluators;
 pub mod feature_store;
 pub mod golden_case_store;
 pub mod harness_config;
