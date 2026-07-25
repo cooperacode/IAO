@@ -1,6 +1,7 @@
 # Build output
 bin/
 obj/
+target/
 
 # Estado de runtime do harness
 .harness/
