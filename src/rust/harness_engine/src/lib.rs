@@ -7,6 +7,7 @@ pub mod envelope_validation;
 pub mod errors;
 pub mod evaluators;
 pub mod feature_store;
+pub mod git_command;
 pub mod golden_case_store;
 pub mod harness_config;
 pub mod harness_host;
