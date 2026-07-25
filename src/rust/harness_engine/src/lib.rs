@@ -1,3 +1,4 @@
+pub mod docs_reader;
 pub mod envelope;
 pub mod envelope_validation;
 pub mod errors;
@@ -6,6 +7,7 @@ pub mod harness_host;
 pub mod harness_state;
 pub mod inbox;
 pub mod path_resolver;
+pub mod prompt_formatter;
 pub mod run_config_store;
 pub mod state_store;
 pub mod task_registry;
