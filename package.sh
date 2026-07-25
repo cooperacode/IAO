@@ -1,44 +1,56 @@
 #!/usr/bin/env bash
-# Empacota uma versão NATIVA (Native AOT) do fluxo de desenvolvimento num pacote
-# autocontido, escolhendo o sistema operacional (RID) e a IDE. O pacote inclui o binário
-# nativo, as skills em runtime e o adaptador de IDE correspondente para o fluxo de
-# desenvolvimento. Gera:
+# Empacota o fluxo de desenvolvimento num pacote autocontido, escolhendo o MOTOR
+# (--engine), o sistema operacional (RID, só para --engine dotnet) e a IDE. O pacote
+# inclui o motor escolhido, as skills em runtime e o adaptador de IDE correspondente.
+# Gera:
 #
-#   dist/flows-<rid>-v<version>/
-#     bin/Flows.Development           # binário nativo do fluxo de desenvolvimento
+#   --engine dotnet → dist/flows-<rid>-v<version>/
+#     bin/Flows.Development           # binário nativo (Native AOT; self-contained se AOT falhar)
 #     skills/                         # skills injetadas em runtime
+#     scripts/                        # usage/correlate — dependência do relatório de custo
 #     run-development.sh (+ .cmd win) # wrapper do desenvolvimento → ./bin
 #     <adaptador da IDE no caminho esperado>
 #     <config de aprovação da IDE>    # executa o wrapper sem prompt por comando
 #     START-HERE.md                   # como rodar o fluxo na IDE escolhida
 #
+#   --engine python → dist/flows-python-v<version>/
+#     engine/harness_engine, engine/flows_development  # motor Python (fonte, sem build)
+#     skills/, scripts/, run-development.sh (+ .cmd)    # mesmo layout, requer python3/python no PATH
+#     <adaptador da IDE>, <config de aprovação>, START-HERE.md
+#
 # Uso:
-#   ./package.sh --os <rid> --ide <claude|copilot|devin|codex> [--version <v>]
+#   ./package.sh --engine <dotnet|python> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
 #   ./package.sh                     # modo interativo (menus)
 #
+# --os/--rid só se aplica a --engine dotnet (Native AOT compila por SO). O engine python
+# roda igual em qualquer SO com o interpretador no PATH — não há RID para ele.
 # RIDs: osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
+ENGINES=(dotnet python)
 RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)
 IDES=(claude copilot devin codex)
 # Neste branch o projeto empacotado é apenas o fluxo de desenvolvimento.
 FLOWS=(development)
 
+ENGINE=""
 RID=""
 IDE=""
 VERSION="1.0.0"
 
 usage() {
-  echo "uso: ./package.sh --os <rid> --ide <claude|copilot|devin|codex> [--version <v>]"
-  echo "RIDs: ${RIDS[*]}"
+  echo "uso: ./package.sh --engine <dotnet|python> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]"
+  echo "engines: ${ENGINES[*]}"
+  echo "RIDs (só --engine dotnet): ${RIDS[*]}"
 }
 
 # ---- parse de argumentos ----
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --engine)   ENGINE="${2:-}"; shift 2;;
     --os|--rid) RID="${2:-}"; shift 2;;
     --ide)      IDE="${2:-}"; shift 2;;
     --version|-v) VERSION="${2:-}"; shift 2;;
@@ -59,6 +71,10 @@ esac; }
 wrapper_for() { case "$1" in
   development) echo "run-development.sh";;
 esac; }
+# só para --engine python: nome do pacote em src/python/ que implementa o fluxo.
+python_module_for() { case "$1" in
+  development) echo "flows_development";;
+esac; }
 # adaptador por IDE+fluxo → "SRC<TAB>REL" (REL = caminho esperado pela IDE dentro do pacote)
 adapter_for() { case "$1:$2" in
   claude:development)  printf '%s\t%s\n' ".claude/agents/development.agent.md"    ".claude/agents/development.agent.md";;
@@ -68,7 +84,13 @@ adapter_for() { case "$1:$2" in
 esac; }
 
 # ---- seleção interativa quando faltar ----
-if [[ -z "$RID" ]]; then
+if [[ -z "$ENGINE" ]]; then
+  echo "Selecione o motor do harness:"
+  select e in "${ENGINES[@]}"; do [[ -n "${e:-}" ]] && ENGINE="$e" && break; done
+fi
+# RID só existe para o engine dotnet (Native AOT compila por SO); o engine python roda
+# igual em qualquer SO com o interpretador no PATH.
+if [[ "$ENGINE" == "dotnet" && -z "$RID" ]]; then
   echo "Selecione o sistema operacional (RID):"
   select r in "${RIDS[@]}"; do [[ -n "${r:-}" ]] && RID="$r" && break; done
 fi
@@ -78,7 +100,13 @@ if [[ -z "$IDE" ]]; then
 fi
 
 # ---- validação ----
-contains "$RID" "${RIDS[@]}" || { echo "RID inválido: '$RID' (use: ${RIDS[*]})" >&2; exit 1; }
+contains "$ENGINE" "${ENGINES[@]}" || { echo "engine inválido: '$ENGINE' (use: ${ENGINES[*]})" >&2; exit 1; }
+if [[ "$ENGINE" == "dotnet" ]]; then
+  contains "$RID" "${RIDS[@]}" || { echo "RID inválido: '$RID' (use: ${RIDS[*]})" >&2; exit 1; }
+elif [[ -n "$RID" ]]; then
+  echo "[aviso] --os '$RID' ignorado: engine 'python' não usa RID (roda em qualquer SO com o interpretador no PATH)." >&2
+  RID=""
+fi
 contains "$IDE" "${IDES[@]}" || { echo "IDE inválida: '$IDE' (use: ${IDES[*]})" >&2; exit 1; }
 [[ -n "$VERSION" ]] || { echo "versão vazia" >&2; exit 1; }
 
@@ -88,21 +116,27 @@ for flow in "${FLOWS[@]}"; do
   [[ -f "$src" ]] || { echo "adaptador não encontrado: $src (ide=$IDE, fluxo=$flow)" >&2; exit 1; }
 done
 
-# ---- aviso: AOT não faz cross-compile entre SOs ----
-HOST_OS="$(uname -s)"
-TARGET_OS="desconhecido"
-case "$RID" in osx-*) TARGET_OS="Darwin";; linux-*) TARGET_OS="Linux";; win-*) TARGET_OS="Windows";; esac
-if [[ "$TARGET_OS" != "desconhecido" && "$HOST_OS" != "$TARGET_OS" ]]; then
-  echo "[aviso] Native AOT compila para o SO do host ($HOST_OS)." >&2
-  echo "[aviso] Alvo '$RID' é $TARGET_OS — rode este script nesse SO (ou num CI) se o publish falhar." >&2
-fi
+if [[ "$ENGINE" == "dotnet" ]]; then
+  # ---- aviso: AOT não faz cross-compile entre SOs ----
+  HOST_OS="$(uname -s)"
+  TARGET_OS="desconhecido"
+  case "$RID" in osx-*) TARGET_OS="Darwin";; linux-*) TARGET_OS="Linux";; win-*) TARGET_OS="Windows";; esac
+  if [[ "$TARGET_OS" != "desconhecido" && "$HOST_OS" != "$TARGET_OS" ]]; then
+    echo "[aviso] Native AOT compila para o SO do host ($HOST_OS)." >&2
+    echo "[aviso] Alvo '$RID' é $TARGET_OS — rode este script nesse SO (ou num CI) se o publish falhar." >&2
+  fi
 
-WINEXT=""; [[ "$RID" == win-* ]] && WINEXT=".exe"
-OUT="dist/flows-$RID-v$VERSION"
+  WINEXT=""; [[ "$RID" == win-* ]] && WINEXT=".exe"
+  OUT="dist/flows-$RID-v$VERSION"
+else
+  WINEXT=""
+  OUT="dist/flows-python-v$VERSION"
+fi
 
 echo "[package] montando $OUT …"
 rm -rf "$OUT"
-mkdir -p "$OUT/bin"
+mkdir -p "$OUT"
+[[ "$ENGINE" == "dotnet" ]] && mkdir -p "$OUT/bin"
 cp -R skills "$OUT/skills"
 cp harness.json "$OUT/harness.json"   # config das variáveis do harness (tetos, docs)
 
@@ -112,43 +146,53 @@ cp harness.json "$OUT/harness.json"   # config das variáveis do harness (tetos,
 mkdir -p "$OUT/scripts"
 cp scripts/*.py "$OUT/scripts/"
 
-# ---- por fluxo: publish AOT (com fallback self-contained), binário, wrapper(s) e adaptador ----
+# ---- engine python: motor é fonte, não build — copia harness_engine (compartilhado entre
+# fluxos) uma vez só, fora do loop por fluxo (o mesmo padrão de skills/ e scripts/ acima) ----
+if [[ "$ENGINE" == "python" ]]; then
+  mkdir -p "$OUT/engine"
+  cp -R "src/python/harness_engine" "$OUT/engine/harness_engine"
+  find "$OUT/engine/harness_engine" -name "__pycache__" -type d -exec rm -rf {} +
+fi
+
+# ---- por fluxo: motor (build .NET ou cópia da fonte Python), wrapper(s) e adaptador ----
 AOT_FALLBACK_FLOWS=()
 for flow in "${FLOWS[@]}"; do
-  project="$(project_for "$flow")"
-  assembly="$(assembly_for "$flow")"
   wrapper="$(wrapper_for "$flow")"
-  bin="$assembly$WINEXT"
 
-  echo "[package] publicando Native AOT — $flow ($RID)…"
-  used_fallback=false
-  if ! dotnet publish "$project" -c Release -r "$RID" -p:PublishAot=true; then
-    # Falha comum: falta o toolchain nativo do host (ex.: Xcode Command Line Tools/clang no
-    # macOS, clang+zlib1g-dev no Linux) ou o RID alvo é de outro SO (AOT não faz cross-compile
-    # — ver aviso acima). Fallback: publish self-contained SEM AOT — ainda roda sem exigir
-    # .NET instalado na máquina-alvo (runtime vai embutido no pacote), só troca o binário
-    # nativo por um apphost maior e com startup via JIT em vez de código de máquina direto.
-    echo "[package] [aviso] publish AOT falhou para '$flow' ($RID); tentando fallback self-contained (sem AOT)…" >&2
-    dotnet publish "$project" -c Release -r "$RID" --self-contained true -p:PublishAot=false
-    used_fallback=true
-    AOT_FALLBACK_FLOWS+=("$flow")
-  fi
+  if [[ "$ENGINE" == "dotnet" ]]; then
+    project="$(project_for "$flow")"
+    assembly="$(assembly_for "$flow")"
+    bin="$assembly$WINEXT"
 
-  pubdir="$(dirname "$project")/bin/Release/net10.0/$RID/publish"
-  [[ -f "$pubdir/$bin" ]] || { echo "[erro] binário não encontrado em $pubdir/$bin" >&2; exit 1; }
-  if [[ "$used_fallback" == true ]]; then
-    # Self-contained NÃO é um binário único: o apphost ($bin) carrega a .dll companheira,
-    # o *.deps.json/*.runtimeconfig.json e as libs nativas do runtime, todos no mesmo
-    # diretório. Copiar só o apphost quebra a execução ("application to execute does not
-    # exist: ...dll") — precisa do publish/ inteiro.
-    cp -R "$pubdir/." "$OUT/bin/"
-  else
-    # Native AOT é de fato um binário único e autocontido — só ele.
-    cp "$pubdir/$bin" "$OUT/bin/"
-  fi
+    echo "[package] publicando Native AOT — $flow ($RID)…"
+    used_fallback=false
+    if ! dotnet publish "$project" -c Release -r "$RID" -p:PublishAot=true; then
+      # Falha comum: falta o toolchain nativo do host (ex.: Xcode Command Line Tools/clang no
+      # macOS, clang+zlib1g-dev no Linux) ou o RID alvo é de outro SO (AOT não faz cross-compile
+      # — ver aviso acima). Fallback: publish self-contained SEM AOT — ainda roda sem exigir
+      # .NET instalado na máquina-alvo (runtime vai embutido no pacote), só troca o binário
+      # nativo por um apphost maior e com startup via JIT em vez de código de máquina direto.
+      echo "[package] [aviso] publish AOT falhou para '$flow' ($RID); tentando fallback self-contained (sem AOT)…" >&2
+      dotnet publish "$project" -c Release -r "$RID" --self-contained true -p:PublishAot=false
+      used_fallback=true
+      AOT_FALLBACK_FLOWS+=("$flow")
+    fi
 
-  # wrapper .sh
-  cat > "$OUT/$wrapper" <<EOF
+    pubdir="$(dirname "$project")/bin/Release/net10.0/$RID/publish"
+    [[ -f "$pubdir/$bin" ]] || { echo "[erro] binário não encontrado em $pubdir/$bin" >&2; exit 1; }
+    if [[ "$used_fallback" == true ]]; then
+      # Self-contained NÃO é um binário único: o apphost ($bin) carrega a .dll companheira,
+      # o *.deps.json/*.runtimeconfig.json e as libs nativas do runtime, todos no mesmo
+      # diretório. Copiar só o apphost quebra a execução ("application to execute does not
+      # exist: ...dll") — precisa do publish/ inteiro.
+      cp -R "$pubdir/." "$OUT/bin/"
+    else
+      # Native AOT é de fato um binário único e autocontido — só ele.
+      cp "$pubdir/$bin" "$OUT/bin/"
+    fi
+
+    # wrapper .sh
+    cat > "$OUT/$wrapper" <<EOF
 #!/usr/bin/env bash
 # Inicia um passo do fluxo '$flow'. Rode a partir desta pasta (o estado e as skills
 # são relativos a ela). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
@@ -157,15 +201,47 @@ DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 cd "\$DIR"
 exec "./bin/$bin" "\$@"
 EOF
-  chmod +x "$OUT/$wrapper"
+    chmod +x "$OUT/$wrapper"
 
-  # wrapper .cmd (Windows)
-  if [[ "$RID" == win-* ]]; then
+    # wrapper .cmd (Windows)
+    if [[ "$RID" == win-* ]]; then
+      cmd="${wrapper%.sh}.cmd"
+      cat > "$OUT/$cmd" <<EOF
+@echo off
+cd /d "%~dp0"
+"bin\\$bin" %*
+EOF
+    fi
+  else
+    module="$(python_module_for "$flow")"
+
+    echo "[package] copiando motor Python — ${flow}…"
+    cp -R "src/python/$module" "$OUT/engine/$module"
+    find "$OUT/engine/$module" -name "__pycache__" -type d -exec rm -rf {} +
+
+    # wrapper .sh — PYTHONPATH aponta pro engine/ (harness_engine + módulo do fluxo,
+    # pacotes-irmãos); cwd fica na raiz do pacote, mesma convenção do wrapper .NET, pois
+    # .harness/ e docs/ são relativos a cwd.
+    cat > "$OUT/$wrapper" <<EOF
+#!/usr/bin/env bash
+# Inicia um passo do fluxo '$flow'. Rode a partir desta pasta (o estado e as skills
+# são relativos a ela). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
+set -euo pipefail
+DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+cd "\$DIR"
+PYTHONPATH="\$DIR/engine\${PYTHONPATH:+:\$PYTHONPATH}" exec python3 -m $module "\$@"
+EOF
+    chmod +x "$OUT/$wrapper"
+
+    # wrapper .cmd — sempre gerado (engine python roda em qualquer SO, ao contrário do
+    # binário .NET que só ganha .cmd quando o RID é win-*). Usa "python" (convenção do
+    # instalador oficial do Windows), não "python3" (usado no .sh para macOS/Linux).
     cmd="${wrapper%.sh}.cmd"
     cat > "$OUT/$cmd" <<EOF
 @echo off
 cd /d "%~dp0"
-"bin\\$bin" %*
+set PYTHONPATH=%~dp0engine;%PYTHONPATH%
+python -m $module %*
 EOF
   fi
 
@@ -234,7 +310,7 @@ case "$IDE" in
 esac
 
 WINROW=""
-if [[ "$RID" == win-* ]]; then
+if { [[ "$ENGINE" == "dotnet" ]] && [[ "$RID" == win-* ]]; } || [[ "$ENGINE" == "python" ]]; then
   WINROW="| \`run-development.cmd\` | wrapper de execução no Windows |
 "
 fi
@@ -251,11 +327,24 @@ macOS, clang + zlib1g-dev no Linux) e no mesmo SO do RID alvo (AOT não faz cros
 "
 fi
 
-cat > "$OUT/START-HERE.md" <<EOF
-# Fluxos — pacote nativo ($RID · v$VERSION · IDE: $IDE)
+if [[ "$ENGINE" == "dotnet" ]]; then
+  TITLE_META="$RID · v$VERSION · IDE: $IDE · engine: dotnet (Native AOT)"
+  ENGINE_INTRO="Pacote autocontido com o fluxo de desenvolvimento em binário nativo (sem runtime .NET),
+mais as skills e o adaptador da IDE correspondente."
+  ENGINE_ROW="| \`bin/Flows.Development$WINEXT\` | binário nativo do fluxo de desenvolvimento |"
+else
+  TITLE_META="python · v$VERSION · IDE: $IDE · engine: python"
+  ENGINE_INTRO="Pacote com o fluxo de desenvolvimento no motor Python (\`engine/\`, fonte — sem build),
+mais as skills e o adaptador da IDE correspondente. **Requer \`python3\` (macOS/Linux) ou
+\`python\` (Windows) no PATH da máquina-alvo** — ao contrário do pacote \`--engine dotnet\`, este
+não embute um binário autocontido."
+  ENGINE_ROW="| \`engine/\` | motor Python — \`harness_engine/\` + \`flows_development/\` (fonte, requer python3/python no PATH) |"
+fi
 
-Pacote autocontido com o fluxo de desenvolvimento em binário nativo (sem runtime .NET),
-mais as skills e o adaptador da IDE correspondente. O desenvolvimento constrói o projeto
+cat > "$OUT/START-HERE.md" <<EOF
+# Fluxos — pacote ($TITLE_META)
+
+$ENGINE_INTRO O desenvolvimento constrói o projeto
 feature a feature e salva snapshots em \`last-development.*\` para não colidir com outros
 fluxos do workspace.
 $FALLBACK_NOTE
@@ -274,7 +363,7 @@ O binário deve imprimir um bloco \`<input>\`/\`<response>\` no stdout (ou \`sto
 
 | Caminho | O quê |
 |---|---|
-| \`bin/Flows.Development$WINEXT\` | binário nativo do fluxo de desenvolvimento |
+$ENGINE_ROW
 | \`skills/\` | skills injetadas em runtime |
 | \`scripts/\` | usage/correlate dos drivers — dependência do relatório de custo (\`skills/session-report\`) |
 | \`harness.json\` | config do harness: tetos de passos/custo/tempo e pasta de docs |

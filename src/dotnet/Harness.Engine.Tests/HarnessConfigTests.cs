@@ -15,6 +15,7 @@ public class HarnessConfigTests : IDisposable
     {
         if (File.Exists(ConfigPath))
             File.Delete(ConfigPath);
+        Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", null);
         HarnessConfig.Reload();
     }
 
@@ -76,5 +77,41 @@ public class HarnessConfigTests : IDisposable
         var config = HarnessConfig.Load();
 
         Assert.Equal(HarnessConfig.Default, config);
+    }
+
+    [Fact]
+    public void Load_TimeoutAcimaDoTeto_ClampaNoMaximoPermitido()
+    {
+        // harness.json vive no working directory do agente supervisionado: mesmo que ele
+        // edite o arquivo para se auto-conceder um timeout enorme, o teto duro prevalece.
+        File.WriteAllText(ConfigPath, """{"timeoutMs":99999999}""");
+
+        Assert.Equal(5 * 60_000, HarnessConfig.Load().TimeoutMs);
+    }
+
+    [Fact]
+    public void Load_ComEnvVar_SobrepoeOTimeoutDoArquivo()
+    {
+        File.WriteAllText(ConfigPath, """{"timeoutMs":1000}""");
+        Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", "2000");
+
+        Assert.Equal(2000, HarnessConfig.Load().TimeoutMs);
+    }
+
+    [Fact]
+    public void Load_EnvVarTambemRespeitaOTeto()
+    {
+        Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", "99999999");
+
+        Assert.Equal(5 * 60_000, HarnessConfig.Load().TimeoutMs);
+    }
+
+    [Fact]
+    public void Load_EnvVarInvalida_EIgnorada()
+    {
+        File.WriteAllText(ConfigPath, """{"timeoutMs":1000}""");
+        Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", "não é número");
+
+        Assert.Equal(1000, HarnessConfig.Load().TimeoutMs);
     }
 }

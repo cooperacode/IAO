@@ -79,6 +79,18 @@ def test_step_budget_cortado_pelo_teto_falha():
     assert not evaluators.step_budget(trace_entries).passed
 
 
+def test_step_budget_cortado_pelo_timeout_falha_e_distingue_de_nao_terminou():
+    trace_entries = [
+        TraceEntry(1, "classify", TraceOutcome.INSTRUCTION, 100, ""),
+        TraceEntry(2, "slow", TraceOutcome.TIMEOUT, 4, ""),
+    ]
+
+    score = evaluators.step_budget(trace_entries)
+
+    assert not score.passed
+    assert score.detail == "cortado pelo teto de tempo (timeout)"
+
+
 def test_commands_of_ignora_voltas_de_erro_por_padrao():
     trace_entries = [
         TraceEntry(1, "start", TraceOutcome.INSTRUCTION, 100, ""),

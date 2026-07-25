@@ -94,6 +94,21 @@ public class EvaluatorsTests
     }
 
     [Fact]
+    public void StepBudget_CortadoPeloTimeout_FalhaEDistingueDeNaoTerminou()
+    {
+        var trace = new[]
+        {
+            new TraceEntry(1, "classify", TraceOutcome.Instruction, 100, default),
+            new TraceEntry(2, "slow", TraceOutcome.Timeout, 4, default),
+        };
+
+        var score = Evaluators.StepBudget(trace);
+
+        Assert.False(score.Passed);
+        Assert.Equal("cortado pelo teto de tempo (timeout)", score.Detail);
+    }
+
+    [Fact]
     public void CommandsOf_IgnoraVoltasDeErroPorPadrao()
     {
         var trace = new[]

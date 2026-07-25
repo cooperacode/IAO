@@ -55,18 +55,23 @@ def completeness(state: HarnessState, required_keys: list[str]) -> Score:
 
 
 def step_budget(trace_entries: list[TraceEntry]) -> Score:
-    """Terminou em `TraceOutcome.STOP` sem ter batido no teto de passos."""
+    """Terminou em `TraceOutcome.STOP` sem ter batido no teto de passos nem no de tempo
+    (`TraceOutcome.TIMEOUT`) — ambos ficariam indistinguíveis de uma trajetória simplesmente
+    incompleta se não fossem checados à parte."""
     hit_budget = any(e.outcome == TraceOutcome.BUDGET for e in trace_entries)
+    hit_timeout = any(e.outcome == TraceOutcome.TIMEOUT for e in trace_entries)
     terminated = any(e.outcome == TraceOutcome.STOP for e in trace_entries)
 
     if hit_budget:
         detail = "cortado pelo teto de passos"
+    elif hit_timeout:
+        detail = "cortado pelo teto de tempo (timeout)"
     elif terminated:
         detail = "concluído dentro do teto"
     else:
         detail = "não terminou"
 
-    return Score("budget", 1.0 if not hit_budget and terminated else 0.0, detail)
+    return Score("budget", 1.0 if not hit_budget and not hit_timeout and terminated else 0.0, detail)
 
 
 def commands_of(trace_entries: list[TraceEntry], include_errors: bool = False) -> list[str]:

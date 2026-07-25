@@ -33,6 +33,18 @@ public record HarnessConfig(
 
     private const string FilePath = "harness.json";
 
+    // Teto duro do timeoutMs, independente da fonte (harness.json OU a env var abaixo).
+    // harness.json vive no working directory que o próprio agente supervisionado controla:
+    // sem este teto, o agente poderia editar o arquivo para se auto-conceder um timeout
+    // arbitrariamente alto e nunca ser cortado pela guarda de tempo (ver TaskRegistry).
+    private const int MaxAllowedTimeoutMs = 5 * 60_000;
+
+    // Quando definida, sobrepõe o timeoutMs do harness.json. Ao contrário do arquivo, a env
+    // var é definida pelo processo pai que invoca cada passo do harness — fora do working
+    // directory que o agente supervisionado controla — então não pode ser auto-editada pelo
+    // mesmo agente que o timeout deveria conter.
+    private const string TimeoutMsEnvVar = "HARNESS_TIMEOUT_MS";
+
     // Carregada uma vez por processo (cada invocação do harness é um processo novo, então
     // "uma vez" = "por volta do loop"). Leitores estáticos — DocsReader, RefinementTasks —
     // consomem daqui sem precisar receber a config por parâmetro.
@@ -45,23 +57,33 @@ public record HarnessConfig(
     /// <summary>Relê o <c>harness.json</c> do disco; qualquer falha devolve <see cref="Default"/>.</summary>
     public static HarnessConfig Load()
     {
+        var config = Default;
         try
         {
             var path = PathResolver.Resolve(FilePath);
             if (File.Exists(path))
             {
                 var json = File.ReadAllText(path);
-                var config = JsonSerializer.Deserialize(json, HarnessJsonContext.Default.HarnessConfig);
-                if (config is not null)
-                    return Normalize(config);
+                var parsed = JsonSerializer.Deserialize(json, HarnessJsonContext.Default.HarnessConfig);
+                if (parsed is not null)
+                    config = parsed;
             }
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[HarnessConfig] falha ao carregar; usando defaults: {ex.Message}");
+            config = Default;
         }
 
-        return Default;
+        return Normalize(ApplyTimeoutEnvOverride(config));
+    }
+
+    // Ver TimeoutMsEnvVar. Ausente/inválida é ignorada silenciosamente — mesma tolerância do
+    // resto da config: é insumo opcional, não pode derrubar o run.
+    private static HarnessConfig ApplyTimeoutEnvOverride(HarnessConfig config)
+    {
+        var raw = Environment.GetEnvironmentVariable(TimeoutMsEnvVar);
+        return int.TryParse(raw, out var timeoutMs) ? config with { TimeoutMs = timeoutMs } : config;
     }
 
     // Um harness.json parcial deserializa os campos ausentes como 0/null. Zero é válido só
@@ -72,6 +94,6 @@ public record HarnessConfig(
         MaxInstructionChars = int.Max(config.MaxInstructionChars, 0),
         DocsMaxChars = config.DocsMaxChars > 0 ? config.DocsMaxChars : Default.DocsMaxChars,
         DocsFolder = string.IsNullOrWhiteSpace(config.DocsFolder) ? Default.DocsFolder : config.DocsFolder,
-        TimeoutMs = int.Max(config.TimeoutMs, 0),
+        TimeoutMs = int.Clamp(config.TimeoutMs, 0, MaxAllowedTimeoutMs),
     };
 }

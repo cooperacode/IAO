@@ -6,6 +6,7 @@ Ausente ou ilegível → cai nos defaults: config é insumo opcional, não pode 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -13,6 +14,18 @@ from pathlib import Path
 from harness_engine import path_resolver
 
 _FILE_PATH = "harness.json"
+
+# Teto duro do timeout_ms, independente da fonte (harness.json OU a env var abaixo).
+# harness.json vive no working directory que o próprio agente supervisionado controla: sem
+# este teto, o agente poderia editar o arquivo para se auto-conceder um timeout
+# arbitrariamente alto e nunca ser cortado pela guarda de tempo (ver task_registry).
+_MAX_ALLOWED_TIMEOUT_MS = 5 * 60_000
+
+# Quando definida, sobrepõe o timeout_ms do harness.json. Ao contrário do arquivo, a env var
+# é definida pelo processo pai que invoca cada passo do harness — fora do working directory
+# que o agente supervisionado controla — então não pode ser auto-editada pelo mesmo agente
+# que o timeout deveria conter.
+_TIMEOUT_MS_ENV_VAR = "HARNESS_TIMEOUT_MS"
 
 
 @dataclass(frozen=True)
@@ -54,12 +67,25 @@ def _normalize(config: HarnessConfig) -> HarnessConfig:
         max_instruction_chars=max(config.max_instruction_chars, 0),
         docs_max_chars=config.docs_max_chars if config.docs_max_chars > 0 else DEFAULT.docs_max_chars,
         docs_folder=config.docs_folder.strip() if config.docs_folder and config.docs_folder.strip() else DEFAULT.docs_folder,
-        timeout_ms=max(config.timeout_ms, 0),
+        timeout_ms=min(max(config.timeout_ms, 0), _MAX_ALLOWED_TIMEOUT_MS),
     )
+
+
+def _apply_timeout_env_override(config: HarnessConfig) -> HarnessConfig:
+    """Ver `_TIMEOUT_MS_ENV_VAR`. Ausente/inválida é ignorada silenciosamente — mesma
+    tolerância do resto da config: é insumo opcional, não pode derrubar o run."""
+    raw = os.environ.get(_TIMEOUT_MS_ENV_VAR)
+    if raw is None:
+        return config
+    try:
+        return replace(config, timeout_ms=int(raw))
+    except ValueError:
+        return config
 
 
 def load() -> HarnessConfig:
     """Relê o `harness.json` do disco; qualquer falha devolve os defaults."""
+    config = DEFAULT
     try:
         path = Path(path_resolver.resolve(_FILE_PATH))
         if path.exists():
@@ -71,11 +97,11 @@ def load() -> HarnessConfig:
                 docs_folder=str(payload.get("docsFolder") or ""),
                 timeout_ms=int(payload.get("timeoutMs", 0) or 0),
             )
-            return _normalize(config)
     except Exception as ex:
         print(f"[HarnessConfig] falha ao carregar; usando defaults: {ex}", file=sys.stderr)
+        config = DEFAULT
 
-    return DEFAULT
+    return _normalize(_apply_timeout_env_override(config))
 
 
 def reload() -> HarnessConfig:

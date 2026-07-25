@@ -43,14 +43,20 @@ public static class Evaluators
         return new("completeness", value, $"{filled}/{requiredKeys.Count} chaves preenchidas");
     }
 
-    /// <summary>Terminou em <see cref="TraceOutcome.Stop"/> sem ter batido no teto de passos.</summary>
+    /// <summary>
+    /// Terminou em <see cref="TraceOutcome.Stop"/> sem ter batido no teto de passos nem no
+    /// de tempo (<see cref="TraceOutcome.Timeout"/>) — ambos ficariam indistinguíveis de uma
+    /// trajetória simplesmente incompleta se não fossem checados à parte.
+    /// </summary>
     public static Score StepBudget(IReadOnlyList<TraceEntry> trace)
     {
         var hitBudget = trace.Any(e => e.Outcome == TraceOutcome.Budget);
+        var hitTimeout = trace.Any(e => e.Outcome == TraceOutcome.Timeout);
         var terminated = trace.Any(e => e.Outcome == TraceOutcome.Stop);
 
-        return new("budget", !hitBudget && terminated ? 1.0 : 0.0,
+        return new("budget", !hitBudget && !hitTimeout && terminated ? 1.0 : 0.0,
             hitBudget ? "cortado pelo teto de passos"
+            : hitTimeout ? "cortado pelo teto de tempo (timeout)"
             : terminated ? "concluído dentro do teto"
             : "não terminou");
     }
