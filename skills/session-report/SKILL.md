@@ -15,10 +15,12 @@ Gera um relatorio HTML autocontido que correlaciona os passos do harness
 O driver é `skills/session-report/generate_report.py`. Ele encadeia dois scripts já
 existentes, não reimplementa nada:
 
-1. `scripts/<driver>_usage.py --json` — descobre a sessão mais recente (maior `last_ts`)
-   daquele driver para este repo.
+1. `scripts/<driver>_usage.py --json` — descobre a sessão aderente ao trace daquele driver
+   para este repo. Para Codex, escolhe a sessão com maior sobreposição temporal e usa sua
+   árvore de subagentes; para os demais drivers, usa a sessão de maior `last_ts`.
 2. `scripts/harness_cost_correlate.py --usage-source <driver> --session <id> --trace-file .harness/trace.jsonl --json`
-   — correlaciona os passos do trace com o consumo daquela sessão.
+   — correlaciona os passos do trace com o consumo daquela sessão. No Codex, o caminho
+   automático usa `--session-tree <id>` para incluir todos os descendentes.
 3. Normaliza e renderiza o HTML.
 
 ```bash
@@ -38,13 +40,17 @@ atribuídos, $11.46 total, 42m 40s de duração.
 
 ```bash
 skills/session-report/generate_report.py --driver claude --session <session-id>
+skills/session-report/generate_report.py --driver codex --session-tree <session-id>
 skills/session-report/generate_report.py --driver codex --trace-file .harness/last-development.trace.jsonl
 skills/session-report/generate_report.py --driver claude --out-dir /tmp/relatorios
 ```
 
-`--session` pula a auto-detecção. `--trace-file` aponta para outro trace (default:
-`.harness/trace.jsonl`; o repo também mantém `.harness/last-development.trace.jsonl`, um
-snapshot idêntico da última execução).
+`--session` pula a auto-detecção e mantém o filtro estrito de uma única sessão.
+`--session-tree` (Codex) inclui a raiz e todos os subagentes descendentes. Sem nenhum dos
+dois, o relatório Codex seleciona automaticamente a sessão com maior sobreposição ao trace
+e agrega sua árvore. `--trace-file` aponta para outro trace (default: `.harness/trace.jsonl`;
+o repo também mantém `.harness/last-development.trace.jsonl`, um snapshot idêntico da última
+execução).
 
 ## Pré-requisitos
 
@@ -56,8 +62,9 @@ snapshot idêntico da última execução).
 
 ## O que o relatorio mostra
 
-- **KPIs**: passos, erros, custo atribuído (soma dos passos), custo total da sessão (inclui
-  consumo pós-último-passo, "não atribuído"), tokens totais, custo médio/passo.
+- **KPIs**: passos, erros, quantidade de sessões correlacionadas, custo atribuído (soma dos
+  passos), custo total do escopo (inclui consumo pós-último-passo, "não atribuído"), tokens
+  totais, custo médio/passo.
 - **Custo por comando** — gráfico de barras horizontal + tabela (cores atribuídas
   dinamicamente aos comandos vistos no trace, não fixas).
 - **Telemetria por comando** — duração da janela correlacionada, eventos de token,
@@ -82,14 +89,12 @@ que dependem de `feature_list.json` e análise Roslyn — fora do escopo desta s
 
 ## Gotchas
 
-- **A correlação é por janela de tempo, não por chave compartilhada** — igual ao
-  `harness_cost_correlate.py` original: se a sessão auto-detectada (maior `last_ts`) for
-  *posterior* ao trace (ex.: você já terminou o harness ontem e hoje abriu uma sessão nova só
-  pra gerar o relatório), todo o consumo dessa sessão cai em "não atribuído" e cada passo
-  aparece com custo `$0.00`. **Confirmado nesta sessão**: rodar sem `--session` pegou a sessão
-  de hoje (que não tem overlap com o trace de ontem) e todos os 57 passos saíram zerados, com
-  os 7M tokens jogados em "não atribuído". Para um relatório útil de uma execução passada,
-  passe `--session <id-da-sessao-que-rodou-o-harness>` explicitamente.
+- **A correlação é por janela de tempo, não por chave compartilhada** — o Codex agora evita
+  selecionar uma conversa posterior ao preferir a sessão com maior sobreposição temporal ao
+  trace e inclui sua árvore de subagentes. Se não houver qualquer sobreposição, ainda existe
+  fallback para a sessão de maior `last_ts`; nesse caso, passe
+  `--session-tree <id-da-raiz-que-rodou-o-harness>` explicitamente. Claude e Copilot mantêm a
+  seleção por `last_ts` e podem exigir `--session`.
 - **Sem trace, sem relatório**: `harness_cost_correlate.py` exige um `--trace-file` existente
   — não há fallback para "resumo geral sem passos". Se `.harness/trace.jsonl` não existir
   (nenhuma execução do harness ainda), o driver falha com uma mensagem apontando para rodar o

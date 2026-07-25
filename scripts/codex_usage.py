@@ -15,6 +15,7 @@ Uso:
     scripts/codex_usage.py
     scripts/codex_usage.py --by-session
     scripts/codex_usage.py --session <uuid> --json
+    scripts/codex_usage.py --session-tree <uuid> --json
     scripts/codex_usage.py --all-repos --since 2026-07-01
 """
 
@@ -205,7 +206,7 @@ class SessionUsage:
     session_id: str
     path: Path
     cwd: str | None = None
-    source: str | None = None
+    source: str | dict | None = None
     model_provider: str | None = None
     first_ts: str | None = None
     last_ts: str | None = None
@@ -424,13 +425,77 @@ def session_matches_repo(session: SessionUsage, repo: Path | None) -> bool:
     if not session.cwd:
         return False
     cwd = _resolve(session.cwd)
-    return cwd == repo or _is_relative_to(cwd, repo)
+    resolved_repo = _resolve(repo)
+    return cwd == resolved_repo or _is_relative_to(cwd, resolved_repo)
+
+
+def session_parent_id(session: SessionUsage) -> str | None:
+    """Retorna o parent thread gravado pelo Codex para sessoes de subagente."""
+    source = session.source
+    if not isinstance(source, dict):
+        return None
+    subagent = source.get("subagent")
+    if not isinstance(subagent, dict):
+        return None
+    thread_spawn = subagent.get("thread_spawn")
+    if not isinstance(thread_spawn, dict):
+        return None
+    parent_id = thread_spawn.get("parent_thread_id")
+    return parent_id if isinstance(parent_id, str) and parent_id else None
+
+
+def session_tree_ids(
+    sessions: Iterable[SessionUsage],
+    root_session_id: str,
+) -> set[str]:
+    """Seleciona a raiz e todos os descendentes, em qualquer profundidade."""
+    sessions_list = list(sessions)
+    known_ids = {session.session_id for session in sessions_list}
+    if root_session_id not in known_ids:
+        return set()
+
+    children_by_parent: dict[str, set[str]] = defaultdict(set)
+    for session in sessions_list:
+        parent_id = session_parent_id(session)
+        if parent_id:
+            children_by_parent[parent_id].add(session.session_id)
+
+    selected = {root_session_id}
+    pending = [root_session_id]
+    while pending:
+        parent_id = pending.pop()
+        for child_id in children_by_parent.get(parent_id, set()):
+            if child_id not in selected:
+                selected.add(child_id)
+                pending.append(child_id)
+    return selected
+
+
+def _filter_sessions_by_scope(
+    sessions: list[SessionUsage],
+    session_filter: str | None,
+    session_tree: str | None,
+    warnings: list[str],
+) -> list[SessionUsage]:
+    if session_filter and session_tree:
+        raise ValueError("session_filter e session_tree sao mutuamente exclusivos")
+    if session_filter:
+        return [session for session in sessions if session.session_id == session_filter]
+    if not session_tree:
+        return sessions
+
+    selected_ids = session_tree_ids(sessions, session_tree)
+    if not selected_ids:
+        warnings.append(f"raiz da arvore de sessoes nao encontrada: {session_tree}")
+        return []
+    return [session for session in sessions if session.session_id in selected_ids]
 
 
 def collect_sessions(
     home: Path,
     repo: Path | None,
     session_filter: str | None = None,
+    session_tree: str | None = None,
     since: str | None = None,
     until: str | None = None,
     include_archived: bool = True,
@@ -442,45 +507,48 @@ def collect_sessions(
     for path in walk_rollouts(home, include_archived):
         session = load_rollout(path, since=since, until=until)
         warnings.extend(session.warnings or [])
-        if session_filter and session.session_id != session_filter:
-            continue
         if not session_matches_repo(session, repo):
-            continue
-        if not session.totals:
             continue
         sessions.append(session)
 
-    if not dedupe:
-        return sessions, warnings
+    if dedupe:
+        by_id: dict[str, SessionUsage] = {}
+        for session in sessions:
+            previous = by_id.get(session.session_id)
+            if previous is None:
+                by_id[session.session_id] = session
+                continue
+            previous_key = (
+                previous.last_ts or "",
+                previous.path.stat().st_size if previous.path.exists() else 0,
+            )
+            current_key = (
+                session.last_ts or "",
+                session.path.stat().st_size if session.path.exists() else 0,
+            )
+            if current_key > previous_key:
+                by_id[session.session_id] = session
+            warnings.append(
+                "sessao duplicada ignorada: "
+                f"{session.session_id} ({previous.path} / {session.path})"
+            )
+        sessions = list(by_id.values())
 
-    by_id: dict[str, SessionUsage] = {}
-    for session in sessions:
-        previous = by_id.get(session.session_id)
-        if previous is None:
-            by_id[session.session_id] = session
-            continue
-        previous_key = (
-            previous.last_ts or "",
-            previous.path.stat().st_size if previous.path.exists() else 0,
-        )
-        current_key = (
-            session.last_ts or "",
-            session.path.stat().st_size if session.path.exists() else 0,
-        )
-        if current_key > previous_key:
-            by_id[session.session_id] = session
-        warnings.append(
-            "sessao duplicada ignorada: "
-            f"{session.session_id} ({previous.path} / {session.path})"
-        )
-
-    return sorted(by_id.values(), key=lambda s: s.first_ts or ""), warnings
+    sessions = _filter_sessions_by_scope(
+        sessions,
+        session_filter,
+        session_tree,
+        warnings,
+    )
+    sessions = [session for session in sessions if session.totals]
+    return sorted(sessions, key=lambda s: s.first_ts or ""), warnings
 
 
 def iter_usage_events(
     home: Path,
     repo: Path | None = None,
     session_filter: str | None = None,
+    session_tree: str | None = None,
     since: str | None = None,
     until: str | None = None,
     include_archived: bool = True,
@@ -498,11 +566,7 @@ def iter_usage_events(
         session, events = load_rollout_events(path, since=since, until=until)
         if warnings is not None:
             warnings.extend(session.warnings or [])
-        if session_filter and session.session_id != session_filter:
-            continue
         if not session_matches_repo(session, repo):
-            continue
-        if not events:
             continue
         candidates.append((session, events))
 
@@ -532,6 +596,20 @@ def iter_usage_events(
                     f"{session.session_id} ({previous_session.path} / {session.path})"
                 )
         candidates = list(by_id.values())
+
+    scope_warnings = warnings if warnings is not None else []
+    selected_sessions = _filter_sessions_by_scope(
+        [session for session, _ in candidates],
+        session_filter,
+        session_tree,
+        scope_warnings,
+    )
+    selected_ids = {session.session_id for session in selected_sessions}
+    candidates = [
+        (session, events)
+        for session, events in candidates
+        if session.session_id in selected_ids
+    ]
 
     for _, events in sorted(
         candidates,
@@ -749,6 +827,8 @@ def render_json(
     tier: str,
     context_rate: str,
     warnings: list[str],
+    session_filter: str | None = None,
+    session_tree: str | None = None,
 ) -> None:
     by_model = per_model(sessions)
     unpriced = sorted(
@@ -759,6 +839,8 @@ def render_json(
     output = {
         "codex_home": str(home),
         "repo_filter": str(repo) if repo else None,
+        "session_filter": session_filter,
+        "session_tree_root": session_tree,
         "pricing": {
             "tier": tier,
             "context_rate": context_rate,
@@ -813,7 +895,13 @@ def main() -> None:
         action="store_true",
         help="Nao filtra por repo/cwd",
     )
-    parser.add_argument("--session", default=None, help="Filtra por session id")
+    session_scope = parser.add_mutually_exclusive_group()
+    session_scope.add_argument("--session", default=None, help="Filtra por session id")
+    session_scope.add_argument(
+        "--session-tree",
+        default=None,
+        help="Filtra pela sessao raiz e todos os seus subagentes descendentes",
+    )
     parser.add_argument("--since", default=None, help="Data minima ISO ou YYYY-MM-DD")
     parser.add_argument("--until", default=None, help="Data maxima ISO ou YYYY-MM-DD")
     parser.add_argument(
@@ -861,6 +949,7 @@ def main() -> None:
         home=home,
         repo=repo,
         session_filter=args.session,
+        session_tree=args.session_tree,
         since=args.since,
         until=args.until,
         include_archived=not args.no_archived,
@@ -878,6 +967,8 @@ def main() -> None:
             args.pricing_tier,
             args.context_rate,
             warnings,
+            args.session,
+            args.session_tree,
         )
         return
 

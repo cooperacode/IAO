@@ -27,6 +27,7 @@ Limitacoes:
 Uso:
     scripts/harness_cost_correlate.py --session "$CLAUDE_CODE_SESSION_ID"
     scripts/harness_cost_correlate.py --usage-source codex --session <uuid>
+    scripts/harness_cost_correlate.py --usage-source codex --session-tree <uuid>
     scripts/harness_cost_correlate.py --usage-source codex --repo . --json
     scripts/harness_cost_correlate.py --usage-source copilot --session <uuid>
 """
@@ -269,6 +270,9 @@ class CodexBackend(UsageBackend):
     def __init__(self, pricing_tier: str, context_rate: str) -> None:
         self.pricing_tier = pricing_tier
         self.context_rate = context_rate
+        self.session_filter: str | None = None
+        self.session_tree: str | None = None
+        self.matched_session_ids: set[str] = set()
 
     def load_events(self, args: argparse.Namespace) -> tuple[list[UsageEvent], list[str]]:
         home = args.codex_home or codex.codex_home()
@@ -278,24 +282,30 @@ class CodexBackend(UsageBackend):
 
         repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parent.parent)
         warnings: list[str] = []
-        events = [
-            UsageEvent(
-                timestamp=parse_ts(ts),
-                timestamp_raw=ts,
-                model=model,
-                usage=usage,
-                context_window=context_window,
+        self.session_filter = args.session
+        self.session_tree = args.session_tree
+        events = []
+        for session_id, model, usage, ts, context_window in codex.iter_usage_events(
+            home=home,
+            repo=repo,
+            session_filter=args.session,
+            session_tree=args.session_tree,
+            include_archived=not args.no_archived,
+            dedupe=not args.no_dedupe,
+            warnings=warnings,
+        ):
+            if not ts:
+                continue
+            self.matched_session_ids.add(session_id)
+            events.append(
+                UsageEvent(
+                    timestamp=parse_ts(ts),
+                    timestamp_raw=ts,
+                    model=model,
+                    usage=usage,
+                    context_window=context_window,
+                )
             )
-            for (_, model, usage, ts, context_window) in codex.iter_usage_events(
-                home=home,
-                repo=repo,
-                session_filter=args.session,
-                include_archived=not args.no_archived,
-                dedupe=not args.no_dedupe,
-                warnings=warnings,
-            )
-            if ts
-        ]
         events.sort(key=lambda event: event.timestamp)
         return events, warnings
 
@@ -325,6 +335,15 @@ class CodexBackend(UsageBackend):
         )
 
     def metadata(self) -> dict:
+        if self.session_tree:
+            scope_type = "tree"
+            scope_root = self.session_tree
+        elif self.session_filter:
+            scope_type = "session"
+            scope_root = self.session_filter
+        else:
+            scope_type = "repo"
+            scope_root = None
         return {
             "pricing": {
                 "tier": self.pricing_tier,
@@ -332,7 +351,13 @@ class CodexBackend(UsageBackend):
                 "currency": "USD",
                 "unit": "per 1M tokens",
                 "source": "scripts/codex_usage.py",
-            }
+            },
+            "session_scope": {
+                "type": scope_type,
+                "root": scope_root,
+                "session_count": len(self.matched_session_ids),
+                "session_ids": sorted(self.matched_session_ids),
+            },
         }
 
 
@@ -637,7 +662,13 @@ def main() -> None:
         default="claude",
         help="Fonte local de uso de tokens (default: claude)",
     )
-    parser.add_argument("--session", default=None, help="Session id do driver LLM")
+    session_scope = parser.add_mutually_exclusive_group()
+    session_scope.add_argument("--session", default=None, help="Session id do driver LLM")
+    session_scope.add_argument(
+        "--session-tree",
+        default=None,
+        help="Codex: sessao raiz e todos os seus subagentes descendentes",
+    )
     parser.add_argument(
         "--project-dir",
         type=Path,
@@ -710,9 +741,12 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Saida em JSON")
     args = parser.parse_args()
 
-    if not args.session:
+    if args.session_tree and args.usage_source != "codex":
+        parser.error("--session-tree so e suportado com --usage-source codex")
+
+    if not args.session and not args.session_tree:
         print(
-            "--session nao informado; eventos de qualquer sessao elegivel podem cair nas janelas",
+            "--session/--session-tree nao informado; eventos de qualquer sessao elegivel podem cair nas janelas",
             file=sys.stderr,
         )
 

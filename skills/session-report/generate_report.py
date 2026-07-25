@@ -5,15 +5,16 @@ real de tokens via scripts/harness_cost_correlate.py. Usa o layout de
 curso/material/relatorio-execucao-harness.html como base visual.
 
 Fluxo:
-    1. scripts/<driver>_usage.py --json  -> descobre a sessao mais recente
-       para este repo (ou usa --session, se informado).
+    1. scripts/<driver>_usage.py --json  -> descobre a sessao mais aderente ao
+       trace para este repo (ou usa --session/--session-tree, se informado).
     2. scripts/harness_cost_correlate.py -> correlaciona os passos do trace
-       do harness com o consumo de tokens daquela sessao.
+       do harness com o consumo de tokens daquele escopo de sessoes.
     3. Renderiza o HTML em report/.
 
 Uso:
     skills/session-report/generate_report.py --driver claude
     skills/session-report/generate_report.py --driver codex --session <uuid>
+    skills/session-report/generate_report.py --driver codex --session-tree <uuid>
     skills/session-report/generate_report.py --driver copilot --trace-file .harness/last-development.trace.jsonl
 """
 
@@ -71,9 +72,28 @@ def run_json_script(script: Path, args: list[str], label: str) -> dict:
         sys.exit(f"Saida de {script.name} nao e JSON valido: {exc}")
 
 
-def find_last_session(driver: str) -> str:
-    """Roda <driver>_usage.py --json (sem filtro) e retorna o session id com o
-    last_ts mais recente para este repo."""
+def trace_bounds(trace_file: Path) -> tuple[datetime, datetime] | None:
+    timestamps: list[datetime] = []
+    if not trace_file.is_file():
+        return None
+    for line in trace_file.read_text().splitlines():
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        timestamp = parse_ts(obj.get("timestamp"))
+        if timestamp is not None:
+            timestamps.append(timestamp)
+    return (min(timestamps), max(timestamps)) if timestamps else None
+
+
+def find_last_session(driver: str, trace_file: Path | None = None) -> str:
+    """Descobre a sessao mais aderente ao trace.
+
+    Para Codex, prefere a sessao cuja vida tem a maior sobreposicao com o
+    trace. Isso evita selecionar a conversa usada posteriormente apenas para
+    gerar o relatorio. Para os demais drivers, preserva a escolha por last_ts.
+    """
     data = run_json_script(USAGE_SCRIPT[driver], [], f"{driver}_usage")
     sessions = data.get("per_session", {})
     if not sessions:
@@ -87,10 +107,32 @@ def find_last_session(driver: str) -> str:
         ts = v["totals"]["last_ts"] if driver == "claude" else v.get("last_ts")
         return ts or ""
 
+    bounds = trace_bounds(trace_file) if driver == "codex" and trace_file else None
+    if bounds:
+        trace_first, trace_last = bounds
+        overlapping: list[tuple[float, datetime, str]] = []
+        for sid, value in sessions.items():
+            first = parse_ts(value.get("first_ts"))
+            last = parse_ts(value.get("last_ts"))
+            if first is None or last is None:
+                continue
+            overlap_seconds = (
+                min(last, trace_last) - max(first, trace_first)
+            ).total_seconds()
+            if overlap_seconds >= 0:
+                overlapping.append((overlap_seconds, first, sid))
+        if overlapping:
+            return max(overlapping)[2]
+
     return max(sessions, key=last_ts)
 
 
-def run_correlate(driver: str, session_id: str, trace_file: Path) -> dict:
+def run_correlate(
+    driver: str,
+    session_id: str,
+    trace_file: Path,
+    session_tree: bool = False,
+) -> dict:
     if not trace_file.is_file():
         sys.exit(
             f"Trace do harness nao encontrado: {trace_file}\n"
@@ -98,23 +140,22 @@ def run_correlate(driver: str, session_id: str, trace_file: Path) -> dict:
             "o relatorio, ou aponte --trace-file para um trace existente "
             "(ex.: .harness/last-development.trace.jsonl)."
         )
-    args = [
-        "--usage-source",
-        driver,
-        "--session",
-        session_id,
-        "--trace-file",
-        str(trace_file),
-    ]
+    scope_flag = "--session-tree" if session_tree else "--session"
+    args = ["--usage-source", driver, scope_flag, session_id, "--trace-file", str(trace_file)]
     return run_json_script(CORRELATE_SCRIPT, args, "harness_cost_correlate")
 
 
-def run_correlate_by_feature(driver: str, session_id: str) -> dict:
+def run_correlate_by_feature(
+    driver: str,
+    session_id: str,
+    session_tree: bool = False,
+) -> dict:
     """Custo por feature via .harness/logs/verify-feature-*.log -- so populado
     para sessoes do fluxo development. Sem --trace-file: as fronteiras vem dos
     proprios logs de verify, nao dos passos do trace. Sempre retorna JSON
     valido (com "features": [] se nao houver logs), nunca aborta o relatorio."""
-    args = ["--usage-source", driver, "--session", session_id, "--by-feature"]
+    scope_flag = "--session-tree" if session_tree else "--session"
+    args = ["--usage-source", driver, scope_flag, session_id, "--by-feature"]
     return run_json_script(CORRELATE_SCRIPT, args, "harness_cost_correlate_features")
 
 
@@ -179,21 +220,28 @@ def usage_breakdown(by_model: dict) -> dict[str, int]:
     return totals
 
 
-def find_codex_rollout_path(session_id: str) -> Path | None:
+def find_codex_rollout_paths(
+    session_id: str,
+    session_tree: bool,
+) -> list[Path]:
+    scope_flag = "--session-tree" if session_tree else "--session"
     data = run_json_script(
-        USAGE_SCRIPT["codex"], ["--session", session_id], "codex_usage_activity"
+        USAGE_SCRIPT["codex"], [scope_flag, session_id], "codex_usage_activity"
     )
     sessions = data.get("per_session", {})
-    selected = sessions.get(session_id)
-    if selected is None:
-        matches = [v for k, v in sessions.items() if k.startswith(session_id)]
-        selected = matches[0] if len(matches) == 1 else None
-    path = selected.get("path") if isinstance(selected, dict) else None
-    return Path(path).expanduser().resolve(strict=False) if path else None
+    paths = []
+    for selected in sessions.values():
+        path = selected.get("path") if isinstance(selected, dict) else None
+        if path:
+            paths.append(Path(path).expanduser().resolve(strict=False))
+    return paths
 
 
 def load_step_activity(
-    driver: str, session_id: str, steps: list[dict]
+    driver: str,
+    session_id: str,
+    steps: list[dict],
+    session_tree: bool = False,
 ) -> tuple[list[dict[str, int]], list[str]]:
     """Conta atividade local do driver nas mesmas janelas de tempo do correlator.
 
@@ -210,10 +258,14 @@ def load_step_activity(
             )
         return activity, notes
 
-    rollout_path = find_codex_rollout_path(session_id)
-    if rollout_path is None or not rollout_path.is_file():
+    rollout_paths = [
+        path
+        for path in find_codex_rollout_paths(session_id, session_tree)
+        if path.is_file()
+    ]
+    if not rollout_paths:
         notes.append(
-            "Rollout local do Codex nao encontrado; tool calls/eventos de token ficaram zerados."
+            "Rollouts locais do Codex nao encontrados; tool calls/eventos de token ficaram zerados."
         )
         return activity, notes
 
@@ -224,42 +276,43 @@ def load_step_activity(
         )
         return activity, notes
 
-    try:
-        lines = rollout_path.read_text().splitlines()
-    except OSError as exc:
-        notes.append(
-            f"Nao foi possivel ler o rollout local do Codex ({rollout_path}): {exc}"
-        )
-        return activity, notes
-
-    for line in lines:
+    for rollout_path in rollout_paths:
         try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        event_ts = parse_ts(obj.get("timestamp"))
-        if event_ts is None:
-            continue
-
-        idx = 0
-        while idx < len(step_times) and event_ts > step_times[idx]:
-            idx += 1
-        if idx >= len(step_times):
-            continue
-        if idx > 0 and event_ts <= step_times[idx - 1]:
+            lines = rollout_path.read_text().splitlines()
+        except OSError as exc:
+            notes.append(
+                f"Nao foi possivel ler o rollout local do Codex ({rollout_path}): {exc}"
+            )
             continue
 
-        typ = obj.get("type")
-        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
-        payload_type = payload.get("type")
-        if typ == "event_msg" and payload_type == "token_count":
-            activity[idx]["token_count_events"] += 1
-        elif typ == "response_item" and payload_type == "function_call":
-            activity[idx]["tool_calls"] += 1
-        elif typ == "response_item" and payload_type == "function_call_output":
-            activity[idx]["tool_outputs"] += 1
-        elif typ == "event_msg" and payload_type == "agent_message":
-            activity[idx]["agent_messages"] += 1
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            event_ts = parse_ts(obj.get("timestamp"))
+            if event_ts is None:
+                continue
+
+            idx = 0
+            while idx < len(step_times) and event_ts > step_times[idx]:
+                idx += 1
+            if idx >= len(step_times):
+                continue
+            if idx > 0 and event_ts <= step_times[idx - 1]:
+                continue
+
+            typ = obj.get("type")
+            payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+            payload_type = payload.get("type")
+            if typ == "event_msg" and payload_type == "token_count":
+                activity[idx]["token_count_events"] += 1
+            elif typ == "response_item" and payload_type == "function_call":
+                activity[idx]["tool_calls"] += 1
+            elif typ == "response_item" and payload_type == "function_call_output":
+                activity[idx]["tool_outputs"] += 1
+            elif typ == "event_msg" and payload_type == "agent_message":
+                activity[idx]["agent_messages"] += 1
 
     return activity, notes
 
@@ -330,13 +383,26 @@ def build_report(
     steps_raw = correlate.get("steps", [])
     unattributed = correlate.get("unattributed", {})
     warnings = list(correlate.get("warnings", []))
+    session_scope = correlate.get("session_scope")
+    if not isinstance(session_scope, dict):
+        session_scope = {
+            "type": "session",
+            "root": session_id,
+            "session_count": 1,
+            "session_ids": [session_id],
+        }
 
     features, features_totals, feature_warnings = build_features(
         driver, feature_correlate
     )
     warnings.extend(feature_warnings)
 
-    activity_by_step, activity_notes = load_step_activity(driver, session_id, steps_raw)
+    activity_by_step, activity_notes = load_step_activity(
+        driver,
+        session_id,
+        steps_raw,
+        session_tree=session_scope.get("type") == "tree",
+    )
     warnings.extend(activity_notes)
 
     model_totals: dict[str, dict] = defaultdict(
@@ -461,6 +527,7 @@ def build_report(
         "driver": driver,
         "driver_label": DRIVER_LABEL[driver],
         "session_id": session_id,
+        "session_scope": session_scope,
         "trace_file": str(trace_file.relative_to(REPO_ROOT))
         if trace_file.is_relative_to(REPO_ROOT)
         else str(trace_file),
@@ -638,10 +705,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <header class="top">
     <p class="eyebrow">Relatorio de uso e custo · Sessao do harness</p>
     <h1>__H1__</h1>
-    <p class="sub">Passos de <code>__TRACE_FILE__</code> correlacionados com o consumo real de tokens da sessao <code>__SESSION_SHORT__</code> via
+    <p class="sub">Passos de <code>__TRACE_FILE__</code> correlacionados com o consumo real de tokens do escopo <code>__SESSION_SHORT__</code> (__SESSION_COUNT_LABEL__) via
     <code>scripts/harness_cost_correlate.py</code>. Driver: __DRIVER_LABEL__.</p>
     <div class="meta-row">
-      <span class="meta-chip">sessao <b>__SESSION_SHORT__</b></span>
+      <span class="meta-chip">__SESSION_SCOPE_LABEL__ <b>__SESSION_SHORT__</b></span>
+      <span class="meta-chip">sessoes <b>__SESSION_COUNT__</b></span>
       <span class="meta-chip">primeiro passo <b>__FIRST_TS__</b></span>
       <span class="meta-chip">ultimo passo <b>__LAST_TS__</b></span>
       <span class="meta-chip">duracao <b>__DURATION__</b></span>
@@ -763,7 +831,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <section>
     <div class="section-head">
       <h2>Tokens e custo por modelo</h2>
-      <p class="section-note">Consumo agregado por modelo dentro da janela da sessao (passos + nao atribuido).</p>
+      <p class="section-note">Consumo agregado por modelo dentro da janela do escopo de sessoes (passos + nao atribuido).</p>
     </div>
     <div class="table-scroll">
       <table class="wide">
@@ -821,7 +889,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </section>
 
   <footer>
-    <p><b>Fontes:</b> <code>__TRACE_FILE__</code> (__KPI_STEPS__ passos) correlacionado via <code>scripts/harness_cost_correlate.py --usage-source __DRIVER__ --session __SESSION_SHORT__</code>, contra a sessao mais recente de __DRIVER_LABEL__ para este repo (descoberta com <code>scripts/__DRIVER___usage.py --json</code>).</p>
+    <p><b>Fontes:</b> <code>__TRACE_FILE__</code> (__KPI_STEPS__ passos) correlacionado via <code>scripts/harness_cost_correlate.py --usage-source __DRIVER__ __SESSION_FLAG__ __SESSION_SHORT__</code>, contra o escopo de __SESSION_COUNT_LABEL__ de __DRIVER_LABEL__ para este repo.</p>
     <p>Custos sao estimativas com base na tabela de precos publica embutida nos scripts; passos com modelo sem preco cadastrado entram nos tokens mas nao no custo.</p>
   </footer>
 </div>
@@ -1103,6 +1171,14 @@ def escape_for_script(payload: str) -> str:
 def render_html(report: dict) -> str:
     totals = report["totals"]
     session_short = report["session_id"][:8]
+    session_scope = report.get("session_scope", {})
+    session_scope_type = session_scope.get("type", "session")
+    session_count = session_scope.get("session_count", 1) or 1
+    session_count_label = (
+        "1 sessao correlacionada"
+        if session_count == 1
+        else f"{session_count} sessoes correlacionadas"
+    )
 
     title = f"Relatorio de Uso e Custo — {report['driver_label']}"
     h1 = f"{report['driver_label']} — {totals['steps']} passo(s), {fmt_usd(totals['cost_total'])}"
@@ -1121,6 +1197,12 @@ def render_html(report: dict) -> str:
         "__DRIVER__": report["driver"],
         "__DRIVER_LABEL__": report["driver_label"],
         "__SESSION_SHORT__": session_short,
+        "__SESSION_SCOPE_LABEL__": "raiz" if session_scope_type == "tree" else "sessao",
+        "__SESSION_COUNT__": str(session_count),
+        "__SESSION_COUNT_LABEL__": session_count_label,
+        "__SESSION_FLAG__": "--session-tree"
+        if session_scope_type == "tree"
+        else "--session",
         "__TRACE_FILE__": report["trace_file"],
         "__FIRST_TS__": totals["first_ts"] or "?",
         "__LAST_TS__": totals["last_ts"] or "?",
@@ -1169,10 +1251,16 @@ def main() -> None:
         choices=sorted(USAGE_SCRIPT),
         help="IDE/driver usado na sessao",
     )
-    parser.add_argument(
+    session_scope = parser.add_mutually_exclusive_group()
+    session_scope.add_argument(
         "--session",
         default=None,
-        help="Session id a usar (default: descoberta automaticamente via <driver>_usage.py, pegando a de last_ts mais recente)",
+        help="Session id exato a usar",
+    )
+    session_scope.add_argument(
+        "--session-tree",
+        default=None,
+        help="Codex: sessao raiz e todos os subagentes descendentes",
     )
     parser.add_argument(
         "--trace-file",
@@ -1188,11 +1276,31 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    session_id = args.session or find_last_session(args.driver)
-    print(f"Sessao: {session_id}", file=sys.stderr)
+    if args.session_tree and args.driver != "codex":
+        parser.error("--session-tree so e suportado com --driver codex")
 
-    correlate = run_correlate(args.driver, session_id, args.trace_file)
-    feature_correlate = run_correlate_by_feature(args.driver, session_id)
+    session_id = (
+        args.session_tree
+        or args.session
+        or find_last_session(args.driver, args.trace_file)
+    )
+    use_session_tree = bool(args.session_tree) or (
+        args.driver == "codex" and not args.session
+    )
+    scope_label = "Arvore de sessoes" if use_session_tree else "Sessao"
+    print(f"{scope_label}: {session_id}", file=sys.stderr)
+
+    correlate = run_correlate(
+        args.driver,
+        session_id,
+        args.trace_file,
+        session_tree=use_session_tree,
+    )
+    feature_correlate = run_correlate_by_feature(
+        args.driver,
+        session_id,
+        session_tree=use_session_tree,
+    )
     report = build_report(
         args.driver, session_id, args.trace_file, correlate, feature_correlate
     )
