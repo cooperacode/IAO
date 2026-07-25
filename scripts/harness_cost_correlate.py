@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -48,6 +49,8 @@ import codex_usage as codex  # noqa: E402
 import copilot_usage as copilot  # noqa: E402
 
 DEFAULT_TRACE_FILE = Path(".harness/trace.jsonl")
+DEFAULT_LOGS_DIR = Path(".harness/logs")
+DEFAULT_FEATURE_LIST = Path(".harness/feature_list.json")
 
 
 @dataclass
@@ -56,6 +59,13 @@ class TraceStep:
     command: str
     outcome: str
     instruction_chars: int
+    timestamp: datetime
+
+
+@dataclass
+class FeatureBoundary:
+    feature_id: str
+    title: str
     timestamp: datetime
 
 
@@ -92,6 +102,74 @@ def load_trace(path: Path) -> list[TraceStep]:
             )
         )
     return steps
+
+
+_VERIFY_LOG_RE = re.compile(r"verify-feature-(.+)\.log$")
+_TIMESTAMP_LINE_RE = re.compile(r"^timestampUtc:\s*(\S+)", re.MULTILINE)
+
+
+def load_feature_titles(feature_list_path: Path) -> dict[str, str]:
+    if not feature_list_path.is_file():
+        return {}
+    try:
+        data = json.loads(feature_list_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {
+        str(item["id"]): item.get("title", "")
+        for item in data.get("items", [])
+        if item.get("id") is not None
+    }
+
+
+def load_feature_boundaries(
+    logs_dir: Path,
+    feature_list_path: Path,
+) -> tuple[list[FeatureBoundary], list[str]]:
+    """Le .harness/logs/verify-feature-<id>.log e usa o `timestampUtc` gravado
+    dentro de cada log (nao o mtime do arquivo, que pode mudar com checkout ou
+    rsync) como fronteira de "feature concluida". Ordenado por timestamp, cada
+    janela entre duas fronteiras consecutivas cobre todo o trabalho (pick,
+    implement, ciclos de fix, verify) daquela feature, mesmo havendo
+    retrabalho -- nao depende de contar quantos passos `implement` ocorreram.
+    """
+    warnings: list[str] = []
+    if not logs_dir.is_dir():
+        return [], [f"diretorio de logs de feature nao encontrado: {logs_dir}"]
+
+    titles = load_feature_titles(feature_list_path)
+    boundaries: list[FeatureBoundary] = []
+    for log_path in sorted(logs_dir.glob("verify-feature-*.log")):
+        m = _VERIFY_LOG_RE.search(log_path.name)
+        if not m:
+            continue
+        feature_id = m.group(1)
+        try:
+            text = log_path.read_text()
+        except OSError as exc:
+            warnings.append(f"nao foi possivel ler {log_path}: {exc}")
+            continue
+        ts_match = _TIMESTAMP_LINE_RE.search(text)
+        if not ts_match:
+            warnings.append(f"timestampUtc nao encontrado em {log_path.name}")
+            continue
+        # datetime.fromisoformat exige no maximo 6 digitos na fracao de segundos
+        raw_ts = re.sub(r"(\.\d{6})\d+", r"\1", ts_match.group(1))
+        try:
+            timestamp = parse_ts(raw_ts)
+        except ValueError as exc:
+            warnings.append(f"timestampUtc invalido em {log_path.name}: {exc}")
+            continue
+        boundaries.append(
+            FeatureBoundary(
+                feature_id=feature_id,
+                title=titles.get(feature_id, f"Feature {feature_id}"),
+                timestamp=timestamp,
+            )
+        )
+
+    boundaries.sort(key=lambda b: b.timestamp)
+    return boundaries, warnings
 
 
 def fmt_cost(value: float | None) -> str:
@@ -454,6 +532,95 @@ def render_json(
     )
 
 
+def render_table_features(
+    boundaries: list[FeatureBoundary],
+    per_boundary: list[dict[str, Any]],
+    unattributed: dict[str, Any],
+    backend: UsageBackend,
+) -> None:
+    rows = []
+    unpriced_seen: set[str] = set()
+    grand_tokens = 0
+    grand_cost = 0.0
+    for boundary, by_model in zip(boundaries, per_boundary):
+        tokens, cost, unpriced = step_totals(by_model, backend)
+        unpriced_seen.update(unpriced)
+        grand_tokens += tokens
+        grand_cost += cost
+        rows.append(
+            [
+                boundary.feature_id,
+                boundary.title,
+                f"{tokens:,}",
+                fmt_cost(cost) if not unpriced else f"{fmt_cost(cost)}*",
+            ]
+        )
+    print_table(rows, ["Feature", "Titulo", "Tokens", "Custo"])
+    print(
+        f"\nTotal atribuido as features: {grand_tokens:,} tokens, {fmt_cost(grand_cost)}"
+    )
+
+    unattr_tokens, unattr_cost, unattr_unpriced = step_totals(unattributed, backend)
+    unpriced_seen.update(unattr_unpriced)
+    if unattr_tokens:
+        print(
+            f"Nao atribuido (fora de janelas de feature): {unattr_tokens:,} tokens, {fmt_cost(unattr_cost)}"
+        )
+    if unpriced_seen:
+        print(
+            f"Aviso: sem preco cadastrado para: {', '.join(sorted(unpriced_seen))}",
+            file=sys.stderr,
+        )
+
+
+def render_json_features(
+    boundaries: list[FeatureBoundary],
+    per_boundary: list[dict[str, Any]],
+    unattributed: dict[str, Any],
+    warnings: list[str],
+    backend: UsageBackend,
+) -> None:
+    feature_rows = []
+    for boundary, by_model in zip(boundaries, per_boundary):
+        tokens, cost, unpriced = step_totals(by_model, backend)
+        feature_rows.append(
+            {
+                "feature_id": boundary.feature_id,
+                "title": boundary.title,
+                "timestamp": boundary.timestamp.isoformat(),
+                "tokens": tokens,
+                "cost": cost,
+                "unpriced_models": unpriced,
+                "by_model": {
+                    model: backend.to_jsonable(usage, model)
+                    for model, usage in by_model.items()
+                },
+            }
+        )
+    unattr_tokens, unattr_cost, unattr_unpriced = step_totals(unattributed, backend)
+    print(
+        json.dumps(
+            {
+                "usage_source": backend.name,
+                **backend.metadata(),
+                "features": feature_rows,
+                "unattributed": {
+                    "tokens": unattr_tokens,
+                    "cost": unattr_cost,
+                    "unpriced_models": unattr_unpriced,
+                    "by_model": {
+                        model: backend.to_jsonable(usage, model)
+                        for model, usage in unattributed.items()
+                    },
+                },
+                "warnings": warnings,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -522,12 +689,26 @@ def main() -> None:
         default="auto",
         help="Codex: escolhe preco short/long context",
     )
+    parser.add_argument(
+        "--by-feature",
+        action="store_true",
+        help="Correlaciona por fronteira de feature (.harness/logs/verify-feature-*.log) "
+        "em vez de passos do trace -- nao precisa de --trace-file",
+    )
+    parser.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=DEFAULT_LOGS_DIR,
+        help="Diretorio com verify-feature-*.log (default: .harness/logs, usado com --by-feature)",
+    )
+    parser.add_argument(
+        "--feature-list",
+        type=Path,
+        default=DEFAULT_FEATURE_LIST,
+        help="feature_list.json para titulos (default: .harness/feature_list.json, usado com --by-feature)",
+    )
     parser.add_argument("--json", action="store_true", help="Saida em JSON")
     args = parser.parse_args()
-
-    if not args.trace_file.is_file():
-        print(f"Arquivo de trace nao encontrado: {args.trace_file}", file=sys.stderr)
-        sys.exit(1)
 
     if not args.session:
         print(
@@ -535,8 +716,39 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    steps = load_trace(args.trace_file)
     backend = make_backend(args)
+
+    if args.by_feature:
+        boundaries, warnings = load_feature_boundaries(args.logs_dir, args.feature_list)
+        events, load_warnings = backend.load_events(args)
+        warnings = warnings + load_warnings
+
+        if not boundaries:
+            warnings.append(
+                f"nenhuma fronteira de feature encontrada em {args.logs_dir} "
+                "(so o fluxo development gera verify-feature-*.log); todo o consumo caiu em nao atribuido"
+            )
+            unattributed: dict[str, Any] = defaultdict(backend.new_totals)
+            for event in events:
+                backend.add_event(unattributed[event.model], event)
+            per_boundary: list[dict[str, Any]] = []
+        else:
+            per_boundary, unattributed = correlate(boundaries, events, backend)
+
+        for warning in warnings:
+            print(f"Aviso: {warning}", file=sys.stderr)
+
+        if args.json:
+            render_json_features(boundaries, per_boundary, unattributed, warnings, backend)
+        else:
+            render_table_features(boundaries, per_boundary, unattributed, backend)
+        return
+
+    if not args.trace_file.is_file():
+        print(f"Arquivo de trace nao encontrado: {args.trace_file}", file=sys.stderr)
+        sys.exit(1)
+
+    steps = load_trace(args.trace_file)
     events, warnings = backend.load_events(args)
 
     for warning in warnings:

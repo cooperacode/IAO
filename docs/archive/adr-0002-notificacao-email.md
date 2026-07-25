@@ -2,12 +2,12 @@
 
 ## Status
 Proposto — decisão registrada, implementação ainda não iniciada. Acompanha o brief em
-`docs/202607220120-todo-app-notificacao-email-status-brief.md`, já promovido para a raiz de
+`202607220120-todo-app-notificacao-email-status-brief.md`, já promovido para a raiz de
 `docs/` e pronto para ser lido pelo próximo `start` da sessão brownfield correspondente.
 
 ## Contexto
 O TodoApp WebAPI não tem modelo de usuário nem autenticação (fora de escopo desde o brief
-original — ver `docs/202607211323-todo-app-brief.md`). Ao introduzir notificação de
+original — ver `202607211323-todo-app-brief.md`). Ao introduzir notificação de
 mudança de status como delta, era preciso escolher um canal. As opções óbvias eram e-mail, SMS
 e push notification — todas exigem, em algum grau, saber "para quem" notificar.
 
@@ -45,6 +45,6 @@ modelo de usuário). O disparo acontece dentro do slice do endpoint que muda o s
   outros sistemas.
 
 ## Referências
-- Brief: `docs/202607220120-todo-app-notificacao-email-status-brief.md`
-- Decisão de arquitetura base: `docs/adr-0001-vertical-slice.md`
-- Diagrama de componentes (delta): `docs/c4-diagrama-componentes-notificacao-email.md`
+- Brief: `202607220120-todo-app-notificacao-email-status-brief.md`
+- Decisão de arquitetura base: `adr-0001-vertical-slice.md`
+- Diagrama de componentes (delta): `c4-diagrama-componentes-notificacao-email.md`

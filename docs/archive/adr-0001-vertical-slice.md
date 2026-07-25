@@ -21,7 +21,7 @@ Repository genéricos compartilhados entre slices — compartilha-se apenas o qu
 genuinamente comum a todas (entidade `Task`, conexão/pool com o Postgres, exceções de
 domínio), como um *shared kernel* mínimo.
 
-Mapeamento direto: cada feature do backlog (ver `docs/202607211323-todo-app-brief.md`) = 1 slice = 1
+Mapeamento direto: cada feature do backlog (ver `202607211323-todo-app-brief.md`) = 1 slice = 1
 pasta/namespace = 1 teste de integração próprio.
 
 ## Consequências
@@ -53,5 +53,5 @@ pasta/namespace = 1 teste de integração próprio.
   só.
 
 ## Referências
-- Diagrama de componentes: `docs/c4-diagrama-componentes.md`
-- Backlog/funcionalidades: `docs/202607211323-todo-app-brief.md`
+- Diagrama de componentes: `c4-diagrama-componentes.md`
+- Backlog/funcionalidades: `202607211323-todo-app-brief.md`

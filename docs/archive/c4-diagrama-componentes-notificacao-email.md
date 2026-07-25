@@ -1,8 +1,8 @@
 # Diagrama de Componentes (C4) — TodoApp WebAPI + Notificação por E-mail
 
-Complementa [docs/c4-diagrama-componentes.md](c4-diagrama-componentes.md) (diagrama base,
+Complementa [c4-diagrama-componentes.md](c4-diagrama-componentes.md) (diagrama base,
 ainda válido e inalterado) mostrando o delta descrito no brief
-[docs/202607220120-todo-app-notificacao-email-status-brief.md](202607220120-todo-app-notificacao-email-status-brief.md)
+[202607220120-todo-app-notificacao-email-status-brief.md](202607220120-todo-app-notificacao-email-status-brief.md)
 e decidido em [ADR-0002](adr-0002-notificacao-email.md): um novo componente `EmailNotifier`,
 acionado pelo slice `CompleteTask`, que dispara e-mail para um serviço SMTP externo à API.
 

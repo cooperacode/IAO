@@ -465,6 +465,14 @@ def to_jsonable(usage: UsageTotals, model: str | None = None) -> dict:
         "output_tokens": usage.output_tokens,
         "cache_creation_input_tokens": usage.cache_creation_input_tokens,
         "cache_read_input_tokens": usage.cache_read_input_tokens,
+        # Aliases no formato usado por codex_usage.py -- consumidores como
+        # skills/session-report/generate_report.py leem TOKEN_FIELDS por esses
+        # nomes independente do driver. Na API da Anthropic, input_tokens ja
+        # exclui cache (sao contadores irmaos, nao sobrepostos), entao
+        # non_cached_input_tokens == input_tokens.
+        "cached_input_tokens": usage.cache_read_input_tokens,
+        "cache_write_input_tokens": usage.cache_creation_input_tokens,
+        "non_cached_input_tokens": usage.input_tokens,
         "total_tokens": usage.total_tokens,
         "first_ts": usage.first_ts,
         "last_ts": usage.last_ts,

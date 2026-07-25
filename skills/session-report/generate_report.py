@@ -99,11 +99,23 @@ def run_correlate(driver: str, session_id: str, trace_file: Path) -> dict:
             "(ex.: .harness/last-development.trace.jsonl)."
         )
     args = [
-        "--usage-source", driver,
-        "--session", session_id,
-        "--trace-file", str(trace_file),
+        "--usage-source",
+        driver,
+        "--session",
+        session_id,
+        "--trace-file",
+        str(trace_file),
     ]
     return run_json_script(CORRELATE_SCRIPT, args, "harness_cost_correlate")
+
+
+def run_correlate_by_feature(driver: str, session_id: str) -> dict:
+    """Custo por feature via .harness/logs/verify-feature-*.log -- so populado
+    para sessoes do fluxo development. Sem --trace-file: as fronteiras vem dos
+    proprios logs de verify, nao dos passos do trace. Sempre retorna JSON
+    valido (com "features": [] se nao houver logs), nunca aborta o relatorio."""
+    args = ["--usage-source", driver, "--session", session_id, "--by-feature"]
+    return run_json_script(CORRELATE_SCRIPT, args, "harness_cost_correlate_features")
 
 
 def fmt_usd(v: float | None) -> str:
@@ -112,6 +124,23 @@ def fmt_usd(v: float | None) -> str:
 
 def fmt_int(v: int) -> str:
     return f"{v:,}".replace(",", ".")
+
+
+def fmt_tokens(v: int) -> str:
+    """Formata contagem de tokens abreviada (10K, 1.5Mi); abaixo de 1000 usa fmt_int."""
+    abs_v = abs(v)
+    if abs_v < 1000:
+        return fmt_int(v)
+    units = ((1_000_000_000, "Bi"), (1_000_000, "Mi"), (1_000, "K"))
+    for i, (div, suffix) in enumerate(units):
+        if abs_v < div:
+            continue
+        # arredondar pode estourar para a proxima unidade (999999 -> 1000K); promove
+        bump = i > 0 and round(abs_v / div, 1) >= 1000
+        d, suf = units[i - 1][:2] if bump else (div, suffix)
+        n = f"{v / d:.1f}".rstrip("0").rstrip(".")
+        return f"{n}{suf}"
+    return fmt_int(v)
 
 
 def fmt_mmss(seconds: float | None) -> str:
@@ -151,7 +180,9 @@ def usage_breakdown(by_model: dict) -> dict[str, int]:
 
 
 def find_codex_rollout_path(session_id: str) -> Path | None:
-    data = run_json_script(USAGE_SCRIPT["codex"], ["--session", session_id], "codex_usage_activity")
+    data = run_json_script(
+        USAGE_SCRIPT["codex"], ["--session", session_id], "codex_usage_activity"
+    )
     sessions = data.get("per_session", {})
     selected = sessions.get(session_id)
     if selected is None:
@@ -161,7 +192,9 @@ def find_codex_rollout_path(session_id: str) -> Path | None:
     return Path(path).expanduser().resolve(strict=False) if path else None
 
 
-def load_step_activity(driver: str, session_id: str, steps: list[dict]) -> tuple[list[dict[str, int]], list[str]]:
+def load_step_activity(
+    driver: str, session_id: str, steps: list[dict]
+) -> tuple[list[dict[str, int]], list[str]]:
     """Conta atividade local do driver nas mesmas janelas de tempo do correlator.
 
     Hoje a contagem de tool calls/eventos de token e suportada para Codex, porque
@@ -179,18 +212,24 @@ def load_step_activity(driver: str, session_id: str, steps: list[dict]) -> tuple
 
     rollout_path = find_codex_rollout_path(session_id)
     if rollout_path is None or not rollout_path.is_file():
-        notes.append("Rollout local do Codex nao encontrado; tool calls/eventos de token ficaram zerados.")
+        notes.append(
+            "Rollout local do Codex nao encontrado; tool calls/eventos de token ficaram zerados."
+        )
         return activity, notes
 
     step_times = [parse_ts(s.get("timestamp")) for s in steps]
     if any(t is None for t in step_times):
-        notes.append("Timestamps do trace invalidos; tool calls/eventos de token ficaram zerados.")
+        notes.append(
+            "Timestamps do trace invalidos; tool calls/eventos de token ficaram zerados."
+        )
         return activity, notes
 
     try:
         lines = rollout_path.read_text().splitlines()
     except OSError as exc:
-        notes.append(f"Nao foi possivel ler o rollout local do Codex ({rollout_path}): {exc}")
+        notes.append(
+            f"Nao foi possivel ler o rollout local do Codex ({rollout_path}): {exc}"
+        )
         return activity, notes
 
     for line in lines:
@@ -225,11 +264,77 @@ def load_step_activity(driver: str, session_id: str, steps: list[dict]) -> tuple
     return activity, notes
 
 
-def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict) -> dict:
+def build_features(
+    driver: str, feature_correlate: dict
+) -> tuple[list[dict], dict, list[str]]:
+    """Agrega o resultado de harness_cost_correlate.py --by-feature em linhas
+    prontas para o relatorio. Sempre retorna algo (mesmo lista vazia) -- e
+    normal um driver/sessao nao ter nenhuma fronteira de feature (so o fluxo
+    development gera .harness/logs/verify-feature-*.log)."""
+    is_copilot = driver == "copilot"
+    features_raw = feature_correlate.get("features", [])
+    unattributed = feature_correlate.get("unattributed", {})
+    warnings = list(feature_correlate.get("warnings", []))
+
+    features = []
+    previous_ts: datetime | None = None
+    for f in features_raw:
+        current_ts = parse_ts(f.get("timestamp"))
+        duration_seconds = (
+            None
+            if current_ts is None or previous_ts is None
+            else (current_ts - previous_ts).total_seconds()
+        )
+        previous_ts = current_ts
+        features.append(
+            {
+                "feature_id": f["feature_id"],
+                "title": f["title"],
+                "timestamp": f["timestamp"],
+                "tokens": f["tokens"],
+                "cost": None if is_copilot else f["cost"],
+                "duration_seconds": duration_seconds,
+                "unpriced_models": f.get("unpriced_models", []),
+            }
+        )
+
+    tokens_attr = sum(f["tokens"] for f in features)
+    cost_attr = None if is_copilot else sum(f["cost"] or 0.0 for f in features)
+    tokens_unattr = unattributed.get("tokens", 0) or 0
+    cost_unattr = unattributed.get("cost", 0.0) or 0.0
+
+    if features and tokens_unattr:
+        warnings.append(
+            f"{fmt_tokens(tokens_unattr)} tokens de feature "
+            f"({fmt_usd(None if is_copilot else cost_unattr)}) fora de qualquer janela de feature."
+        )
+
+    totals = {
+        "count": len(features),
+        "tokens_attributed": tokens_attr,
+        "cost_attributed": cost_attr,
+        "tokens_unattributed": tokens_unattr,
+        "cost_unattributed": None if is_copilot else cost_unattr,
+    }
+    return features, totals, warnings
+
+
+def build_report(
+    driver: str,
+    session_id: str,
+    trace_file: Path,
+    correlate: dict,
+    feature_correlate: dict,
+) -> dict:
     is_copilot = driver == "copilot"
     steps_raw = correlate.get("steps", [])
     unattributed = correlate.get("unattributed", {})
     warnings = list(correlate.get("warnings", []))
+
+    features, features_totals, feature_warnings = build_features(
+        driver, feature_correlate
+    )
+    warnings.extend(feature_warnings)
 
     activity_by_step, activity_notes = load_step_activity(driver, session_id, steps_raw)
     warnings.extend(activity_notes)
@@ -333,9 +438,7 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
     last_ts = steps[-1]["timestamp"] if steps else None
     duration_seconds = None
     if first_ts and last_ts:
-        duration_seconds = (
-            parse_ts(last_ts) - parse_ts(first_ts)
-        ).total_seconds()
+        duration_seconds = (parse_ts(last_ts) - parse_ts(first_ts)).total_seconds()
 
     notes = warnings
     if unpriced_seen and not is_copilot:
@@ -347,7 +450,7 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
         )
     if tokens_unattr:
         notes.append(
-            f"{fmt_int(tokens_unattr)} tokens "
+            f"{fmt_tokens(tokens_unattr)} tokens "
             f"({fmt_usd(None if is_copilot else cost_unattr)}) registrados apos o ultimo "
             "passo do trace, nao atribuidos a nenhum passo."
         )
@@ -358,13 +461,17 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
         "driver": driver,
         "driver_label": DRIVER_LABEL[driver],
         "session_id": session_id,
-        "trace_file": str(trace_file.relative_to(REPO_ROOT)) if trace_file.is_relative_to(REPO_ROOT) else str(trace_file),
+        "trace_file": str(trace_file.relative_to(REPO_ROOT))
+        if trace_file.is_relative_to(REPO_ROOT)
+        else str(trace_file),
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "pricing": pricing if isinstance(pricing, dict) else None,
         "models": models,
         "commands": commands,
         "steps": steps,
         "errors": errors,
+        "features": features,
+        "features_totals": features_totals,
         "notes": notes,
         "totals": {
             "steps": len(steps),
@@ -375,7 +482,9 @@ def build_report(driver: str, session_id: str, trace_file: Path, correlate: dict
             "cost_unattributed": None if is_copilot else cost_unattr,
             "tokens_total": tokens_attributed + tokens_unattr,
             "cost_total": None if is_copilot else (cost_attributed + cost_unattr),
-            "avg_cost_step": None if is_copilot or not steps else cost_attributed / len(steps),
+            "avg_cost_step": None
+            if is_copilot or not steps
+            else cost_attributed / len(steps),
             "duration_seconds": duration_seconds,
             "first_ts": first_ts,
             "last_ts": last_ts,
@@ -556,7 +665,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="sub">soma dos passos</div>
       </div>
       <div class="kpi">
-        <div class="label">Custo total da sessao</div>
+        <div class="label">Custo total</div>
         <div class="value">__KPI_COST_TOTAL__</div>
         <div class="sub">__KPI_COST_TOTAL_SUB__</div>
       </div>
@@ -583,6 +692,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <table>
         <thead><tr><th>Comando</th><th class="num">Passos</th><th class="num">Erros</th><th class="num">Tokens</th><th class="num">Custo</th></tr></thead>
         <tbody id="tbl-commands"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Custo por feature</h2>
+      <p class="section-note">Custo atribuido a cada feature via <code>.harness/logs/verify-feature-*.log</code> (timestamp de verify de cada feature, nao contagem de passos) -- so disponivel para sessoes do fluxo development.</p>
+    </div>
+    <div class="card">
+      <div id="chart-features"></div>
+    </div>
+    <div class="table-scroll" style="margin-top:16px;">
+      <table>
+        <thead><tr><th>Feature</th><th>Titulo</th><th class="num">Duracao</th><th class="num">Tokens</th><th class="num">Custo</th></tr></thead>
+        <tbody id="tbl-features"></tbody>
       </table>
     </div>
   </section>
@@ -709,6 +834,21 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const fmtUSD = v => v == null ? 'n/d' : ('$' + v.toFixed(4));
   const fmtUSD2 = v => v == null ? 'n/d' : ('$' + v.toFixed(2));
   const fmtInt = v => v.toLocaleString('pt-BR');
+  const fmtTok = v => {
+    const abs = Math.abs(v);
+    if (abs < 1000) return fmtInt(v);
+    const units = [[1e9,'Bi'],[1e6,'Mi'],[1e3,'K']];
+    for (let i = 0; i < units.length; i++){
+      const [div, suffix] = units[i];
+      if (abs < div) continue;
+      // arredondar pode estourar para a proxima unidade (999999 -> 1000K); promove
+      const bump = i > 0 && Math.round(abs / div * 10) / 10 >= 1000;
+      const [d, suf] = bump ? units[i - 1] : [div, suffix];
+      const n = (v / d).toFixed(1).replace(/\.0$/, '');
+      return n + suf;
+    }
+    return fmtInt(v);
+  };
   const fmtDuration = v => {
     if (v == null) return 'n/d';
     const total = Math.max(0, Math.round(v));
@@ -731,12 +871,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const steps = __STEPS_JSON__;
   const errors = __ERRORS_JSON__;
   const models = __MODELS_JSON__;
+  const features = __FEATURES_JSON__;
   const notes = __NOTES_JSON__;
 
   const palette = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
   const cmdColor = {};
   commands.forEach((c,i) => { cmdColor[c.cmd] = palette[i % palette.length]; });
   const colorOf = cmd => `var(${cmdColor[cmd] || '--s1'})`;
+  const featColorOf = i => `var(${palette[i % palette.length]})`;
 
   // ---------- notes ----------
   if (notes.length){
@@ -750,9 +892,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <td><span class="cmd-tag" style="background:${colorOf(c.cmd)}">${c.cmd}</span></td>
       <td class="num">${c.steps}</td>
       <td class="num">${c.errors || '—'}</td>
-      <td class="num">${fmtInt(c.tokens)}</td>
+      <td class="num">${fmtTok(c.tokens)}</td>
       <td class="num">${fmtUSD(c.cost)}</td>
     </tr>`).join('');
+
+  // ---------- table: features ----------
+  $('#tbl-features').innerHTML = features.length ? features.map((f,i) => `
+    <tr>
+      <td><span class="cmd-tag" style="background:${featColorOf(i)}">#${f.feature_id}</span></td>
+      <td>${f.title}</td>
+      <td class="num">${fmtDuration(f.duration_seconds)}</td>
+      <td class="num">${fmtTok(f.tokens)}</td>
+      <td class="num">${fmtUSD(f.cost)}</td>
+    </tr>`).join('') : `<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">Sem dados de feature para esta sessao (o fluxo nao gerou verify-feature-*.log).</td></tr>`;
 
   // ---------- table: command telemetry ----------
   $('#tbl-telemetry').innerHTML = commands.map(c => `
@@ -761,24 +913,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <td class="num">${fmtDuration(c.duration_seconds)}</td>
       <td class="num">${fmtInt(c.token_count_events || 0)}</td>
       <td class="num">${fmtInt(c.tool_calls || 0)}</td>
-      <td class="num">${fmtInt(c.input_tokens || 0)}</td>
-      <td class="num">${fmtInt(c.cached_input_tokens || 0)}</td>
-      <td class="num">${fmtInt(c.non_cached_input_tokens || 0)}</td>
-      <td class="num">${fmtInt(c.output_tokens || 0)}</td>
-      <td class="num">${fmtInt(c.reasoning_output_tokens || 0)}</td>
-      <td class="num">${fmtInt(Math.round((c.tokens || 0) / Math.max(1, c.steps || 1)))}</td>
+      <td class="num">${fmtTok(c.input_tokens || 0)}</td>
+      <td class="num">${fmtTok(c.cached_input_tokens || 0)}</td>
+      <td class="num">${fmtTok(c.non_cached_input_tokens || 0)}</td>
+      <td class="num">${fmtTok(c.output_tokens || 0)}</td>
+      <td class="num">${fmtTok(c.reasoning_output_tokens || 0)}</td>
+      <td class="num">${fmtTok(Math.round((c.tokens || 0) / Math.max(1, c.steps || 1)))}</td>
     </tr>`).join('');
 
   // ---------- table: models ----------
   $('#tbl-models').innerHTML = models.map(m => `
     <tr>
       <td class="mono-cell">${m.name}</td>
-      <td class="num">${fmtInt(m.tokens)}</td>
-      <td class="num">${fmtInt(m.input_tokens || 0)}</td>
-      <td class="num">${fmtInt(m.cached_input_tokens || 0)}</td>
-      <td class="num">${fmtInt(m.non_cached_input_tokens || 0)}</td>
-      <td class="num">${fmtInt(m.output_tokens || 0)}</td>
-      <td class="num">${fmtInt(m.reasoning_output_tokens || 0)}</td>
+      <td class="num">${fmtTok(m.tokens)}</td>
+      <td class="num">${fmtTok(m.input_tokens || 0)}</td>
+      <td class="num">${fmtTok(m.cached_input_tokens || 0)}</td>
+      <td class="num">${fmtTok(m.non_cached_input_tokens || 0)}</td>
+      <td class="num">${fmtTok(m.output_tokens || 0)}</td>
+      <td class="num">${fmtTok(m.reasoning_output_tokens || 0)}</td>
       <td class="num">${fmtUSD(m.cost)}</td>
     </tr>`).join('');
 
@@ -791,10 +943,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <td>${pill}</td>
       <td class="num">${fmtDuration(s.duration_seconds)}</td>
       <td class="num">${fmtInt(s.instruction_chars)}</td>
-      <td class="num">${fmtInt(s.tokens)}</td>
-      <td class="num">${fmtInt(s.input_tokens || 0)}</td>
-      <td class="num">${fmtInt(s.cached_input_tokens || 0)}</td>
-      <td class="num">${fmtInt(s.output_tokens || 0)}</td>
+      <td class="num">${fmtTok(s.tokens)}</td>
+      <td class="num">${fmtTok(s.input_tokens || 0)}</td>
+      <td class="num">${fmtTok(s.cached_input_tokens || 0)}</td>
+      <td class="num">${fmtTok(s.output_tokens || 0)}</td>
       <td class="num">${fmtInt(s.token_count_events || 0)}</td>
       <td class="num">${fmtInt(s.tool_calls || 0)}</td>
       <td class="num">${fmtUSD(s.cost)}</td>
@@ -808,7 +960,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     $('#errors-list').innerHTML = errors.map(s => `<div class="error-row">
       <span class="step">passo ${s.step}</span>
       <span class="cmd-tag" style="background:${colorOf(s.command)}">${s.command}</span>
-      <span>${fmtInt(s.tokens)} tokens</span>
+      <span>${fmtTok(s.tokens)} tokens</span>
       <span class="cost">${fmtUSD(s.cost)}</span>
     </div>`).join('');
   }
@@ -842,12 +994,48 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const i = +hit.dataset.i, c = commands[i];
       hit.addEventListener('mousemove', e => showTip(e, `<b>${c.cmd}</b>
         <div class="tt-row"><span>custo total</span><span>${fmtUSD(c.cost)}</span></div>
-        <div class="tt-row"><span>tokens</span><span>${fmtInt(c.tokens)}</span></div>
+        <div class="tt-row"><span>tokens</span><span>${fmtTok(c.tokens)}</span></div>
         <div class="tt-row"><span>tool calls</span><span>${fmtInt(c.tool_calls || 0)}</span></div>
         <div class="tt-row"><span>eventos token</span><span>${fmtInt(c.token_count_events || 0)}</span></div>
         <div class="tt-row"><span>passos</span><span>${c.steps}</span></div>
         <div class="tt-row"><span>erros</span><span>${c.errors}</span></div>
         <div class="tt-row"><span>share do custo</span><span>${totalAll ? ((c.cost/totalAll)*100).toFixed(1) : '0.0'}%</span></div>`));
+      hit.addEventListener('mouseleave', hideTip);
+    });
+  })();
+
+  // ================= chart: cost per feature (horizontal bar) =================
+  (function(){
+    const el = $('#chart-features');
+    if (!features.length){ el.innerHTML = '<p style="color:var(--text-muted); font-size:13px;">sem dados de feature para esta sessao</p>'; return; }
+    const W = el.clientWidth || 1000;
+    const rowH = 34, gap = 10;
+    const M = {top:6, right:70, bottom:6, left:44};
+    const n = features.length;
+    const H = M.top + M.bottom + n*rowH + (n-1)*gap;
+    const plotW = W - M.left - M.right;
+    const maxV = Math.max(...features.map(f => f.cost || 0), 0.0001) * 1.08;
+    const totalAll = features.reduce((a,f)=>a+(f.cost || 0),0);
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">`;
+    features.forEach((f,i) => {
+      const y = M.top + i*(rowH+gap);
+      const w = ((f.cost || 0)/maxV) * plotW;
+      svg += `<text class="axis-label" x="${M.left-10}" y="${y+rowH/2+4}" text-anchor="end" font-family="var(--mono)">#${f.feature_id}</text>`;
+      svg += `<rect class="bar-rect" x="${M.left}" y="${y}" width="${w}" height="${rowH-10}" rx="4" fill="${featColorOf(i)}"/>`;
+      svg += `<text class="bar-value" x="${M.left+w+10}" y="${y+rowH/2-4}">${fmtUSD2(f.cost)}</text>`;
+      svg += `<text class="bar-sub" x="${M.left+w+10}" y="${y+rowH/2+10}">${totalAll ? (((f.cost||0)/totalAll)*100).toFixed(1) : '0.0'}%</text>`;
+      svg += `<rect class="hit" data-i="${i}" x="0" y="${y-gap/2}" width="${W}" height="${rowH+gap}"/>`;
+    });
+    svg += `</svg>`;
+    el.innerHTML = svg;
+    el.querySelectorAll('.hit').forEach(hit => {
+      const i = +hit.dataset.i, f = features[i];
+      hit.addEventListener('mousemove', e => showTip(e, `<b>#${f.feature_id} · ${f.title}</b>
+        <div class="tt-row"><span>custo</span><span>${fmtUSD(f.cost)}</span></div>
+        <div class="tt-row"><span>tokens</span><span>${fmtTok(f.tokens)}</span></div>
+        <div class="tt-row"><span>duracao</span><span>${fmtDuration(f.duration_seconds)}</span></div>
+        <div class="tt-row"><span>share do custo</span><span>${totalAll ? (((f.cost||0)/totalAll)*100).toFixed(1) : '0.0'}%</span></div>`));
       hit.addEventListener('mouseleave', hideTip);
     });
   })();
@@ -897,7 +1085,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="tt-row"><span>outcome</span><span>${s.outcome}</span></div>
         <div class="tt-row"><span>duracao</span><span>${fmtDuration(s.duration_seconds)}</span></div>
         <div class="tt-row"><span>custo</span><span>${fmtUSD(s.cost)}</span></div>
-        <div class="tt-row"><span>tokens</span><span>${fmtInt(s.tokens)}</span></div>`));
+        <div class="tt-row"><span>tokens</span><span>${fmtTok(s.tokens)}</span></div>`));
       hit.addEventListener('mouseleave', hideTip);
     });
   })();
@@ -923,7 +1111,9 @@ def render_html(report: dict) -> str:
     if totals["cost_total"] is None:
         cost_total_sub = "sem estimativa em dolar para este driver"
     elif totals["tokens_unattributed"]:
-        cost_total_sub = f"inclui {fmt_usd(totals['cost_unattributed'])} pos-ultimo-passo"
+        cost_total_sub = (
+            f"inclui {fmt_usd(totals['cost_unattributed'])} pos-ultimo-passo"
+        )
 
     replacements = {
         "__TITLE__": title,
@@ -942,13 +1132,26 @@ def render_html(report: dict) -> str:
         "__KPI_COST_ATTR__": fmt_usd(totals["cost_attributed"]),
         "__KPI_COST_TOTAL__": fmt_usd(totals["cost_total"]),
         "__KPI_COST_TOTAL_SUB__": cost_total_sub,
-        "__KPI_TOKENS__": fmt_int(totals["tokens_total"]),
+        "__KPI_TOKENS__": fmt_tokens(totals["tokens_total"]),
         "__KPI_AVG__": fmt_usd(totals["avg_cost_step"]),
-        "__COMMANDS_JSON__": escape_for_script(json.dumps(report["commands"], ensure_ascii=False)),
-        "__STEPS_JSON__": escape_for_script(json.dumps(report["steps"], ensure_ascii=False)),
-        "__ERRORS_JSON__": escape_for_script(json.dumps(report["errors"], ensure_ascii=False)),
-        "__MODELS_JSON__": escape_for_script(json.dumps(report["models"], ensure_ascii=False)),
-        "__NOTES_JSON__": escape_for_script(json.dumps(report["notes"], ensure_ascii=False)),
+        "__COMMANDS_JSON__": escape_for_script(
+            json.dumps(report["commands"], ensure_ascii=False)
+        ),
+        "__STEPS_JSON__": escape_for_script(
+            json.dumps(report["steps"], ensure_ascii=False)
+        ),
+        "__ERRORS_JSON__": escape_for_script(
+            json.dumps(report["errors"], ensure_ascii=False)
+        ),
+        "__MODELS_JSON__": escape_for_script(
+            json.dumps(report["models"], ensure_ascii=False)
+        ),
+        "__FEATURES_JSON__": escape_for_script(
+            json.dumps(report["features"], ensure_ascii=False)
+        ),
+        "__NOTES_JSON__": escape_for_script(
+            json.dumps(report["notes"], ensure_ascii=False)
+        ),
     }
     html_out = HTML_TEMPLATE
     for key, value in replacements.items():
@@ -957,8 +1160,15 @@ def render_html(report: dict) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--driver", required=True, choices=sorted(USAGE_SCRIPT), help="IDE/driver usado na sessao")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--driver",
+        required=True,
+        choices=sorted(USAGE_SCRIPT),
+        help="IDE/driver usado na sessao",
+    )
     parser.add_argument(
         "--session",
         default=None,
@@ -970,14 +1180,22 @@ def main() -> None:
         default=DEFAULT_TRACE_FILE,
         help="Trace do harness a correlacionar (default: .harness/trace.jsonl)",
     )
-    parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "report", help="Pasta de saida (default: report/)")
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=REPO_ROOT / "report",
+        help="Pasta de saida (default: report/)",
+    )
     args = parser.parse_args()
 
     session_id = args.session or find_last_session(args.driver)
     print(f"Sessao: {session_id}", file=sys.stderr)
 
     correlate = run_correlate(args.driver, session_id, args.trace_file)
-    report = build_report(args.driver, session_id, args.trace_file, correlate)
+    feature_correlate = run_correlate_by_feature(args.driver, session_id)
+    report = build_report(
+        args.driver, session_id, args.trace_file, correlate, feature_correlate
+    )
     html_out = render_html(report)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
