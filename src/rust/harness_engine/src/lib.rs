@@ -1,18 +1,23 @@
 pub mod envelope;
 pub mod envelope_validation;
+pub mod errors;
 pub mod harness_config;
+pub mod harness_host;
 pub mod harness_state;
 pub mod inbox;
 pub mod path_resolver;
 pub mod run_config_store;
 pub mod state_store;
+pub mod task_registry;
 pub mod trace;
 
 pub use envelope::{Envelope, envelope_type};
 pub use envelope_validation::{ValidationResult, Validator};
+pub use errors::HarnessTimeoutError;
 pub use harness_config::HarnessConfig;
 pub use harness_state::HarnessState;
 pub use run_config_store::RunConfig;
+pub use task_registry::Action;
 pub use trace::TraceEntry;
 
 // `current_dir` (e no futuro env vars usadas por outros módulos) são globais ao processo:
