@@ -1,5 +1,3 @@
-![High-level architecture — Harness · Flows.Development](assets/images/fig-08-hla.png)
-
 # Architecture
 
 This document walks through the architecture of **Inverted Agentic Orchestration**
