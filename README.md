@@ -45,7 +45,7 @@ contract and no real need to govern multiple iterations.
 
 ## Structure
 
-![High-level architecture — Harness · Flows.Development](assets/images/fig-08-hla.png)
+![High-level architecture — Harness · Flows.Development](assets/images/fig-9-hla-layers.png)
 
 Five layers, top to bottom: the **driver** (IDE agent) executes instructions
 but does not decide the next state; the **transport** (`.harness/inbox.json`
