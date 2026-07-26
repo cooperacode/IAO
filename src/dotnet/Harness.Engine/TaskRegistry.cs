@@ -64,7 +64,10 @@ public static class TaskRegistry
         var resultBytes = Encoding.UTF8.GetByteCount(result);
 
         // Uma linha por volta do loop: alimenta a Telemetria e o Evaluator de trajetória.
-        Trace.Append(step, command, outcome, resultBytes);
+        // Label é lido de novo (não do snapshot de Load() acima) porque a própria action
+        // pode ter acabado de setá-lo (ex.: Pick() escolhendo a feature deste passo).
+        var label = StateStore.Get(StateStore.TraceLabelKey) ?? "";
+        Trace.Append(step, command, outcome, resultBytes, label);
 
         // O custo da instrução emitida agora só é conhecido aqui — entra no acumulado
         // que o guard do próximo turno vai checar.

@@ -129,11 +129,11 @@ public static partial class DevelopmentTasks
         PromptFormatter.Format(
             input: $"""
             O harness não encontrou `verify-feature.sh` no diretório-alvo, então faça o
-            self-verify manual da feature #{State("current_feature_id")}
-            ({State("current_feature_title")}) como um usuário faria: rode
+            self-verify manual da feature #{State(CurrentFeatureIdKey)}
+            ({State(CurrentFeatureTitleKey)}) como um usuário faria: rode
             `{RunConfigStore.Load().VerifyCmd}` no diretório-alvo ({RunConfigStore.Load().TargetDir}) e
             confirme o comportamento ponta a ponta. Salve a saída completa em
-            `.harness/logs/verify-{State("current_feature_id")}.log`.
+            `.harness/logs/verify-{State(CurrentFeatureIdKey)}.log`.
 
             Responda em '{RESULT}' começando com `PASS` ou `FAIL: <motivo>`, incluindo só o
             erro principal e o caminho do log.
@@ -146,7 +146,7 @@ public static partial class DevelopmentTasks
             input: $"""
             O veredito do self-verify não começou com `PASS` nem `FAIL`. Reexecute, se
             necessário, `{RunConfigStore.Load().VerifyCmd}` no diretório-alvo ({RunConfigStore.Load().TargetDir})
-            salvando a saída completa em `.harness/logs/verify-{State("current_feature_id")}.log`.
+            salvando a saída completa em `.harness/logs/verify-{State(CurrentFeatureIdKey)}.log`.
             Responda em '{RESULT}' começando exatamente com `PASS` ou `FAIL: <motivo>`,
             sem colar logs longos.
             """,
@@ -164,8 +164,8 @@ public static partial class DevelopmentTasks
 
         return PromptFormatter.Format(
             input: $"""
-            A verificação FALHOU na feature #{State("current_feature_id")}
-            ({State("current_feature_title")}). {failure}Corrija a implementação (ainda SÓ esta feature).
+            A verificação FALHOU na feature #{State(CurrentFeatureIdKey)}
+            ({State(CurrentFeatureTitleKey)}). {failure}Corrija a implementação (ainda SÓ esta feature).
             Se consultar logs, leia só o trecho relevante. Resuma o ajuste em '{SUMMARY}' —
             em seguida verificamos de novo.
             """,
@@ -185,7 +185,7 @@ public static partial class DevelopmentTasks
         return PromptFormatter.Format(
             input: $"""
             {failure}Deixe o estado LIMPO para a próxima sessão:
-            1. `git commit` com mensagem descritiva referenciando a feature #{State("current_feature_id")}. Se o diretório-alvo não estiver em um repositório Git, registre isso explicitamente como `NO_GIT: <motivo>`.
+            1. `git commit` com mensagem descritiva referenciando a feature #{State(CurrentFeatureIdKey)}. Se o diretório-alvo não estiver em um repositório Git, registre isso explicitamente como `NO_GIT: <motivo>`.
             2. Anexe uma linha ao `progress.txt`: feature concluída, o que foi feito e como verificar.
 
             Confirme com o hash do commit ou `NO_GIT: <motivo>` em '{COMMIT}'.

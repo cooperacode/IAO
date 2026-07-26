@@ -15,7 +15,7 @@ public static partial class DevelopmentTasks
 
     private static AutomatedVerifyResult TryAutomatedVerify()
     {
-        if (!int.TryParse(State("current_feature_id"), out var featureId))
+        if (!int.TryParse(State(CurrentFeatureIdKey), out var featureId))
             return AutomatedVerifyResult.Missing();
 
         string targetDir;

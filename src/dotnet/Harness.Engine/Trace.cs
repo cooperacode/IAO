@@ -47,13 +47,13 @@ public static class Trace
         }
     }
 
-    public static void Append(int step, string command, string outcome, int instructionChars)
+    public static void Append(int step, string command, string outcome, int instructionChars, string label = "")
     {
         try
         {
             Directory.CreateDirectory(Dir);
             var prevHash = ComputePrevHash();
-            var entry = new TraceEntry(step, command, outcome, instructionChars, DateTimeOffset.UtcNow, prevHash);
+            var entry = new TraceEntry(step, command, outcome, instructionChars, DateTimeOffset.UtcNow, prevHash, label);
             var line = JsonSerializer.Serialize(entry, HarnessJsonContext.Default.TraceEntry);
             // Uma única chamada de append para a linha inteira (já com prevHash embutido) —
             // é o que garante atomicidade do evento no nível do arquivo.
@@ -148,16 +148,23 @@ public static class Trace
 /// categoria de <see cref="Step"/>/<see cref="Outcome"/> — mas dá a chave temporal que falta
 /// para correlacionar cada passo com os tokens reais que o driver gastou decidindo-o
 /// (ver scripts/harness_cost_correlate.py), sem o harness precisar auto-relatar tokens.
+///
+/// <see cref="Label"/> é a etiqueta opcional e agnóstica de domínio (ex.: "feature:3") que
+/// resolve a mesma dor do <see cref="StateStore"/>: <see cref="Step"/> é um contador global do
+/// run inteiro, não identifica a QUE unidade de trabalho o passo pertence. A engine só
+/// carrega o valor — quem decide o que ele significa é o flow (ver DevelopmentTasks.Pick).
 /// </summary>
 ///
 /// <remarks>
-/// <see cref="PrevHash"/> é o último campo posicional, com default <c>""</c> de propósito:
-/// preserva os call-sites posicionais existentes (testes que constroem <c>TraceEntry</c>
-/// diretamente, sem se importar com a cadeia) e permite ler um <c>trace.jsonl</c> legado,
-/// gravado antes desta mudança, sem lançar na desserialização.
+/// <see cref="PrevHash"/> e <see cref="Label"/> são os últimos campos posicionais, ambos com
+/// default <c>""</c> de propósito: preserva os call-sites posicionais existentes (testes que
+/// constroem <c>TraceEntry</c> diretamente, sem se importar com a cadeia ou a etiqueta) e
+/// permite ler um <c>trace.jsonl</c> legado, gravado antes destas mudanças, sem lançar na
+/// desserialização.
 /// </remarks>
 public record TraceEntry(
-    int Step, string Command, string Outcome, int InstructionChars, DateTimeOffset Timestamp, string PrevHash = "");
+    int Step, string Command, string Outcome, int InstructionChars, DateTimeOffset Timestamp,
+    string PrevHash = "", string Label = "");
 
 /// <summary>Desfechos possíveis de um passo, gravados em <see cref="TraceEntry.Outcome"/>.</summary>
 public static class TraceOutcome

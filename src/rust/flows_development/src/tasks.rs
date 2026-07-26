@@ -28,6 +28,15 @@ pub const STEPS_PER_FEATURE: i32 = 8;
 // fronteiras.
 pub const STEP_BUDGET: i32 = MAX_FEATURES as i32 * STEPS_PER_FEATURE + 8;
 
+// Chaves do state_store::Data usadas por este módulo e por prompts.rs/handoff.rs — const
+// em vez de string literal repetida, para que um typo em qualquer um dos arquivos vire
+// erro de compilação em vez de uma chave nunca lida.
+pub const CURRENT_FEATURE_ID_KEY: &str = "current_feature_id";
+pub const CURRENT_FEATURE_TITLE_KEY: &str = "current_feature_title";
+pub const CURRENT_FEATURE_SUMMARY_KEY: &str = "current_feature_summary";
+pub const CURRENT_FEATURE_VERIFY_KEY: &str = "current_feature_verify";
+pub const FEATURE_STEPS_KEY: &str = "feature_steps";
+
 fn state(key: &str) -> String {
     state_store::get(key).unwrap_or_default()
 }
@@ -103,7 +112,7 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 
 pub fn bearings(_envelope: Option<&Envelope>) -> String {
     // Nova sessão (uma feature): zera o contador da guarda por feature.
-    state_store::set("feature_steps", "1");
+    state_store::set(FEATURE_STEPS_KEY, "1");
     prompts::smoke_prompt()
 }
 
@@ -137,8 +146,14 @@ pub fn pick(_envelope: Option<&Envelope>) -> String {
         }
     };
 
-    state_store::set("current_feature_id", &next.id.to_string());
-    state_store::set("current_feature_title", &next.title);
+    state_store::set(CURRENT_FEATURE_ID_KEY, &next.id.to_string());
+    state_store::set(CURRENT_FEATURE_TITLE_KEY, &next.title);
+    // Etiqueta o trace com a feature corrente (ver trace::TraceEntry::label) — sem isso,
+    // cada linha do trace.jsonl só tem o step global, sem dizer a qual feature ele pertence.
+    state_store::set(
+        state_store::TRACE_LABEL_KEY,
+        &format!("feature:{}", next.id),
+    );
     prompts::implement_prompt(&next)
 }
 
@@ -149,17 +164,17 @@ pub fn implement(envelope: Option<&Envelope>) -> String {
 
     let summary = arg(envelope).trim().to_string();
     if !summary.is_empty() {
-        state_store::set("current_feature_summary", &summary);
+        state_store::set(CURRENT_FEATURE_SUMMARY_KEY, &summary);
     }
 
-    let feature_id: Option<i32> = state("current_feature_id").parse().ok();
+    let feature_id: Option<i32> = state(CURRENT_FEATURE_ID_KEY).parse().ok();
     if let Some(feature_id) = feature_id {
         // target_dir inválido (raiz, home, instalação do harness) -> mesmo caminho de
         // "não tentou verificação automática" que target_dir sem verify-feature.sh.
         if let Ok(target_dir) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
             let auto = verify::try_automated_verify(feature_id, &target_dir);
             if auto.attempted {
-                state_store::set("current_feature_verify", &auto.result);
+                state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
                 return if auto.success {
                     handoff::complete_verified_feature(&auto.result)
                 } else {
@@ -187,7 +202,7 @@ pub fn verify(envelope: Option<&Envelope>) -> String {
     }
 
     if upper.starts_with("PASS") {
-        state_store::set("current_feature_verify", &result);
+        state_store::set(CURRENT_FEATURE_VERIFY_KEY, &result);
         return handoff::complete_verified_feature(&result);
     }
 
@@ -199,7 +214,7 @@ pub fn handoff_task(envelope: Option<&Envelope>) -> String {
         return prompts::handoff_retry_prompt();
     }
 
-    if let Ok(id) = state("current_feature_id").parse::<i32>() {
+    if let Ok(id) = state(CURRENT_FEATURE_ID_KEY).parse::<i32>() {
         feature_store::mark_passed(id);
     }
 
@@ -215,13 +230,13 @@ pub fn handoff_task(envelope: Option<&Envelope>) -> String {
 
 /// Incrementa o contador da sessão e sinaliza estouro do teto por feature.
 fn over_feature_budget() -> bool {
-    let steps: i32 = state("feature_steps").parse().unwrap_or(0) + 1;
-    state_store::set("feature_steps", &steps.to_string());
+    let steps: i32 = state(FEATURE_STEPS_KEY).parse().unwrap_or(0) + 1;
+    state_store::set(FEATURE_STEPS_KEY, &steps.to_string());
 
     if steps > STEPS_PER_FEATURE {
         eprintln!(
             "[dev] feature '{}' excedeu {STEPS_PER_FEATURE} passos; encerrando.",
-            state("current_feature_title")
+            state(CURRENT_FEATURE_TITLE_KEY)
         );
         return true;
     }
@@ -479,7 +494,7 @@ mod tests {
         let implement_prompt = pick(Some(&cmd("pick", vec![])));
 
         assert_eq!(
-            state_store::get("current_feature_id"),
+            state_store::get(CURRENT_FEATURE_ID_KEY),
             Some("2".to_string())
         ); // prioridade 1 = id 2 ("B")
         assert!(implement_prompt.contains('B'));
@@ -499,7 +514,7 @@ mod tests {
         pick(Some(&cmd("pick", vec![])));
 
         assert_eq!(
-            state_store::get("current_feature_id"),
+            state_store::get(CURRENT_FEATURE_ID_KEY),
             Some("1".to_string())
         );
     }
@@ -664,7 +679,7 @@ mod tests {
 
         plan_default();
         bearings(Some(&cmd("bearings", vec!["ok"]))); // zera para 1
-        state_store::set("feature_steps", &STEPS_PER_FEATURE.to_string()); // no limite
+        state_store::set(FEATURE_STEPS_KEY, &STEPS_PER_FEATURE.to_string()); // no limite
 
         let result = smoke(Some(&cmd("smoke", vec!["ok"]))); // próximo bump ultrapassa
 

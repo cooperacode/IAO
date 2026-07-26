@@ -5,6 +5,7 @@ o mesmo nome que o driver preenche e devolve como arg do próximo envelope.
 
 from __future__ import annotations
 
+from flows_development import state_keys
 from harness_engine import prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
@@ -137,10 +138,10 @@ que implementou em '{SUMMARY}' em uma frase curta."""
 
 def verify_prompt() -> str:
     input_text = f"""O harness não encontrou `verify-feature.sh` no diretório-alvo, então faça o
-self-verify manual da feature #{_state('current_feature_id')} ({_state('current_feature_title')})
+self-verify manual da feature #{_state(state_keys.CURRENT_FEATURE_ID)} ({_state(state_keys.CURRENT_FEATURE_TITLE)})
 como um usuário faria: rode `{run_config_store.load().verify_cmd}` no diretório-alvo
 ({run_config_store.load().target_dir}) e confirme o comportamento ponta a ponta. Salve a
-saída completa em `.harness/logs/verify-{_state('current_feature_id')}.log`.
+saída completa em `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
 
 Responda em '{RESULT}' começando com `PASS` ou `FAIL: <motivo>`, incluindo só o erro
 principal e o caminho do log."""
@@ -154,7 +155,7 @@ principal e o caminho do log."""
 def verify_retry_prompt() -> str:
     input_text = f"""O veredito do self-verify não começou com `PASS` nem `FAIL`. Reexecute, se
 necessário, `{run_config_store.load().verify_cmd}` no diretório-alvo ({run_config_store.load().target_dir})
-salvando a saída completa em `.harness/logs/verify-{_state('current_feature_id')}.log`.
+salvando a saída completa em `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
 Responda em '{RESULT}' começando exatamente com `PASS` ou `FAIL: <motivo>`, sem colar
 logs longos."""
     return prompt_formatter.format(
@@ -170,8 +171,8 @@ def fix_prompt(verify_failure: str | None = None) -> str:
         failure = f"""Falha observada: {verify_failure}
 
 """
-    input_text = f"""A verificação FALHOU na feature #{_state('current_feature_id')}
-({_state('current_feature_title')}). {failure}Corrija a implementação (ainda SÓ esta feature).
+    input_text = f"""A verificação FALHOU na feature #{_state(state_keys.CURRENT_FEATURE_ID)}
+({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Corrija a implementação (ainda SÓ esta feature).
 Se consultar logs, leia só o trecho relevante. Resuma o ajuste em '{SUMMARY}' — em seguida
 verificamos de novo."""
     return prompt_formatter.format(
@@ -188,7 +189,7 @@ def handoff_prompt(automatic_failure: str | None = None) -> str:
 
 """
     input_text = f"""{failure}Deixe o estado LIMPO para a próxima sessão:
-1. `git commit` com mensagem descritiva referenciando a feature #{_state('current_feature_id')}. Se o diretório-alvo não estiver em um repositório Git, registre isso explicitamente como `NO_GIT: <motivo>`.
+1. `git commit` com mensagem descritiva referenciando a feature #{_state(state_keys.CURRENT_FEATURE_ID)}. Se o diretório-alvo não estiver em um repositório Git, registre isso explicitamente como `NO_GIT: <motivo>`.
 2. Anexe uma linha ao `progress.txt`: feature concluída, o que foi feito e como verificar.
 
 Confirme com o hash do commit ou `NO_GIT: <motivo>` em '{COMMIT}'."""

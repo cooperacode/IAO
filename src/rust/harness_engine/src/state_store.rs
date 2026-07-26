@@ -20,6 +20,12 @@ pub const LAST_RUN_STATE_PATH: &str = ".harness/last-run.state.json";
 /// do refinamento.
 pub const LAST_EVALUATION_STATE_PATH: &str = ".harness/last-evaluation.state.json";
 
+/// Chave convencional em `HarnessState::data` para a etiqueta que `task_registry` propaga
+/// ao `trace` a cada passo (ver `trace::TraceEntry::label`). Genérica de propósito: a
+/// engine não sabe o que é uma "feature" — só relê esta chave se o flow a tiver setado
+/// (ex.: `flows_development::tasks::pick`).
+pub const TRACE_LABEL_KEY: &str = "trace_label";
+
 pub fn load() -> HarnessState {
     load_from(FILE_PATH)
 }

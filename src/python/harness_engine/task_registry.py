@@ -71,7 +71,10 @@ def dispatch(
     result_bytes = len(result.encode("utf-8"))
 
     # Uma linha por volta do loop: alimenta a telemetria e o evaluator de trajetória.
-    trace.append(step, command, outcome, result_bytes)
+    # Label é lido de novo (não do snapshot de load() acima) porque a própria action pode
+    # ter acabado de setá-lo (ex.: pick() escolhendo a feature deste passo).
+    label = state_store.get(state_store.TRACE_LABEL_KEY) or ""
+    trace.append(step, command, outcome, result_bytes, label)
 
     # O custo da instrução emitida agora só é conhecido aqui — entra no acumulado que o
     # guard do próximo turno vai checar.

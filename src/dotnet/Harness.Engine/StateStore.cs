@@ -24,6 +24,14 @@ public static class StateStore
     /// <summary>Estado final congelado do último run de avaliação — caminho próprio, não sobrescreve o do refinamento.</summary>
     public const string LastEvaluationStatePath = ".harness/last-evaluation.state.json";
 
+    /// <summary>
+    /// Chave convencional em <see cref="HarnessState.Data"/> para a etiqueta que o
+    /// <see cref="TaskRegistry"/> propaga ao <see cref="Trace"/> a cada passo (ver
+    /// <see cref="TraceEntry.Label"/>). Genérica de propósito: a engine não sabe o que é uma
+    /// "feature" — só relê esta chave se o flow a tiver setado (ex.: DevelopmentTasks.Pick).
+    /// </summary>
+    public const string TraceLabelKey = "trace_label";
+
     public static HarnessState Load() => LoadFrom(FilePath);
 
     /// <summary>Carrega um estado de um caminho arbitrário (ex.: a evidência de um caso do golden set).</summary>

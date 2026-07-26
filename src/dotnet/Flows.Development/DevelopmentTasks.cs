@@ -27,6 +27,15 @@ public static partial class DevelopmentTasks
     // de MaxFeatures features gastando StepsPerFeature cada, mais o start/plan e as fronteiras.
     public const int StepBudget = MaxFeatures * StepsPerFeature + 8;
 
+    // Chaves do StateStore.Data usadas pelos arquivos parciais deste flow (Handoff/Prompt/
+    // Verify) — const em vez de string literal repetida, para que um typo em qualquer um
+    // dos arquivos vire erro de compilação em vez de uma chave nunca lida.
+    private const string CurrentFeatureIdKey = "current_feature_id";
+    private const string CurrentFeatureTitleKey = "current_feature_title";
+    private const string CurrentFeatureSummaryKey = "current_feature_summary";
+    private const string CurrentFeatureVerifyKey = "current_feature_verify";
+    private const string FeatureStepsKey = "feature_steps";
+
     private static string State(string key) => StateStore.Get(key) ?? "";
     private static string DocsFolder => HarnessConfig.Current.DocsFolder;
 
@@ -91,7 +100,7 @@ public static partial class DevelopmentTasks
     public static string Bearings(Envelope? envelope)
     {
         // Nova sessão (uma feature): zera o contador da guarda por feature.
-        StateStore.Set("feature_steps", "1");
+        StateStore.Set(FeatureStepsKey, "1");
         return SmokePrompt();
     }
 
@@ -116,8 +125,11 @@ public static partial class DevelopmentTasks
                 : Stop("dependências bloqueadas — nenhuma feature pendente está pronta");
         }
 
-        StateStore.Set("current_feature_id", next.Id.ToString());
-        StateStore.Set("current_feature_title", next.Title);
+        StateStore.Set(CurrentFeatureIdKey, next.Id.ToString());
+        StateStore.Set(CurrentFeatureTitleKey, next.Title);
+        // Etiqueta o trace com a feature corrente (ver TraceEntry.Label) — sem isso, cada
+        // linha do trace.jsonl só tem o Step global, sem dizer a qual feature ele pertence.
+        StateStore.Set(StateStore.TraceLabelKey, $"feature:{next.Id}");
         return ImplementPrompt(next);
     }
 
@@ -128,12 +140,12 @@ public static partial class DevelopmentTasks
 
         var summary = Arg(envelope).Trim();
         if (!string.IsNullOrWhiteSpace(summary))
-            StateStore.Set("current_feature_summary", summary);
+            StateStore.Set(CurrentFeatureSummaryKey, summary);
 
         var autoVerify = TryAutomatedVerify();
         if (autoVerify.Attempted)
         {
-            StateStore.Set("current_feature_verify", autoVerify.Result);
+            StateStore.Set(CurrentFeatureVerifyKey, autoVerify.Result);
             return autoVerify.Success
                 ? CompleteVerifiedFeature(autoVerify.Result)
                 : FixPrompt(autoVerify.Result);
@@ -156,7 +168,7 @@ public static partial class DevelopmentTasks
 
         if (result.StartsWith("PASS", StringComparison.OrdinalIgnoreCase))
         {
-            StateStore.Set("current_feature_verify", result);
+            StateStore.Set(CurrentFeatureVerifyKey, result);
             return CompleteVerifiedFeature(result);
         }
 
@@ -168,7 +180,7 @@ public static partial class DevelopmentTasks
         if (string.IsNullOrWhiteSpace(Arg(envelope)))
             return HandoffRetryPrompt();
 
-        if (int.TryParse(State("current_feature_id"), out var id))
+        if (int.TryParse(State(CurrentFeatureIdKey), out var id))
             FeatureStore.MarkPassed(id);
 
         // Alguma feature ainda pendente? Sim → próxima sessão (bearings). Não → fim.
@@ -180,13 +192,13 @@ public static partial class DevelopmentTasks
     /// <summary>Incrementa o contador da sessão e sinaliza estouro do teto por feature.</summary>
     private static bool OverFeatureBudget()
     {
-        var steps = (int.TryParse(State("feature_steps"), out var s) ? s : 0) + 1;
-        StateStore.Set("feature_steps", steps.ToString());
+        var steps = (int.TryParse(State(FeatureStepsKey), out var s) ? s : 0) + 1;
+        StateStore.Set(FeatureStepsKey, steps.ToString());
 
         if (steps > StepsPerFeature)
         {
             Console.Error.WriteLine(
-                $"[dev] feature '{State("current_feature_title")}' excedeu {StepsPerFeature} passos; encerrando.");
+                $"[dev] feature '{State(CurrentFeatureTitleKey)}' excedeu {StepsPerFeature} passos; encerrando.");
             return true;
         }
         return false;

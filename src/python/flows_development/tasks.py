@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import harness_engine
-from flows_development import prompts
+from flows_development import prompts, state_keys
 from harness_engine import docs_reader, feature_store, git_command, harness_config, run_config_store, state_store
 from harness_engine.envelope import Envelope
 from harness_engine.run_config_store import RunConfig
@@ -104,7 +104,7 @@ def plan(envelope: Envelope | None) -> str:
 
 def bearings(envelope: Envelope | None) -> str:
     # Nova sessão (uma feature): zera o contador da guarda por feature.
-    state_store.set("feature_steps", "1")
+    state_store.set(state_keys.FEATURE_STEPS, "1")
     return prompts.smoke_prompt()
 
 
@@ -129,8 +129,11 @@ def pick(envelope: Envelope | None) -> str:
             else _stop("dependências bloqueadas — nenhuma feature pendente está pronta")
         )
 
-    state_store.set("current_feature_id", str(next_feature.id))
-    state_store.set("current_feature_title", next_feature.title)
+    state_store.set(state_keys.CURRENT_FEATURE_ID, str(next_feature.id))
+    state_store.set(state_keys.CURRENT_FEATURE_TITLE, next_feature.title)
+    # Etiqueta o trace com a feature corrente (ver trace.TraceEntry.label) — sem isso, cada
+    # linha do trace.jsonl só tem o step global, sem dizer a qual feature ele pertence.
+    state_store.set(state_store.TRACE_LABEL_KEY, f"feature:{next_feature.id}")
     return prompts.implement_prompt(next_feature)
 
 
@@ -140,11 +143,11 @@ def implement(envelope: Envelope | None) -> str:
 
     summary = _arg(envelope).strip()
     if summary:
-        state_store.set("current_feature_summary", summary)
+        state_store.set(state_keys.CURRENT_FEATURE_SUMMARY, summary)
 
     attempted, success, result = _try_automated_verify()
     if attempted:
-        state_store.set("current_feature_verify", result)
+        state_store.set(state_keys.CURRENT_FEATURE_VERIFY, result)
         return _complete_verified_feature(result) if success else prompts.fix_prompt(result)
 
     return prompts.verify_prompt()
@@ -162,7 +165,7 @@ def verify(envelope: Envelope | None) -> str:
         return prompts.fix_prompt(result)
 
     if result.upper().startswith("PASS"):
-        state_store.set("current_feature_verify", result)
+        state_store.set(state_keys.CURRENT_FEATURE_VERIFY, result)
         return _complete_verified_feature(result)
 
     return prompts.verify_retry_prompt()
@@ -173,7 +176,7 @@ def handoff(envelope: Envelope | None) -> str:
         return prompts.handoff_retry_prompt()
 
     try:
-        feature_id = int(_state("current_feature_id"))
+        feature_id = int(_state(state_keys.CURRENT_FEATURE_ID))
         feature_store.mark_passed(feature_id)
     except ValueError:
         pass
@@ -193,7 +196,7 @@ def _complete_verified_feature(verify_result: str) -> str:
 
     print(f"[dev] handoff automatico concluido: {confirmation}", file=sys.stderr)
     try:
-        feature_store.mark_passed(int(_state("current_feature_id")))
+        feature_store.mark_passed(int(_state(state_keys.CURRENT_FEATURE_ID)))
     except ValueError:
         pass
 
@@ -202,12 +205,12 @@ def _complete_verified_feature(verify_result: str) -> str:
 
 def _try_automated_handoff(verify_result: str) -> tuple[bool, str, str | None]:
     try:
-        feature_id = int(_state("current_feature_id"))
+        feature_id = int(_state(state_keys.CURRENT_FEATURE_ID))
     except ValueError:
         return False, "", "feature atual ausente no state.json"
 
     feature = next((f for f in feature_store.load() if f.id == feature_id), None)
-    title = feature.title if feature is not None else _state("current_feature_title")
+    title = feature.title if feature is not None else _state(state_keys.CURRENT_FEATURE_TITLE)
     title = title or f"feature #{feature_id}"
     config = run_config_store.load()
     try:
@@ -255,7 +258,7 @@ def _try_automated_handoff(verify_result: str) -> tuple[bool, str, str | None]:
 
 def _try_automated_verify() -> tuple[bool, bool, str]:
     try:
-        feature_id = int(_state("current_feature_id"))
+        feature_id = int(_state(state_keys.CURRENT_FEATURE_ID))
     except ValueError:
         return False, False, ""
 
@@ -345,7 +348,7 @@ def _append_progress(
     verify_cmd: str,
     verify_result: str,
 ) -> None:
-    summary = _one_line(_state("current_feature_summary"), "implementacao concluida")
+    summary = _one_line(_state(state_keys.CURRENT_FEATURE_SUMMARY), "implementacao concluida")
     verify = _one_line(verify_result, "PASS")
     command = verify_cmd.strip() or "comando de verificacao do projeto"
     line = (
@@ -466,12 +469,13 @@ def _one_line(value: str | None, fallback: str = "") -> str:
 
 def _over_feature_budget() -> bool:
     """Incrementa o contador da sessão e sinaliza estouro do teto por feature."""
-    steps = _int_or(_state("feature_steps"), 0) + 1
-    state_store.set("feature_steps", str(steps))
+    steps = _int_or(_state(state_keys.FEATURE_STEPS), 0) + 1
+    state_store.set(state_keys.FEATURE_STEPS, str(steps))
 
     if steps > STEPS_PER_FEATURE:
         print(
-            f"[dev] feature '{_state('current_feature_title')}' excedeu {STEPS_PER_FEATURE} passos; encerrando.",
+            f"[dev] feature '{_state(state_keys.CURRENT_FEATURE_TITLE)}' excedeu {STEPS_PER_FEATURE} "
+            "passos; encerrando.",
             file=sys.stderr,
         )
         return True

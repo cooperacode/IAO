@@ -98,7 +98,10 @@ pub fn dispatch(
     );
 
     // Uma linha por volta do loop: alimenta a telemetria e o evaluator de trajetória.
-    trace::append(step, &command, outcome, result.len() as i32);
+    // Label é lido de novo (não do snapshot de load() acima) porque a própria action pode
+    // ter acabado de setá-lo (ex.: pick() escolhendo a feature deste passo).
+    let label = state_store::get(state_store::TRACE_LABEL_KEY).unwrap_or_default();
+    trace::append_with_label(step, &command, outcome, result.len() as i32, &label);
 
     // O custo da instrução emitida agora só é conhecido aqui — entra no acumulado que o
     // guard do próximo turno vai checar.

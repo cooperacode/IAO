@@ -21,7 +21,7 @@ public static partial class DevelopmentTasks
         }
 
         Console.Error.WriteLine($"[dev] handoff automatico concluido: {handoff.Confirmation}");
-        if (int.TryParse(State("current_feature_id"), out var id))
+        if (int.TryParse(State(CurrentFeatureIdKey), out var id))
             FeatureStore.MarkPassed(id);
 
         return FeatureStore.AllPassing() ? Done() : BearingsPrompt();
@@ -29,11 +29,11 @@ public static partial class DevelopmentTasks
 
     private static HandoffResult TryAutomatedHandoff(string verifyResult)
     {
-        if (!int.TryParse(State("current_feature_id"), out var featureId))
+        if (!int.TryParse(State(CurrentFeatureIdKey), out var featureId))
             return HandoffResult.Failed("feature atual ausente no state.json");
 
         var feature = FeatureStore.Load().FirstOrDefault(f => f.Id == featureId);
-        var title = feature?.Title ?? State("current_feature_title");
+        var title = feature?.Title ?? State(CurrentFeatureTitleKey);
         if (string.IsNullOrWhiteSpace(title))
             title = $"feature #{featureId}";
 
@@ -161,7 +161,7 @@ public static partial class DevelopmentTasks
         string verifyCmd,
         string verifyResult)
     {
-        var summary = OneLine(State("current_feature_summary"), "implementacao concluida");
+        var summary = OneLine(State(CurrentFeatureSummaryKey), "implementacao concluida");
         var verify = OneLine(verifyResult, "PASS");
         var command = string.IsNullOrWhiteSpace(verifyCmd) ? "comando de verificacao do projeto" : verifyCmd;
         var line =

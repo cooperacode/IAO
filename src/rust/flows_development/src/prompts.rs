@@ -6,6 +6,8 @@ use harness_engine::envelope::{Envelope, envelope_type};
 use harness_engine::feature_store::Feature;
 use harness_engine::{prompt_formatter, run_config_store, state_store};
 
+use crate::tasks::{CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY};
+
 // Tokens de saída (o driver guarda o artefato do passo nestes e os devolve como args).
 const FEATURES: &str = "$FEATURES";
 const VERIFY_CMD: &str = "$VERIFY_CMD";
@@ -186,7 +188,7 @@ resuma o que implementou em '{SUMMARY}' em uma frase curta.",
 
 pub fn verify_prompt() -> String {
     let config = run_config_store::load();
-    let feature_id = state("current_feature_id");
+    let feature_id = state(CURRENT_FEATURE_ID_KEY);
     let input = format!(
         "O harness não encontrou `verify-feature.sh` no diretório-alvo, então faça o\n\
 self-verify manual da feature #{feature_id}\n\
@@ -197,7 +199,7 @@ confirme o comportamento ponta a ponta. Salve a saída completa em\n\
 \n\
 Responda em '{RESULT}' começando com `PASS` ou `FAIL: <motivo>`, incluindo só o\n\
 erro principal e o caminho do log.",
-        state("current_feature_title"),
+        state(CURRENT_FEATURE_TITLE_KEY),
         config.verify_cmd,
         config.target_dir
     );
@@ -211,7 +213,7 @@ erro principal e o caminho do log.",
 
 pub fn verify_retry_prompt() -> String {
     let config = run_config_store::load();
-    let feature_id = state("current_feature_id");
+    let feature_id = state(CURRENT_FEATURE_ID_KEY);
     let input = format!(
         "O veredito do self-verify não começou com `PASS` nem `FAIL`. Reexecute, se\n\
 necessário, `{}` no diretório-alvo ({})\n\
@@ -239,8 +241,8 @@ pub fn fix_prompt(verify_failure: Option<&str>) -> String {
 ({}). {failure}Corrija a implementação (ainda SÓ esta feature).\n\
 Se consultar logs, leia só o trecho relevante. Resuma o ajuste em '{SUMMARY}' —\n\
 em seguida verificamos de novo.",
-        state("current_feature_id"),
-        state("current_feature_title")
+        state(CURRENT_FEATURE_ID_KEY),
+        state(CURRENT_FEATURE_TITLE_KEY)
     );
 
     prompt_formatter::format(
@@ -266,7 +268,7 @@ pub fn handoff_prompt(automatic_failure: Option<&str>) -> String {
 2. Anexe uma linha ao `progress.txt`: feature concluída, o que foi feito e como verificar.\n\
 \n\
 Confirme com o hash do commit ou `NO_GIT: <motivo>` em '{COMMIT}'.",
-        state("current_feature_id")
+        state(CURRENT_FEATURE_ID_KEY)
     );
 
     prompt_formatter::format(

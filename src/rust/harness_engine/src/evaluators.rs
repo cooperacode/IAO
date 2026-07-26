@@ -147,6 +147,7 @@ mod tests {
             instruction_chars: chars,
             timestamp: String::new(),
             prev_hash: String::new(),
+            label: String::new(),
         }
     }
 

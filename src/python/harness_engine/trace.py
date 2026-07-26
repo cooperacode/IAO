@@ -50,7 +50,13 @@ class TraceEntry:
     emitida), horário de gravação e o hash da linha anterior da cadeia (`prev_hash`) —
     encadeamento que torna uma edição/remoção retroativa de uma entrada detectável (a
     entrada seguinte deixa de bater com o hash gravado). `prev_hash` tem default "" para
-    que traces antigos, gravados antes deste campo existir, continuem desserializando."""
+    que traces antigos, gravados antes deste campo existir, continuem desserializando.
+
+    `label` é a etiqueta opcional e agnóstica de domínio (ex.: "feature:3") que resolve a
+    mesma dor do state_store: `step` é um contador global do run inteiro, não identifica a
+    QUE unidade de trabalho o passo pertence. trace só carrega o valor — quem decide o que
+    ele significa é o flow (ver flows_development.tasks.pick). Default "" pelo mesmo motivo
+    de prev_hash: paridade com traces gravados antes deste campo existir."""
 
     step: int
     command: str
@@ -58,6 +64,7 @@ class TraceEntry:
     instruction_chars: int
     timestamp: str  # ISO 8601 com offset, gravado como string (paridade com o wire JSON)
     prev_hash: str = ""
+    label: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -67,6 +74,7 @@ class TraceEntry:
             "instructionChars": self.instruction_chars,
             "timestamp": self.timestamp,
             "prevHash": self.prev_hash,
+            "label": self.label,
         }
 
     @staticmethod
@@ -78,6 +86,7 @@ class TraceEntry:
             instruction_chars=int(payload["instructionChars"]),
             timestamp=str(payload["timestamp"]),
             prev_hash=str(payload.get("prevHash") or ""),
+            label=str(payload.get("label") or ""),
         )
 
 
@@ -89,11 +98,11 @@ def reset() -> None:
         print(f"[Trace] falha ao limpar: {ex}", file=sys.stderr)
 
 
-def append(step: int, command: str, outcome: str, instruction_chars: int) -> None:
+def append(step: int, command: str, outcome: str, instruction_chars: int, label: str = "") -> None:
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         prev_hash = _last_entry_hash()
-        entry = TraceEntry(step, command, outcome, instruction_chars, _now_iso(), prev_hash)
+        entry = TraceEntry(step, command, outcome, instruction_chars, _now_iso(), prev_hash, label)
         line = json.dumps(entry.to_dict(), separators=(",", ":")) + "\n"
         with open(_FILE_PATH, "a") as f:
             f.write(line)  # uma única write() — o evento inteiro é atômico ao nível de linha

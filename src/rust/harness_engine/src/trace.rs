@@ -47,6 +47,13 @@ pub struct TraceEntry {
     /// por versões anteriores do harness, sem este campo.
     #[serde(rename = "prevHash", default)]
     pub prev_hash: String,
+    /// Etiqueta opcional e agnóstica de domínio (ex.: "feature:3") que resolve a mesma dor
+    /// do `state_store`: `step` é um contador global do run inteiro, não identifica a QUE
+    /// unidade de trabalho o passo pertence. `trace` só carrega o valor — quem decide o que
+    /// ele significa é o flow (ver flows_development::tasks::pick). `#[serde(default)]` pelo
+    /// mesmo motivo de `prev_hash`: paridade com traces gravados antes deste campo existir.
+    #[serde(default)]
+    pub label: String,
 }
 
 fn genesis_hash() -> String {
@@ -86,7 +93,19 @@ pub fn reset() {
     }
 }
 
+/// Conveniência sem etiqueta — equivalente a `append_with_label(.., "")`. Mantido para não
+/// obrigar todo call site (inclusive os testes) a passar um quinto argumento que não usam.
 pub fn append(step: i32, command: &str, outcome: &str, instruction_chars: i32) {
+    append_with_label(step, command, outcome, instruction_chars, "");
+}
+
+pub fn append_with_label(
+    step: i32,
+    command: &str,
+    outcome: &str,
+    instruction_chars: i32,
+    label: &str,
+) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
         eprintln!("[Trace] falha ao gravar: {e}");
         return;
@@ -99,6 +118,7 @@ pub fn append(step: i32, command: &str, outcome: &str, instruction_chars: i32) {
         instruction_chars,
         timestamp: now_iso(),
         prev_hash: last_line_hash(FILE_PATH),
+        label: label.to_string(),
     };
 
     let mut line = match serde_json::to_string(&entry) {
