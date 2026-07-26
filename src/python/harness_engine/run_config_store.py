@@ -12,25 +12,33 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness_engine.atomic_io import write_text_atomic
+
 _DIR = ".harness"
 _FILE_PATH = ".harness/run_config.json"
 
 
 @dataclass(frozen=True)
 class RunConfig:
-    """Comando de verificação e diretório-alvo capturados pelo `plan`."""
+    """Comando de verificação, diretório-alvo e identidade do run (RFC §6.4), todos
+    capturados uma vez pelo `plan`. `run_id` é gerado só num run genuinamente novo — o
+    mesmo momento em que `write()` é chamado após `reset()` — e sobrevive a toda retomada
+    porque este arquivo não é tocado quando `start` decide que há trabalho pendente (ver
+    docstring do módulo)."""
 
     verify_cmd: str = ""
     target_dir: str = "."
+    run_id: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return {"verifyCmd": self.verify_cmd, "targetDir": self.target_dir}
+        return {"verifyCmd": self.verify_cmd, "targetDir": self.target_dir, "runId": self.run_id}
 
     @staticmethod
     def from_dict(payload: dict[str, object]) -> "RunConfig":
         return RunConfig(
             verify_cmd=str(payload.get("verifyCmd") or ""),
             target_dir=str(payload.get("targetDir") or "."),
+            run_id=str(payload.get("runId") or ""),
         )
 
 
@@ -39,7 +47,7 @@ def write(config: RunConfig) -> None:
     pelo `plan`, apagada só quando `start` decide que não há run para retomar)."""
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
-        Path(_FILE_PATH).write_text(json.dumps(config.to_dict(), separators=(",", ":")))
+        write_text_atomic(_FILE_PATH, json.dumps(config.to_dict(), separators=(",", ":")))
     except Exception as ex:
         print(f"[RunConfigStore] falha ao gravar: {ex}", file=sys.stderr)
 

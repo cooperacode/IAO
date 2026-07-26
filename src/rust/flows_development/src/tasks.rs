@@ -87,11 +87,15 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 
     feature_store::write(&capped);
 
-    // Comando de verificação e diretório-alvo: reidratados a cada passo de smoke/verify.
-    // Fora de state.json de propósito - ver run_config_store.
+    // Comando de verificação, diretório-alvo e identidade do run: reidratados a cada passo
+    // de smoke/verify. Fora de state.json de propósito - ver run_config_store. run_id nasce
+    // aqui (mesmo instante em que start() decidiu que este é um run novo, não retomado) e
+    // sobrevive a toda sessão seguinte sem precisar aparecer no Envelope trocado com o
+    // modelo (RFC §6.4 — identidade do run é concern do control plane, não do contrato).
     run_config_store::write(&RunConfig {
         verify_cmd: arg_at(envelope, 1, "dotnet test"),
         target_dir: arg_at(envelope, 2, "."),
+        run_id: uuid::Uuid::new_v4().to_string(),
     });
 
     prompts::bearings_prompt()
@@ -150,15 +154,18 @@ pub fn implement(envelope: Option<&Envelope>) -> String {
 
     let feature_id: Option<i32> = state("current_feature_id").parse().ok();
     if let Some(feature_id) = feature_id {
-        let target_dir = handoff::resolve_target_dir(&run_config_store::load().target_dir);
-        let auto = verify::try_automated_verify(feature_id, &target_dir);
-        if auto.attempted {
-            state_store::set("current_feature_verify", &auto.result);
-            return if auto.success {
-                handoff::complete_verified_feature(&auto.result)
-            } else {
-                prompts::fix_prompt(Some(&auto.result))
-            };
+        // target_dir inválido (raiz, home, instalação do harness) -> mesmo caminho de
+        // "não tentou verificação automática" que target_dir sem verify-feature.sh.
+        if let Ok(target_dir) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
+            let auto = verify::try_automated_verify(feature_id, &target_dir);
+            if auto.attempted {
+                state_store::set("current_feature_verify", &auto.result);
+                return if auto.success {
+                    handoff::complete_verified_feature(&auto.result)
+                } else {
+                    prompts::fix_prompt(Some(&auto.result))
+                };
+            }
         }
     }
 
@@ -366,6 +373,21 @@ mod tests {
     }
 
     #[test]
+    fn start_com_feature_pendente_preserva_o_run_id_do_plan_anterior() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        advance_to_verify(); // sessão "morre" antes do verify
+        let run_id_antes_do_start = run_config_store::load().run_id;
+        assert!(!run_id_antes_do_start.is_empty());
+
+        start();
+
+        // Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
+        assert_eq!(run_config_store::load().run_id, run_id_antes_do_start);
+    }
+
+    #[test]
     fn plan_persiste_features_e_roteia_para_bearings() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
@@ -377,6 +399,19 @@ mod tests {
         assert_eq!(run_config_store::load().target_dir, "web");
         assert!(result.contains("NOVA SESSÃO"));
         assert!(result.contains(r#""value":"bearings"#));
+    }
+
+    #[test]
+    fn plan_gera_um_run_id_novo_e_nao_vazio() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan(Some(&cmd("plan", vec![FEATURES_JSON, "npm test", "web"])));
+
+        let run_id = run_config_store::load().run_id;
+
+        assert!(!run_id.is_empty());
+        assert!(uuid::Uuid::parse_str(&run_id).is_ok());
     }
 
     #[test]

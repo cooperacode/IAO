@@ -267,11 +267,11 @@ fn log_suffix(log_path: &str) -> String {
 
 fn snippet(value: &str) -> String {
     let text = crate::handoff::one_line(value, "");
-    const MAX_CHARS: usize = 240;
-    if text.chars().count() <= MAX_CHARS {
+    const MAX_BYTES: usize = 240;
+    if text.len() <= MAX_BYTES {
         text
     } else {
-        let truncated: String = text.chars().take(MAX_CHARS).collect();
+        let truncated = crate::handoff::truncate_utf8_bytes(&text, MAX_BYTES);
         truncated.trim_end().to_string() + "..."
     }
 }

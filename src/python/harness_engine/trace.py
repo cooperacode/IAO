@@ -8,6 +8,7 @@ Custo: zero token e uma escrita append por invocação.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sys
@@ -17,6 +18,11 @@ from pathlib import Path
 
 _DIR = ".harness"
 _FILE_PATH = ".harness/trace.jsonl"
+
+# Hash de gênese: usado como `prev_hash` da primeira entrada de um trace (arquivo ausente
+# ou vazio) — 64 zeros, o mesmo comprimento de um digest sha256 hex, para que todo
+# `prevHash` gravado tenha formato uniforme independente da posição na cadeia.
+_GENESIS_HASH = "0" * 64
 
 # Trajetória congelada do último run que terminou em `stop`. harness_host grava aqui ao
 # concluir o flow produtor, para que outro flow (a avaliação) leia a evidência mesmo
@@ -41,13 +47,17 @@ class TraceOutcome:
 @dataclass(frozen=True)
 class TraceEntry:
     """Uma volta do loop: passo, comando recebido, desfecho, custo (chars da instrução
-    emitida) e horário de gravação."""
+    emitida), horário de gravação e o hash da linha anterior da cadeia (`prev_hash`) —
+    encadeamento que torna uma edição/remoção retroativa de uma entrada detectável (a
+    entrada seguinte deixa de bater com o hash gravado). `prev_hash` tem default "" para
+    que traces antigos, gravados antes deste campo existir, continuem desserializando."""
 
     step: int
     command: str
     outcome: str
     instruction_chars: int
     timestamp: str  # ISO 8601 com offset, gravado como string (paridade com o wire JSON)
+    prev_hash: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -56,6 +66,7 @@ class TraceEntry:
             "outcome": self.outcome,
             "instructionChars": self.instruction_chars,
             "timestamp": self.timestamp,
+            "prevHash": self.prev_hash,
         }
 
     @staticmethod
@@ -66,6 +77,7 @@ class TraceEntry:
             outcome=str(payload["outcome"]),
             instruction_chars=int(payload["instructionChars"]),
             timestamp=str(payload["timestamp"]),
+            prev_hash=str(payload.get("prevHash") or ""),
         )
 
 
@@ -80,11 +92,35 @@ def reset() -> None:
 def append(step: int, command: str, outcome: str, instruction_chars: int) -> None:
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
-        entry = TraceEntry(step, command, outcome, instruction_chars, _now_iso())
+        prev_hash = _last_entry_hash()
+        entry = TraceEntry(step, command, outcome, instruction_chars, _now_iso(), prev_hash)
+        line = json.dumps(entry.to_dict(), separators=(",", ":")) + "\n"
         with open(_FILE_PATH, "a") as f:
-            f.write(json.dumps(entry.to_dict(), separators=(",", ":")) + "\n")
+            f.write(line)  # uma única write() — o evento inteiro é atômico ao nível de linha
     except Exception as ex:
         print(f"[Trace] falha ao gravar: {ex}", file=sys.stderr)
+
+
+def _last_entry_hash() -> str:
+    """sha256 hex da última linha não-vazia gravada, ou o hash de gênese se o trace
+    estiver ausente/vazio (inclui logo após `reset()`) — a raiz da cadeia."""
+    try:
+        p = Path(_FILE_PATH)
+        if not p.exists():
+            return _GENESIS_HASH
+
+        last_line = ""
+        for line in p.read_text().split("\n"):
+            if line.strip():
+                last_line = line
+
+        if not last_line:
+            return _GENESIS_HASH
+
+        return hashlib.sha256(last_line.encode("utf-8")).hexdigest()
+    except Exception as ex:
+        print(f"[Trace] falha ao calcular prevHash: {ex}", file=sys.stderr)
+        return _GENESIS_HASH
 
 
 def snapshot(destination: str) -> None:

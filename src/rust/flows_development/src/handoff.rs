@@ -48,7 +48,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     }
 
     let config = run_config_store::load();
-    let target_dir = resolve_target_dir(&config.target_dir);
+    let target_dir = resolve_target_dir(&config.target_dir)?;
 
     std::fs::create_dir_all(&target_dir)
         .map_err(|e| format!("falha ao atualizar progress.txt: {e}"))?;
@@ -152,13 +152,56 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     }
 }
 
-pub fn resolve_target_dir(target_dir: &str) -> PathBuf {
-    let configured = if target_dir.trim().is_empty() {
-        "."
-    } else {
-        target_dir
-    };
-    std::env::current_dir().unwrap_or_default().join(configured)
+/// Resolve o diretório-alvo do handoff e rejeita as configurações claramente perigosas ou
+/// sem sentido antes de rodar `git add`/`git commit` nele. Containment completo contra uma
+/// raiz de política assinada (capability broker) é trabalho de fase futura — isto é só a
+/// lista mínima de rejeição do RFC §6.3: vazio, raiz do filesystem, HOME do usuário, ou o
+/// diretório de instalação do próprio harness.
+pub fn resolve_target_dir(target_dir: &str) -> Result<PathBuf, String> {
+    let configured = target_dir.trim();
+    if configured.is_empty() {
+        return Err("target_dir vazio: nenhum diretório-alvo configurado".to_string());
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let joined = cwd.join(configured);
+    let resolved = joined.canonicalize().unwrap_or(joined);
+
+    if resolved.parent().is_none() {
+        return Err(format!(
+            "target_dir resolvido para a raiz do sistema de arquivos: {}",
+            resolved.display()
+        ));
+    }
+
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        if !home.trim().is_empty() {
+            let home_path = PathBuf::from(&home);
+            let home_canonical = home_path.canonicalize().unwrap_or(home_path);
+            if resolved == home_canonical {
+                return Err(format!(
+                    "target_dir resolvido para o diretório home do usuário: {}",
+                    resolved.display()
+                ));
+            }
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let exe_dir_canonical = exe_dir
+                .canonicalize()
+                .unwrap_or_else(|_| exe_dir.to_path_buf());
+            if resolved == exe_dir_canonical {
+                return Err(format!(
+                    "target_dir resolvido para o diretório de instalação do harness: {}",
+                    resolved.display()
+                ));
+            }
+        }
+    }
+
+    Ok(resolved)
 }
 
 fn append_progress(
@@ -192,15 +235,27 @@ fn append_progress(
 
 fn commit_message(feature_id: i32, title: &str) -> String {
     let mut suffix = one_line(title, "");
-    if suffix.chars().count() > 72 {
-        suffix = suffix
-            .chars()
-            .take(72)
-            .collect::<String>()
-            .trim_end()
-            .to_string();
+    if suffix.len() > 72 {
+        suffix = truncate_utf8_bytes(&suffix, 72).trim_end().to_string();
     }
     format!("feat(development): complete feature #{feature_id} - {suffix}")
+}
+
+/// Corta `text` em no máximo `max_bytes` octetos UTF-8, recuando até a fronteira de char
+/// válida mais próxima — nunca parte um caractere multibyte (acento, emoji) ao meio.
+/// Compartilhado por `commit_message` e `verify::snippet` (RFC Apêndice B item 1: medir em
+/// bytes, não em codepoints, para igualar a semântica entre engines .NET/Python/Rust).
+pub fn truncate_utf8_bytes(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+
+    let mut cut = max_bytes;
+    while cut > 0 && !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+
+    text[..cut].to_string()
 }
 
 pub fn one_line(value: &str, fallback: &str) -> String {
@@ -214,5 +269,31 @@ pub fn one_line(value: &str, fallback: &str) -> String {
         fallback.to_string()
     } else {
         normalized.trim().to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_utf8_bytes_nao_quebra_caractere_multibyte_no_meio() {
+        // "café ☕" — "é" (2 bytes) e "☕" (3 bytes) são multibyte; um corte ingênuo em
+        // qualquer posição produziria uma string UTF-8 inválida (panic ao fatiar).
+        let text = "café ☕";
+        for max in 0..=text.len() {
+            let truncated = truncate_utf8_bytes(text, max);
+            assert!(truncated.len() <= max);
+        }
+    }
+
+    #[test]
+    fn commit_message_trunca_titulo_longo_em_bytes_utf8() {
+        let title = "café ".repeat(20); // bem acima de 72 bytes, com acento perto do corte
+        let message = commit_message(1, &title);
+
+        assert!(message.starts_with("feat(development): complete feature #1 - "));
+        // Se o corte tivesse partido um "é" ao meio, a formatação acima já teria
+        // panicado ao montar a String — chegar aqui já prova o corte válido.
     }
 }

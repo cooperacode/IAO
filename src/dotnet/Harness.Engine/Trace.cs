@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace Harness.Engine;
@@ -50,14 +52,50 @@ public static class Trace
         try
         {
             Directory.CreateDirectory(Dir);
-            var entry = new TraceEntry(step, command, outcome, instructionChars, DateTimeOffset.UtcNow);
+            var prevHash = ComputePrevHash();
+            var entry = new TraceEntry(step, command, outcome, instructionChars, DateTimeOffset.UtcNow, prevHash);
             var line = JsonSerializer.Serialize(entry, HarnessJsonContext.Default.TraceEntry);
+            // Uma única chamada de append para a linha inteira (já com prevHash embutido) —
+            // é o que garante atomicidade do evento no nível do arquivo.
             File.AppendAllText(FilePath, line + "\n");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[Trace] falha ao gravar: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Hash-chain (RFC §6.13): cada linha referencia o SHA-256 hex-lowercase da linha anterior
+    /// (exatamente como ela foi gravada, byte a byte), tornando qualquer edição/remoção
+    /// retroativa do trace detectável — a cadeia quebra a partir do ponto alterado. Gênese
+    /// (primeira entrada do arquivo, inclusive logo após um <see cref="Reset"/>) usa 64 zeros.
+    /// </summary>
+    private static string ComputePrevHash()
+    {
+        var lastLine = LastNonEmptyLine();
+        if (lastLine is null)
+            return new string('0', 64);
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(lastLine));
+        return Convert.ToHexStringLower(hash);
+    }
+
+    private static string? LastNonEmptyLine()
+    {
+        if (!File.Exists(FilePath))
+            return null;
+
+        // trace.jsonl é append-only e limitado ao teto de passos de um run — ler tudo é
+        // aceitável aqui; não há necessidade de otimizar para leitura reversa por bloco.
+        var lines = File.ReadAllLines(FilePath);
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            if (!string.IsNullOrWhiteSpace(lines[i]))
+                return lines[i];
+        }
+
+        return null;
     }
 
     /// <summary>Congela o trace vivo no caminho de destino — a evidência do run concluído.</summary>
@@ -68,7 +106,7 @@ public static class Trace
             if (File.Exists(FilePath))
             {
                 Directory.CreateDirectory(Dir);
-                File.Copy(FilePath, destination, overwrite: true);
+                AtomicIO.CopyAtomic(FilePath, destination);
             }
         }
         catch (Exception ex)
@@ -103,13 +141,23 @@ public static class Trace
 }
 
 /// <summary>
-/// Uma volta do loop: passo, comando recebido, desfecho, custo (chars da instrução emitida)
-/// e horário de gravação. O timestamp não é dado de token — é só quando o passo aconteceu,
-/// mesma categoria de <see cref="Step"/>/<see cref="Outcome"/> — mas dá a chave temporal que
-/// falta para correlacionar cada passo com os tokens reais que o driver gastou decidindo-o
+/// Uma volta do loop: passo, comando recebido, desfecho, custo (octetos UTF-8 da instrução
+/// emitida), horário de gravação e <see cref="PrevHash"/> — o SHA-256 hex-lowercase da linha
+/// anterior do trace, formando a hash-chain (RFC §6.13) que torna edição/remoção retroativa
+/// detectável. O timestamp não é dado de token — é só quando o passo aconteceu, mesma
+/// categoria de <see cref="Step"/>/<see cref="Outcome"/> — mas dá a chave temporal que falta
+/// para correlacionar cada passo com os tokens reais que o driver gastou decidindo-o
 /// (ver scripts/harness_cost_correlate.py), sem o harness precisar auto-relatar tokens.
 /// </summary>
-public record TraceEntry(int Step, string Command, string Outcome, int InstructionChars, DateTimeOffset Timestamp);
+///
+/// <remarks>
+/// <see cref="PrevHash"/> é o último campo posicional, com default <c>""</c> de propósito:
+/// preserva os call-sites posicionais existentes (testes que constroem <c>TraceEntry</c>
+/// diretamente, sem se importar com a cadeia) e permite ler um <c>trace.jsonl</c> legado,
+/// gravado antes desta mudança, sem lançar na desserialização.
+/// </remarks>
+public record TraceEntry(
+    int Step, string Command, string Outcome, int InstructionChars, DateTimeOffset Timestamp, string PrevHash = "");
 
 /// <summary>Desfechos possíveis de um passo, gravados em <see cref="TraceEntry.Outcome"/>.</summary>
 public static class TraceOutcome

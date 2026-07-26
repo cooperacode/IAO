@@ -45,7 +45,7 @@ pub fn write(name: &str, content: &str) -> String {
         eprintln!("[ArtifactStore] falha ao gravar {name}: {e}");
         return path;
     }
-    if let Err(e) = std::fs::write(&path, content) {
+    if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(&path), content) {
         eprintln!("[ArtifactStore] falha ao gravar {name}: {e}");
         return path;
     }
@@ -112,7 +112,9 @@ fn save_manifest(file_list: &[String]) {
     };
     match serde_json::to_string(&manifest) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(MANIFEST_PATH, json) {
+            if let Err(e) =
+                crate::atomic_io::write_atomic(std::path::Path::new(MANIFEST_PATH), &json)
+            {
                 eprintln!("[ArtifactStore] falha ao carregar manifesto: {e}");
             }
         }

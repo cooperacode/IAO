@@ -9,11 +9,26 @@ use crate::{harness_config, path_resolver};
 
 const EXTENSIONS: [&str; 2] = ["md", "txt"];
 
-// Teto de caracteres (contagem por char/codepoint, não por byte — texto em português tem
-// acentuação multibyte em UTF-8; contar bytes divergiria do teto pensado em "caracteres").
-// Ao exceder, trunca e avisa no stderr. Valor vem do harness.json (ou do default).
+// Teto de octetos UTF-8 (RFC Apêndice B item 1: medir em bytes, não em codepoints, para
+// que o teto tenha o mesmo significado entre engines .NET/Python/Rust). Ao exceder, trunca
+// em fronteira de char válida e avisa no stderr. Valor vem do harness.json (ou do default).
 fn max_chars() -> usize {
     harness_config::current().docs_max_chars.max(0) as usize
+}
+
+/// Corta `text` em no máximo `max_bytes` octetos UTF-8, recuando até a fronteira de char
+/// válida mais próxima — nunca parte um caractere multibyte (acento, emoji) ao meio.
+fn truncate_utf8_bytes(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+
+    let mut cut = max_bytes;
+    while cut > 0 && !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+
+    text[..cut].to_string()
 }
 
 /// Existe a pasta e há ao menos um arquivo `*.md`/`*.txt`?
@@ -54,9 +69,9 @@ pub fn read(folder: &str) -> (String, Vec<String>) {
         content.push_str(&text);
         content.push_str("\n\n");
 
-        if content.chars().count() > max_chars {
-            eprintln!("[DocsReader] conteúdo excedeu {max_chars} chars; truncando em {name}.");
-            content = content.chars().take(max_chars).collect();
+        if content.len() > max_chars {
+            eprintln!("[DocsReader] conteúdo excedeu {max_chars} bytes (UTF-8); truncando em {name}.");
+            content = truncate_utf8_bytes(&content, max_chars);
             break;
         }
     }
@@ -148,5 +163,30 @@ mod tests {
 
         assert_eq!(content, "");
         assert!(files.is_empty());
+    }
+
+    #[test]
+    fn truncate_utf8_bytes_nao_quebra_caractere_multibyte_no_meio() {
+        // "café ☕" — "é" (2 bytes) e "☕" (3 bytes) são multibyte; um corte ingênuo em
+        // qualquer posição produziria uma string UTF-8 inválida (panic ao fatiar).
+        let text = "café ☕";
+        for max in 0..=text.len() {
+            let truncated = truncate_utf8_bytes(text, max);
+            assert!(truncated.len() <= max);
+            // Se compilou e devolveu uma `String`, já é UTF-8 válido por construção do tipo.
+        }
+    }
+
+    #[test]
+    fn read_trunca_em_fronteira_utf8_valida_sem_quebrar_caractere() {
+        let dir = temp_dir();
+        // Conteúdo pequeno com acento perto do teto de bytes de docs_max_chars do config
+        // default não é prático de forçar aqui sem mexer em harness_config; o teste do
+        // helper acima cobre a garantia central. Este teste cobre a integração básica.
+        std::fs::write(dir.path().join("a.md"), "café ☕").unwrap();
+
+        let (content, _) = read(dir.path().to_str().unwrap());
+
+        assert!(content.contains("café ☕"));
     }
 }

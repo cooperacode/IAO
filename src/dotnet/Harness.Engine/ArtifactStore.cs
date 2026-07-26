@@ -44,7 +44,7 @@ public static class ArtifactStore
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(path, content);
+            AtomicIO.WriteAllTextAtomic(path, content);
 
             var files = Files().ToList();
             if (!files.Contains(path))
@@ -109,7 +109,7 @@ public static class ArtifactStore
     private static void SaveManifest(ArtifactManifest manifest)
     {
         Directory.CreateDirectory(Dir);
-        File.WriteAllText(ManifestPath, JsonSerializer.Serialize(manifest, HarnessJsonContext.Default.ArtifactManifest));
+        AtomicIO.WriteAllTextAtomic(ManifestPath, JsonSerializer.Serialize(manifest, HarnessJsonContext.Default.ArtifactManifest));
     }
 }
 

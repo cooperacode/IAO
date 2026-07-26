@@ -65,12 +65,17 @@ def dispatch(
 
     result, outcome = _resolve(envelope, step, cost_chars, actions, validators, max_steps)
 
+    # Octetos UTF-8, não codepoints (Apêndice B item 1 do RFC) — a mesma unidade em todo
+    # engine (.NET/Python/Rust), para que o teto de custo signifique a mesma coisa cross-
+    # engine independente de acento/emoji na instrução emitida.
+    result_bytes = len(result.encode("utf-8"))
+
     # Uma linha por volta do loop: alimenta a telemetria e o evaluator de trajetória.
-    trace.append(step, command, outcome, len(result))
+    trace.append(step, command, outcome, result_bytes)
 
     # O custo da instrução emitida agora só é conhecido aqui — entra no acumulado que o
     # guard do próximo turno vai checar.
-    state_store.add_cost(len(result))
+    state_store.add_cost(result_bytes)
     return result
 
 

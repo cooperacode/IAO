@@ -13,11 +13,17 @@ pub fn resolve(path: &str) -> String {
     if let Ok(cwd) = std::env::current_dir() {
         let from_cwd = cwd.join(trimmed);
         if from_cwd.exists() {
-            return from_cwd
-                .canonicalize()
-                .unwrap_or(from_cwd)
-                .to_string_lossy()
-                .to_string();
+            let canonical = from_cwd.canonicalize().unwrap_or_else(|_| from_cwd.clone());
+            let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
+            // Compara caminhos JÁ canonicalizados: um symlink dentro do CWD pode apontar
+            // para fora dele, e `canonicalize()` segue o link sem avisar. Se o resultado
+            // real escapou da base, trata como não encontrado e cai no fallback do
+            // binário — containment completo contra uma raiz de política assinada
+            // (capability broker) é trabalho de fase futura (RFC §6.3); isto é só a
+            // rejeição mínima de escape por symlink.
+            if canonical.starts_with(&canonical_cwd) {
+                return canonical.to_string_lossy().to_string();
+            }
         }
     }
 
@@ -85,5 +91,29 @@ mod tests {
             .unwrap();
         let expected = exe_dir.join("um-arquivo-que-nao-existe.md");
         assert_eq!(resolved, expected.to_string_lossy());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_symlink_que_escapa_do_cwd_nao_segue_o_link() {
+        let _guard = lock_cwd();
+
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secreto.txt");
+        std::fs::write(&secret, "segredo").unwrap();
+        let secret_canonical = secret.canonicalize().unwrap();
+
+        let cwd_dir = tempfile::tempdir().unwrap();
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(cwd_dir.path()).unwrap();
+
+        std::os::unix::fs::symlink(&secret, "link.txt").unwrap();
+        let resolved = resolve("link.txt");
+
+        std::env::set_current_dir(previous).unwrap();
+
+        // O link existe e aponta para fora do CWD — não deve ser devolvido como o caminho
+        // real que ele resolve (isso vazaria o escape); cai no fallback do binário.
+        assert_ne!(resolved, secret_canonical.to_string_lossy());
     }
 }

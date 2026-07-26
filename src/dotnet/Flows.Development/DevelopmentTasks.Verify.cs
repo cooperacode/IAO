@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Harness.Engine;
 
 namespace Flows.Development;
@@ -17,7 +18,20 @@ public static partial class DevelopmentTasks
         if (!int.TryParse(State("current_feature_id"), out var featureId))
             return AutomatedVerifyResult.Missing();
 
-        var targetDir = ResolveTargetDir(RunConfigStore.Load().TargetDir);
+        string targetDir;
+        try
+        {
+            targetDir = ResolveTargetDir(RunConfigStore.Load().TargetDir);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // target_dir inválido (raiz, home, instalação do harness) -> mesmo caminho de
+            // "não tentou verificação automática" que target_dir sem verify-feature.sh;
+            // não derruba o processo com uma exceção não tratada.
+            Console.Error.WriteLine($"[dev] target_dir invalido para verify automatico: {ex.Message}");
+            return AutomatedVerifyResult.Missing();
+        }
+
         var script = Path.Combine(targetDir, "verify-feature.sh");
         if (!File.Exists(script))
             return AutomatedVerifyResult.Missing();
@@ -191,7 +205,9 @@ public static partial class DevelopmentTasks
     private static string Snippet(string value, int maxChars = 240)
     {
         var text = OneLine(value);
-        return text.Length <= maxChars ? text : text[..maxChars].TrimEnd() + "...";
+        return Encoding.UTF8.GetByteCount(text) <= maxChars
+            ? text
+            : TruncateUtf8Bytes(text, maxChars).TrimEnd() + "...";
     }
 
     private sealed record VerifyScriptResult(int ExitCode, string Output, string Error, bool TimedOut);

@@ -16,6 +16,14 @@ def test_write_e_load_fazem_roundtrip():
     assert loaded.target_dir == "app"
 
 
+def test_write_e_load_preservam_o_run_id():
+    run_config_store.write(RunConfig("npm test", "app", "019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6"))
+
+    loaded = run_config_store.load()
+
+    assert loaded.run_id == "019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6"
+
+
 def test_load_arquivo_ausente_retorna_defaults_sem_lancar():
     loaded = run_config_store.load()
 

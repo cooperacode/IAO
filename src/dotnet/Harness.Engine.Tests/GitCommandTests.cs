@@ -37,4 +37,18 @@ public class GitCommandTests : IDisposable
         Assert.Equal(-1, result.ExitCode);
         Assert.NotEmpty(result.Error);
     }
+
+    [Fact]
+    public void Run_InjetaIsolamentoDeHooksEPager()
+    {
+        // `git config --get` enxerga overrides de `-c` na pilha de config, então dá para
+        // confirmar que Run() sempre os injeta sem precisar de um repositório real.
+        var hooksPath = GitCommand.Run(_tempDir, "config", "--get", "core.hooksPath");
+        Assert.Equal(0, hooksPath.ExitCode);
+        Assert.EndsWith("iao-no-hooks", hooksPath.Output.Trim());
+
+        var pager = GitCommand.Run(_tempDir, "config", "--get", "core.pager");
+        Assert.Equal(0, pager.ExitCode);
+        Assert.Equal("cat", pager.Output.Trim());
+    }
 }

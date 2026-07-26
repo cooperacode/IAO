@@ -12,6 +12,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from harness_engine.atomic_io import write_text_atomic
 from harness_engine.harness_state import HarnessState
 
 _DIR = ".harness"
@@ -48,7 +49,7 @@ def load_from(path: str) -> HarnessState:
 def save(state: HarnessState) -> None:
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
-        Path(_FILE_PATH).write_text(json.dumps(state.to_dict(), separators=(",", ":")))
+        write_text_atomic(_FILE_PATH, json.dumps(state.to_dict(), separators=(",", ":")))
     except Exception as ex:
         print(f"[StateStore] falha ao salvar: {ex}", file=sys.stderr)
 

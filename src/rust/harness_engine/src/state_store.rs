@@ -50,7 +50,9 @@ pub fn save(state: &HarnessState) {
     }
     match serde_json::to_string(state) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(FILE_PATH, json) {
+            if let Err(e) =
+                crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
+            {
                 eprintln!("[StateStore] falha ao salvar: {e}");
             }
         }

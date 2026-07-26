@@ -15,6 +15,8 @@ from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from harness_engine.atomic_io import write_text_atomic
+
 _DIR = ".harness"
 _FILE_PATH = ".harness/feature_list.json"
 
@@ -66,7 +68,7 @@ def write(features: list[Feature]) -> None:
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         payload = {"items": [f.to_dict() for f in features]}
-        Path(_FILE_PATH).write_text(json.dumps(payload, separators=(",", ":")))
+        write_text_atomic(_FILE_PATH, json.dumps(payload, separators=(",", ":")))
     except Exception as ex:
         print(f"[FeatureStore] falha ao gravar: {ex}", file=sys.stderr)
 

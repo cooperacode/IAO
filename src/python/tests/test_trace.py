@@ -1,7 +1,10 @@
 """O trace é a sequência de comandos que state_store não guarda (ele sobrescreve o
 estado). Sem ele não há Trajectory Evaluation nem Telemetria de custo por passo."""
 
+import hashlib
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from harness_engine import state_store, task_registry, trace
 
@@ -83,3 +86,73 @@ def test_dispatch_ao_exceder_o_teto_grava_desfecho_budget():
     last = trace.load()[-1]
     assert last.outcome == trace.TraceOutcome.BUDGET
     assert last.step == task_registry.default_max_steps() + 1
+
+
+# --- hash-chain (prevHash) ----------------------------------------------------------
+
+
+def _raw_lines() -> list[str]:
+    return [line for line in Path(".harness/trace.jsonl").read_text().split("\n") if line.strip()]
+
+
+def test_primeira_entrada_grava_prev_hash_de_genese():
+    trace.append(1, "start", trace.TraceOutcome.INSTRUCTION, 10)
+
+    entries = trace.load()
+
+    assert entries[0].prev_hash == "0" * 64
+
+
+def test_prev_hash_da_segunda_entrada_bate_com_sha256_da_primeira_linha_serializada():
+    trace.append(1, "start", trace.TraceOutcome.INSTRUCTION, 10)
+    trace.append(2, "classify", trace.TraceOutcome.INSTRUCTION, 20)
+
+    raw = _raw_lines()
+    assert len(raw) == 2
+
+    expected = hashlib.sha256(raw[0].encode("utf-8")).hexdigest()
+    entries = trace.load()
+    assert entries[1].prev_hash == expected
+
+
+def test_hash_chain_encadeia_tres_entradas_em_sequencia():
+    trace.append(1, "start", trace.TraceOutcome.INSTRUCTION, 10)
+    trace.append(2, "classify", trace.TraceOutcome.INSTRUCTION, 20)
+    trace.append(3, "finalize", trace.TraceOutcome.STOP, 5)
+
+    raw = _raw_lines()
+    assert len(raw) == 3
+
+    entries = trace.load()
+    assert entries[0].prev_hash == "0" * 64
+    assert entries[1].prev_hash == hashlib.sha256(raw[0].encode("utf-8")).hexdigest()
+    assert entries[2].prev_hash == hashlib.sha256(raw[1].encode("utf-8")).hexdigest()
+
+
+def test_prev_hash_e_gravado_como_prevhash_no_json_serializado():
+    trace.append(1, "start", trace.TraceOutcome.INSTRUCTION, 10)
+
+    raw = _raw_lines()
+    payload = json.loads(raw[0])
+
+    assert "prevHash" in payload
+    assert payload["prevHash"] == "0" * 64
+
+
+def test_reset_reinicia_a_cadeia_na_genese():
+    trace.append(1, "start", trace.TraceOutcome.INSTRUCTION, 10)
+    trace.append(2, "classify", trace.TraceOutcome.INSTRUCTION, 20)
+
+    trace.reset()
+    trace.append(1, "start", trace.TraceOutcome.INSTRUCTION, 10)
+
+    assert trace.load()[0].prev_hash == "0" * 64
+
+
+def test_from_dict_sem_prev_hash_usa_default_vazio():
+    # Compatibilidade com trace.jsonl gravado antes deste campo existir.
+    legado = {"step": 1, "command": "start", "outcome": "instruction", "instructionChars": 10, "timestamp": "x"}
+
+    entry = trace.TraceEntry.from_dict(legado)
+
+    assert entry.prev_hash == ""

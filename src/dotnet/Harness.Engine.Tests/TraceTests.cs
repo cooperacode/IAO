@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Harness.Engine;
 
 namespace Harness.Engine.Tests;
@@ -102,4 +104,42 @@ public class TraceTests : IDisposable
         Assert.Equal(TraceOutcome.Budget, last.Outcome);
         Assert.Equal(TaskRegistry.MaxSteps + 1, last.Step);
     }
+
+    [Fact]
+    public void Append_PrimeiraEntrada_TemPrevHashGenesis()
+    {
+        Trace.Append(1, "start", TraceOutcome.Instruction, 10);
+
+        var entry = Assert.Single(Trace.Load());
+        Assert.Equal(new string('0', 64), entry.PrevHash);
+    }
+
+    [Fact]
+    public void Append_SegundaEntrada_EncadeiaPrevHashComSha256DaLinhaAnterior()
+    {
+        Trace.Append(1, "start", TraceOutcome.Instruction, 10);
+        var firstRawLine = RawLines()[0];
+
+        Trace.Append(2, "classify", TraceOutcome.Instruction, 20);
+
+        var expectedHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(firstRawLine)));
+        var entries = Trace.Load();
+        Assert.Equal(expectedHash, entries[1].PrevHash);
+    }
+
+    [Fact]
+    public void Reset_SeguidoDeAppend_ReiniciaACadeiaComGenesis()
+    {
+        Trace.Append(1, "start", TraceOutcome.Instruction, 10);
+        Trace.Append(2, "classify", TraceOutcome.Instruction, 20);
+
+        Trace.Reset();
+        Trace.Append(1, "start", TraceOutcome.Instruction, 10);
+
+        var entry = Assert.Single(Trace.Load());
+        Assert.Equal(new string('0', 64), entry.PrevHash);
+    }
+
+    private static string[] RawLines() =>
+        File.ReadAllLines(Path.Combine(".harness", "trace.jsonl"));
 }

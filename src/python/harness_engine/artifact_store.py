@@ -14,6 +14,8 @@ import json
 import sys
 from pathlib import Path
 
+from harness_engine.atomic_io import write_text_atomic
+
 _DIR = ".harness"
 MANIFEST_PATH = ".harness/artifacts.json"
 
@@ -34,7 +36,7 @@ def write(name: str, content: str) -> str:
 
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(content)
+        write_text_atomic(path, content)
 
         current_files = list(files())
         if path not in current_files:
@@ -83,4 +85,4 @@ def read_all() -> str:
 
 def _save_manifest(file_list: list[str]) -> None:
     Path(_DIR).mkdir(parents=True, exist_ok=True)
-    Path(MANIFEST_PATH).write_text(json.dumps({"files": file_list}, separators=(",", ":")))
+    write_text_atomic(MANIFEST_PATH, json.dumps({"files": file_list}, separators=(",", ":")))

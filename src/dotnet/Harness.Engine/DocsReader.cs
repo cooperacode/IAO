@@ -12,9 +12,11 @@ namespace Harness.Engine;
 /// </summary>
 public static class DocsReader
 {
-    // Teto de caracteres: injetar docs gigantes queima tokens de forma silenciosa, e o
-    // repo mede tokens (ver bench/). Ao exceder, trunca e avisa no stderr.
-    // Valor vem do harness.json (ou do default) — ver HarnessConfig.
+    // Teto de octetos UTF-8 (RFC Apêndice B item 1: medir em bytes, não em chars .NET, para
+    // que o teto tenha o mesmo significado entre engines .NET/Python/Rust): injetar docs
+    // gigantes queima tokens de forma silenciosa, e o repo mede tokens (ver bench/). Ao
+    // exceder, trunca em fronteira de byte líder válida e avisa no stderr. O nome do campo
+    // (DocsMaxChars, vindo do harness.json/HarnessConfig) não muda — só a unidade medida.
     private static int MaxChars => HarnessConfig.Current.DocsMaxChars;
 
     private static readonly string[] Extensions = [".md", ".txt"];
@@ -57,16 +59,37 @@ public static class DocsReader
             names.Add(name);
             sb.Append("## ").AppendLine(name).AppendLine().AppendLine(text).AppendLine();
 
-            if (sb.Length > MaxChars)
+            if (Encoding.UTF8.GetByteCount(sb.ToString()) > MaxChars)
             {
                 Console.Error.WriteLine(
-                    $"[DocsReader] conteúdo excedeu {MaxChars} chars; truncando em {name}.");
-                sb.Length = MaxChars;
+                    $"[DocsReader] conteúdo excedeu {MaxChars} bytes (UTF-8); truncando em {name}.");
+                var truncated = TruncateUtf8Bytes(sb.ToString(), MaxChars);
+                sb.Clear().Append(truncated);
                 break;
             }
         }
 
         return (sb.ToString().TrimEnd(), names.ToArray());
+    }
+
+    /// <summary>
+    /// Corta <paramref name="text"/> em no máximo <paramref name="maxBytes"/> octetos UTF-8,
+    /// recuando até uma fronteira de byte líder válida — nunca parte um caractere multibyte
+    /// (acento, emoji) ao meio, o que produziria bytes inválidos/replacement characters.
+    /// </summary>
+    private static string TruncateUtf8Bytes(string text, int maxBytes)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        if (bytes.Length <= maxBytes)
+            return text;
+
+        var cut = maxBytes;
+        // Byte de continuação UTF-8 tem os dois bits mais significativos "10" (0x80..0xBF);
+        // recuar até um byte que NÃO é continuação garante que [0, cut) é uma sequência completa.
+        while (cut > 0 && (bytes[cut] & 0xC0) == 0x80)
+            cut--;
+
+        return Encoding.UTF8.GetString(bytes, 0, cut);
     }
 
     private static string[] Files(string dir) =>

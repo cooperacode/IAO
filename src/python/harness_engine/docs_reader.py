@@ -51,11 +51,15 @@ def read(folder: str) -> tuple[str, list[str]]:
         names.append(path.name)
         chunk = f"## {path.name}\n\n{text}\n\n"
         parts.append(chunk)
-        total_len += len(chunk)
+        total_len += len(chunk.encode("utf-8"))
 
         if total_len > max_chars:
-            print(f"[DocsReader] conteúdo excedeu {max_chars} chars; truncando em {path.name}.", file=sys.stderr)
-            content = "".join(parts)[:max_chars]
+            print(f"[DocsReader] conteúdo excedeu {max_chars} bytes (UTF-8); truncando em {path.name}.", file=sys.stderr)
+            # Corta em bytes, não em codepoints (Apêndice B item 1 do RFC): decode com
+            # errors="ignore" descarta automaticamente qualquer sequência multibyte
+            # cortada ao meio na borda do limite.
+            truncated_bytes = "".join(parts).encode("utf-8")[:max_chars]
+            content = truncated_bytes.decode("utf-8", errors="ignore")
             return content.rstrip(), names
 
     return "".join(parts).rstrip(), names

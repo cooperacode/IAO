@@ -6,6 +6,7 @@
 //! Custo: zero token e uma escrita append por invocação.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/trace.jsonl";
@@ -39,6 +40,40 @@ pub struct TraceEntry {
     pub instruction_chars: i32,
     // ISO 8601 com offset, gravado como string (paridade com o wire JSON).
     pub timestamp: String,
+    /// Hash-chain de integridade: SHA-256 hex da linha JSON anterior do trace (genesis —
+    /// primeira linha ou trace vazio/ausente — é 64 zeros). Qualquer edição ou remoção de
+    /// uma entrada anterior quebra o encadeamento das entradas seguintes, tornando
+    /// adulteração do trace detectável. `#[serde(default)]` para aceitar traces gravados
+    /// por versões anteriores do harness, sem este campo.
+    #[serde(rename = "prevHash", default)]
+    pub prev_hash: String,
+}
+
+fn genesis_hash() -> String {
+    "0".repeat(64)
+}
+
+fn sha256_hex(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Hash da última linha não-vazia do trace no `path` informado — `prev_hash` da próxima
+/// entrada. Genesis (64 zeros) se o arquivo não existe, está vazio ou acabou de ser
+/// resetado.
+fn last_line_hash(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    if !p.exists() {
+        return genesis_hash();
+    }
+    match std::fs::read_to_string(p) {
+        Ok(content) => match content.lines().filter(|l| !l.trim().is_empty()).last() {
+            Some(last) => sha256_hex(last),
+            None => genesis_hash(),
+        },
+        Err(_) => genesis_hash(),
+    }
 }
 
 /// Trunca o trace no início de um novo workflow (junto do `state_store::reset`).
@@ -63,16 +98,22 @@ pub fn append(step: i32, command: &str, outcome: &str, instruction_chars: i32) {
         outcome: outcome.to_string(),
         instruction_chars,
         timestamp: now_iso(),
+        prev_hash: last_line_hash(FILE_PATH),
     };
 
-    let line = match serde_json::to_string(&entry) {
+    let mut line = match serde_json::to_string(&entry) {
         Ok(line) => line,
         Err(e) => {
             eprintln!("[Trace] falha ao gravar: {e}");
             return;
         }
     };
+    line.push('\n');
 
+    // Uma única `write_all` com a linha completa (JSON + newline) já montada — não
+    // fragmentar em múltiplas escritas, para que o evento fique atômico mesmo sob
+    // interrupção a meio da chamada (append de log continua não-atômico entre linhas
+    // diferentes, mas cada linha em si não fica parcialmente gravada).
     use std::io::Write;
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -80,7 +121,7 @@ pub fn append(step: i32, command: &str, outcome: &str, instruction_chars: i32) {
         .open(FILE_PATH);
     match file {
         Ok(mut f) => {
-            if let Err(e) = writeln!(f, "{line}") {
+            if let Err(e) = f.write_all(line.as_bytes()) {
                 eprintln!("[Trace] falha ao gravar: {e}");
             }
         }
@@ -177,6 +218,74 @@ mod tests {
         assert_eq!(entries[1].command, "classify");
         assert_eq!(entries[1].instruction_chars, 99);
         assert!(!entries[0].timestamp.is_empty());
+    }
+
+    #[test]
+    fn primeira_entrada_do_trace_tem_prev_hash_genesis() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        append(1, "start", trace_outcome::INSTRUCTION, 1);
+
+        assert_eq!(load()[0].prev_hash, "0".repeat(64));
+    }
+
+    #[test]
+    fn cada_entrada_encadeia_prev_hash_com_sha256_da_linha_anterior() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        append(1, "start", trace_outcome::INSTRUCTION, 42);
+        append(2, "classify", trace_outcome::INSTRUCTION, 99);
+        append(3, "finalize", trace_outcome::STOP, 5);
+
+        let raw_lines: Vec<String> = std::fs::read_to_string(FILE_PATH)
+            .unwrap()
+            .lines()
+            .map(|l| l.to_string())
+            .collect();
+        let entries = load();
+
+        let mut hasher = Sha256::new();
+        hasher.update(raw_lines[0].as_bytes());
+        assert_eq!(entries[1].prev_hash, format!("{:x}", hasher.finalize()));
+
+        let mut hasher = Sha256::new();
+        hasher.update(raw_lines[1].as_bytes());
+        assert_eq!(entries[2].prev_hash, format!("{:x}", hasher.finalize()));
+    }
+
+    #[test]
+    fn reset_seguido_de_append_reinicia_a_cadeia_com_genesis() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        append(1, "start", trace_outcome::INSTRUCTION, 1);
+        append(2, "classify", trace_outcome::INSTRUCTION, 1);
+
+        reset();
+        append(1, "start", trace_outcome::INSTRUCTION, 1);
+
+        assert_eq!(load().len(), 1);
+        assert_eq!(load()[0].prev_hash, "0".repeat(64));
+    }
+
+    #[test]
+    fn deserializa_trace_legado_sem_prev_hash_com_default_vazio() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        std::fs::create_dir_all(DIR).unwrap();
+        std::fs::write(
+            FILE_PATH,
+            r#"{"step":1,"command":"start","outcome":"instruction","instructionChars":1,"timestamp":"2026-01-01T00:00:00Z"}"#,
+        )
+        .unwrap();
+
+        let entries = load();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].prev_hash, "");
     }
 
     #[test]

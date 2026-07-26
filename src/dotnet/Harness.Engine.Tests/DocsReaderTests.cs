@@ -75,4 +75,20 @@ public class DocsReaderTests : IDisposable
         Assert.Equal(string.Empty, content);
         Assert.Empty(files);
     }
+
+    [Fact]
+    public void Read_ConteudoComAcentoEEmoji_NaoQuebraCaractereMultibyte()
+    {
+        // "café ☕" tem "é" (2 bytes) e "☕" (3 bytes) em UTF-8 — um corte ingênuo por
+        // posição de byte no meio de qualquer um deles produziria bytes inválidos.
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "a.md"), "café ☕ café ☕ café ☕");
+
+        var (content, _) = DocsReader.Read(_dir);
+
+        Assert.Contains("café ☕", content);
+        // Se o conteúdo sobreviveu ao roundtrip como string .NET válida, o corte (quando
+        // aplicado) já respeitou a fronteira UTF-8 — string inválida teria virado U+FFFD.
+        Assert.DoesNotContain('�', content);
+    }
 }

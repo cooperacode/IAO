@@ -146,6 +146,7 @@ mod tests {
             outcome: outcome.to_string(),
             instruction_chars: chars,
             timestamp: String::new(),
+            prev_hash: String::new(),
         }
     }
 

@@ -52,7 +52,7 @@ public static class StateStore
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(state, HarnessJsonContext.Default.HarnessState));
+            AtomicIO.WriteAllTextAtomic(FilePath, JsonSerializer.Serialize(state, HarnessJsonContext.Default.HarnessState));
         }
         catch (Exception ex)
         {
@@ -70,7 +70,7 @@ public static class StateStore
             if (File.Exists(FilePath))
             {
                 Directory.CreateDirectory(Dir);
-                File.Copy(FilePath, destination, overwrite: true);
+                AtomicIO.CopyAtomic(FilePath, destination);
             }
         }
         catch (Exception ex)
@@ -89,8 +89,9 @@ public static class StateStore
 
     /// <summary>
     /// Soma o custo do turno ao acumulado do run e devolve o total — insumo do teto de
-    /// custo em <see cref="TaskRegistry"/>. Chars de instrução emitida são a única medida:
-    /// é o que a engine consegue atestar sozinha, sem depender de auto-relato do driver.
+    /// custo em <see cref="TaskRegistry"/>. Octetos UTF-8 da instrução emitida são a única
+    /// medida (não chars .NET — ver RFC Apêndice B item 1): é o que a engine consegue atestar
+    /// sozinha, sem depender de auto-relato do driver, com o mesmo significado entre engines.
     /// </summary>
     public static int AddCost(int chars)
     {

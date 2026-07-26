@@ -173,6 +173,30 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
+    public void Plan_GeraUmRunIdNovoENaoVazio()
+    {
+        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "npm test", "web"));
+
+        var runId = RunConfigStore.Load().RunId;
+
+        Assert.False(string.IsNullOrWhiteSpace(runId));
+        Assert.True(Guid.TryParse(runId, out _));
+    }
+
+    [Fact]
+    public void Start_ComFeaturePendente_PreservaORunIdDoPlanAnterior()
+    {
+        AdvanceToVerify(); // ...→ implement, sessão "morre" aqui, antes do verify
+        var runIdAntesDoStart = RunConfigStore.Load().RunId;
+        Assert.False(string.IsNullOrWhiteSpace(runIdAntesDoStart));
+
+        DevelopmentTasks.Start();
+
+        // Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
+        Assert.Equal(runIdAntesDoStart, RunConfigStore.Load().RunId);
+    }
+
+    [Fact]
     public void Plan_FeaturesInvalidas_ReemiteOPlano()
     {
         var result = DevelopmentTasks.Plan(Cmd("plan", "não é json", "dotnet test", "."));

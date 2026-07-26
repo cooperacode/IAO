@@ -57,3 +57,19 @@ def test_read_pasta_inexistente_vazio_sem_fontes(tmp_path):
 
     assert content == ""
     assert files == []
+
+
+def test_read_conteudo_com_acento_e_emoji_nao_quebra_caractere_multibyte(tmp_path):
+    # "café ☕" tem "é" (2 bytes) e "☕" (3 bytes) em UTF-8 — um corte ingênuo por posição
+    # de byte no meio de qualquer um deles produziria uma sequência inválida.
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "a.md").write_text("café ☕ café ☕ café ☕")
+
+    content, _ = docs_reader.read(str(d))
+
+    assert "café ☕" in content
+    # content já é um `str` Python válido (decode bem-sucedido) — se o corte tivesse
+    # partido um caractere multibyte, decode(errors="ignore") já teria descartado o
+    # fragmento inválido silenciosamente, então testamos que nada sobrou corrompido.
+    assert "�" not in content

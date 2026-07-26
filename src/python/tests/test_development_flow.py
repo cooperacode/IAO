@@ -3,6 +3,7 @@
 PASS→handoff automático, fallback handoff legado — e a guarda por feature."""
 
 import subprocess
+import uuid
 from pathlib import Path
 
 from flows_development import tasks
@@ -92,6 +93,17 @@ def test_start_com_feature_pendente_retoma_via_bearings_em_vez_de_resetar():
     assert run_config_store.load().target_dir == "src/app"
 
 
+def test_start_com_feature_pendente_preserva_o_run_id_do_plan_anterior():
+    _advance_to_verify()  # ...→ implement, sessão "morre" aqui, antes do verify
+    run_id_antes_do_start = run_config_store.load().run_id
+    assert run_id_antes_do_start
+
+    tasks.start()
+
+    # Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
+    assert run_config_store.load().run_id == run_id_antes_do_start
+
+
 def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():
     # Reproduz o hard reset por feature: uma feature ainda pendente ("B") e um trace/step já
     # acumulados por features anteriores, quando a sessão fresca reabre com "start".
@@ -127,6 +139,15 @@ def test_plan_persiste_features_e_roteia_para_bearings():
     assert run_config_store.load().target_dir == "web"
     assert "NOVA SESSÃO" in result
     assert '"value":"bearings"' in result
+
+
+def test_plan_gera_um_run_id_novo_e_nao_vazio():
+    tasks.plan(_cmd("plan", FEATURES_JSON, "npm test", "web"))
+
+    run_id = run_config_store.load().run_id
+
+    assert run_id
+    uuid.UUID(run_id)  # levanta ValueError se não for um UUID válido
 
 
 def test_plan_features_invalidas_reemite_o_plano():

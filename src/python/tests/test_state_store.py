@@ -1,6 +1,8 @@
 """O store é o que permite manter o envelope mínimo (economia de tokens): o estado
 acumulado fica em arquivo entre invocações, não na janela de contexto."""
 
+from pathlib import Path
+
 from harness_engine import state_store
 
 
@@ -61,3 +63,14 @@ def test_reset_limpa_o_contexto():
     state_store.reset()
 
     assert state_store.get_context() is None
+
+
+def test_save_nao_deixa_arquivo_temporario_para_tras():
+    # Escrita atômica: temp no mesmo diretório + os.replace. Depois de salvar, só o
+    # arquivo final deve sobrar em .harness — nenhum "state.json.tmp-*" residual.
+    state_store.set("descricao", "x")
+
+    tmp_leftovers = list(Path(".harness").glob("state.json.tmp-*"))
+
+    assert tmp_leftovers == []
+    assert Path(".harness/state.json").exists()

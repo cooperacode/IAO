@@ -133,6 +133,7 @@ mod tests {
                 },
                 instruction_chars: 100,
                 timestamp: String::new(),
+                prev_hash: String::new(),
             })
             .collect()
     }

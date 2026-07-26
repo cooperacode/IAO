@@ -55,7 +55,9 @@ pub fn write(features: &[Feature]) {
     };
     match serde_json::to_string(&list) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(FILE_PATH, json) {
+            if let Err(e) =
+                crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
+            {
                 eprintln!("[FeatureStore] falha ao gravar: {e}");
             }
         }

@@ -75,11 +75,15 @@ public static partial class DevelopmentTasks
 
         FeatureStore.Write(capped);
 
-        // Comando de verificação e diretório-alvo: reidratados a cada passo de smoke/verify.
-        // Fora de state.json de propósito - ver RunConfigStore.
+        // Comando de verificação, diretório-alvo e identidade do run: reidratados a cada passo
+        // de smoke/verify. Fora de state.json de propósito - ver RunConfigStore. RunId nasce
+        // aqui (mesmo instante em que Start() decidiu que este é um run novo, não retomado) e
+        // sobrevive a toda sessão seguinte sem precisar aparecer no Envelope trocado com o
+        // modelo (RFC §6.4 — identidade do run é concern do control plane, não do contrato).
         RunConfigStore.Write(new RunConfig(
             ArgAt(envelope, 1, "dotnet test"),
-            ArgAt(envelope, 2, ".")));
+            ArgAt(envelope, 2, "."),
+            Guid.NewGuid().ToString()));
 
         return BearingsPrompt();
     }

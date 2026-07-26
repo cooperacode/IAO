@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Harness.Engine;
 
 /// <summary>Dispatch domain-agnostic: parse do envelope, guarda de iteração e erro tipado.</summary>
@@ -57,12 +59,16 @@ public static class TaskRegistry
 
         var (result, outcome) = Resolve(envelope, step, costChars, actions, validators, maxSteps);
 
+        // Octetos UTF-8, não chars .NET (RFC Apêndice B item 1): mede o que de fato atravessa o
+        // transporte, com o mesmo significado que Python (len(bytes)) e Rust (String::len()).
+        var resultBytes = Encoding.UTF8.GetByteCount(result);
+
         // Uma linha por volta do loop: alimenta a Telemetria e o Evaluator de trajetória.
-        Trace.Append(step, command, outcome, result.Length);
+        Trace.Append(step, command, outcome, resultBytes);
 
         // O custo da instrução emitida agora só é conhecido aqui — entra no acumulado
         // que o guard do próximo turno vai checar.
-        StateStore.AddCost(result.Length);
+        StateStore.AddCost(resultBytes);
         return result;
     }
 

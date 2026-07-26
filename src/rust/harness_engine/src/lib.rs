@@ -1,5 +1,6 @@
 pub mod artifact_store;
 pub mod artifact_template;
+pub mod atomic_io;
 pub mod batch_evaluator;
 pub mod docs_reader;
 pub mod envelope;

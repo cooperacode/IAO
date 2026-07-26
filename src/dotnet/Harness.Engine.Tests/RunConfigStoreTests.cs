@@ -24,6 +24,16 @@ public class RunConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public void WriteELoad_PreservamORunId()
+    {
+        RunConfigStore.Write(new RunConfig("npm test", "app", "019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6"));
+
+        var loaded = RunConfigStore.Load();
+
+        Assert.Equal("019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6", loaded.RunId);
+    }
+
+    [Fact]
     public void Load_ArquivoAusente_RetornaDefaultsSemLancar()
     {
         var loaded = RunConfigStore.Load();

@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+import harness_engine
 from flows_development import prompts
 from harness_engine import docs_reader, feature_store, git_command, harness_config, run_config_store, state_store
 from harness_engine.envelope import Envelope
@@ -86,11 +88,15 @@ def plan(envelope: Envelope | None) -> str:
 
     feature_store.write(capped)
 
-    # Comando de verificação e diretório-alvo: reidratados a cada passo de smoke/verify.
-    # Fora de state.json de propósito - ver run_config_store.
+    # Comando de verificação, diretório-alvo e identidade do run: reidratados a cada passo
+    # de smoke/verify. Fora de state.json de propósito - ver run_config_store. run_id nasce
+    # aqui (mesmo instante em que start() decidiu que este é um run novo, não retomado) e
+    # sobrevive a toda sessão seguinte sem precisar aparecer no envelope trocado com o
+    # modelo (RFC §6.4 — identidade do run é concern do control plane, não do contrato).
     run_config_store.write(RunConfig(
         _arg_at(envelope, 1, "dotnet test"),
         _arg_at(envelope, 2, "."),
+        str(uuid.uuid4()),
     ))
 
     return prompts.bearings_prompt()
@@ -204,7 +210,10 @@ def _try_automated_handoff(verify_result: str) -> tuple[bool, str, str | None]:
     title = feature.title if feature is not None else _state("current_feature_title")
     title = title or f"feature #{feature_id}"
     config = run_config_store.load()
-    target_dir = _resolve_target_dir(config.target_dir)
+    try:
+        target_dir = _resolve_target_dir(config.target_dir)
+    except ValueError as ex:
+        return False, "", f"diretório-alvo inválido: {ex}"
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +259,12 @@ def _try_automated_verify() -> tuple[bool, bool, str]:
     except ValueError:
         return False, False, ""
 
-    target_dir = _resolve_target_dir(run_config_store.load().target_dir)
+    try:
+        target_dir = _resolve_target_dir(run_config_store.load().target_dir)
+    except ValueError as ex:
+        print(f"[dev] diretório-alvo inválido, verify automático não tentado: {ex}", file=sys.stderr)
+        return False, False, ""
+
     script = target_dir / "verify-feature.sh"
     if not script.exists():
         return False, False, ""
@@ -296,7 +310,32 @@ def _try_automated_verify() -> tuple[bool, bool, str]:
 
 
 def _resolve_target_dir(target_dir: str) -> Path:
-    return Path(target_dir or ".").resolve()
+    """Resolve o diretório-alvo absoluto e rejeita a lista mínima de destinos claramente
+    perigosos do RFC §6.3 (raiz do filesystem, home do usuário, raiz de instalação do
+    próprio harness). Containment completo contra uma raiz de política assinada é trabalho
+    de fase futura (capability broker) — isto só barra o que hoje seria, na prática, sempre
+    um erro de configuração."""
+    if not (target_dir or "").strip():
+        raise ValueError("diretório-alvo vazio/whitespace")
+
+    resolved = Path(target_dir or ".").resolve()
+
+    if resolved.parent == resolved:
+        raise ValueError(f"diretório-alvo não pode ser a raiz do sistema de arquivos: {resolved}")
+
+    if resolved == Path.home().resolve():
+        raise ValueError(f"diretório-alvo não pode ser o diretório home do usuário: {resolved}")
+
+    if resolved == _harness_install_root():
+        raise ValueError(f"diretório-alvo não pode ser a raiz de instalação do harness: {resolved}")
+
+    return resolved
+
+
+def _harness_install_root() -> Path:
+    """Raiz de instalação/distribuição do harness IAO (proxy: a raiz de `src/python`, dois
+    níveis acima de `harness_engine/__init__.py`)."""
+    return Path(harness_engine.__file__).resolve().parent.parent
 
 
 def _append_progress(
@@ -412,7 +451,12 @@ def _log_suffix(log_path: str) -> str:
 
 def _snippet(value: str, max_chars: int = 240) -> str:
     text = _one_line(value)
-    return text if len(text) <= max_chars else text[:max_chars].rstrip() + "..."
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_chars:
+        return text
+    # Corta em bytes UTF-8, não em codepoints — decode com errors="ignore" descarta
+    # automaticamente qualquer sequência multibyte cortada ao meio na borda do limite.
+    return encoded[:max_chars].decode("utf-8", errors="ignore").rstrip() + "..."
 
 
 def _one_line(value: str | None, fallback: str = "") -> str:

@@ -9,13 +9,18 @@ use serde::{Deserialize, Serialize};
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/run_config.json";
 
-/// Comando de verificação e diretório-alvo capturados pelo `plan`.
+/// Comando de verificação, diretório-alvo e identidade do run (RFC §6.4), todos capturados
+/// uma vez pelo `plan`. `run_id` é gerado só num run genuinamente novo — o mesmo momento em
+/// que `write()` é chamado após `reset()` — e sobrevive a toda retomada porque este arquivo
+/// não é tocado quando `start` decide que há trabalho pendente (ver comentário do módulo).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunConfig {
     #[serde(rename = "verifyCmd", default)]
     pub verify_cmd: String,
     #[serde(rename = "targetDir", default = "default_target_dir")]
     pub target_dir: String,
+    #[serde(rename = "runId", default)]
+    pub run_id: String,
 }
 
 fn default_target_dir() -> String {
@@ -27,6 +32,7 @@ impl Default for RunConfig {
         Self {
             verify_cmd: String::new(),
             target_dir: default_target_dir(),
+            run_id: String::new(),
         }
     }
 }
@@ -40,7 +46,9 @@ pub fn write(config: &RunConfig) {
     }
     match serde_json::to_string(config) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(FILE_PATH, json) {
+            if let Err(e) =
+                crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
+            {
                 eprintln!("[RunConfigStore] falha ao gravar: {e}");
             }
         }
@@ -110,12 +118,29 @@ mod tests {
         write(&RunConfig {
             verify_cmd: "npm test".to_string(),
             target_dir: "app".to_string(),
+            run_id: String::new(),
         });
 
         let loaded = load();
 
         assert_eq!(loaded.verify_cmd, "npm test");
         assert_eq!(loaded.target_dir, "app");
+    }
+
+    #[test]
+    fn write_e_load_preservam_o_run_id() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        write(&RunConfig {
+            verify_cmd: "npm test".to_string(),
+            target_dir: "app".to_string(),
+            run_id: "019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6".to_string(),
+        });
+
+        let loaded = load();
+
+        assert_eq!(loaded.run_id, "019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6");
     }
 
     #[test]
@@ -137,6 +162,7 @@ mod tests {
         write(&RunConfig {
             verify_cmd: "npm test".to_string(),
             target_dir: "app".to_string(),
+            run_id: String::new(),
         });
 
         reset();

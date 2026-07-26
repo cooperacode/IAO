@@ -22,7 +22,7 @@ public static class RunConfigStore
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(config, HarnessJsonContext.Default.RunConfig));
+            AtomicIO.WriteAllTextAtomic(FilePath, JsonSerializer.Serialize(config, HarnessJsonContext.Default.RunConfig));
         }
         catch (Exception ex)
         {
@@ -66,5 +66,13 @@ public static class RunConfigStore
     }
 }
 
-/// <summary>Comando de verificação e diretório-alvo capturados pelo <c>plan</c>.</summary>
-public record RunConfig(string VerifyCmd = "", string TargetDir = ".");
+/// <summary>
+/// Comando de verificação, diretório-alvo e identidade do run (RFC §6.4), todos capturados
+/// uma vez pelo <c>plan</c>. <see cref="RunId"/> é gerado só num run genuinamente novo — o
+/// mesmo momento em que <see cref="RunConfigStore.Write"/> é chamado após
+/// <see cref="RunConfigStore.Reset"/> — e sobrevive a toda retomada porque este arquivo não é
+/// tocado quando <c>start</c> decide que há trabalho pendente (ver comentário da classe).
+/// Terceiro parâmetro posicional com default <c>""</c> para não quebrar os
+/// <c>new RunConfig(verifyCmd, targetDir)</c> já espalhados pelos testes.
+/// </summary>
+public record RunConfig(string VerifyCmd = "", string TargetDir = ".", string RunId = "");
