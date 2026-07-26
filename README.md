@@ -144,12 +144,13 @@ Costs and trade-offs:
 
 ## Implementation
 
-This repository includes two protocol-compatible implementations:
+This repository includes three protocol-compatible implementations:
 
 | Runner | Requirement | Notes |
 |---|---|---|
 | `./run-development.sh` | .NET SDK compatible with `net10.0`, unless a Native AOT binary was already published | Default runner used by the included IDE adapters. Builds the DLL on demand when needed. |
 | `./run-development-py.sh` | Python 3.11+ | Protocol-compatible Python port. Uses the same `.harness/` files and inbox transport. |
+| `./run-development-rs.sh` | Rust toolchain (`cargo`), unless a release binary was already built | Protocol-compatible Rust port. Builds `cargo build --release` on demand; the resulting binary is already native, with no separate AOT step. |
 
 The `harness.json` file configures global limits such as `maxSteps`,
 `maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`.
@@ -163,8 +164,11 @@ The included adapters call `./run-development.sh` by default:
 | GitHub Copilot | `.github/prompts/development.prompt.md` |
 | Devin | `.devin/workflows/development.md` |
 
-To run through Python, point the agent to `./run-development-py.sh` while
-keeping the same `.harness/inbox.json` protocol.
+To run through Python or Rust, point the agent to `./run-development-py.sh` or
+`./run-development-rs.sh` while keeping the same `.harness/inbox.json`
+protocol. Each port has its own local verification script
+(`./run-checks.sh`, `./run-checks-py.sh`, `./run-checks-rs.sh`) acting as a
+parity gate against the others.
 
 ## Example Usage
 
@@ -183,6 +187,7 @@ Manual protocol check:
 ```bash
 ./run-development.sh '{ "type": "text", "value": "start" }'
 ./run-development-py.sh '{ "type": "text", "value": "start" }'
+./run-development-rs.sh '{ "type": "text", "value": "start" }'
 ```
 
 Local verification:
@@ -190,6 +195,7 @@ Local verification:
 ```bash
 ./run-checks.sh
 ./run-checks-py.sh
+./run-checks-rs.sh
 ```
 
 ## Known Uses
@@ -199,6 +205,8 @@ Local verification:
 - **.NET port**: primary implementation of the harness and flow.
 - **Python port**: compatible implementation for environments where Python is
   the better operational choice.
+- **Rust port**: compatible implementation with no separate runtime or SDK
+  dependency — the release binary is already native.
 - **IDE adapters**: Codex, Claude Code, GitHub Copilot, and Devin using the
   same runner and inbox protocol.
 
