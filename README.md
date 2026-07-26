@@ -45,46 +45,34 @@ contract and no real need to govern multiple iterations.
 
 ## Structure
 
-```mermaid
-graph TB
-    subgraph "Inverted Agentic Orchestration"
-    direction LR
-    brief[/"Brief<br/>docs/*.md or docs/*.txt"/]
-    harness["Deterministic harness<br/>state machine + validation"]
-    state[(.harness/<br/>state, trace, feature list, log)]
-    end
+![High-level architecture — Harness · Flows.Development](assets/images/fig-08-hla.png)
 
-    subgraph "Protocol"
-    direction TD
-    response["stdin<br/>JSON contract"]
-    stdout["stdout<br/>next instruction"]
-    end
-
-    subgraph "Driver"
-    direction LR
-    agent["IDE agent<br/>Codex, Claude, Copilot etc."]
-    code[/"Project code<br/>changes + verification"/]
-    end
-
-    brief --> harness
-    harness --> stdout
-    stdout --> agent
-    agent --> code
-    agent --> response
-    response --> harness
-    harness <--> state
-    harness -->|stop| done["Flow complete"]
-```
+Five layers, top to bottom: the **driver** (IDE agent) executes instructions
+but does not decide the next state; the **transport** (`.harness/inbox.json`
+in, `stdout` out) carries the envelope and the instruction; **Harness.Engine**
+is the domain-agnostic core (entry/dispatch, prompt/context, infra,
+persistence/telemetry); the **flow** (`Flows.Development`) owns the domain
+policy — an 8-state machine over a step budget and a feature dependency graph;
+and the **target project** is the repository changed feature by feature, whose
+own files (`init.sh`, `verify-feature.sh`, `progress.txt`, `git log`) are the
+memory that makes a hard-reset session viable.
 
 Development flow:
 
 ```text
-start -> plan -> [bearings -> smoke -> pick -> implement -> verify -> handoff]* -> stop
+start -> plan -> [bearings -> smoke -> pick -> implement -> auto-verify -> auto-handoff]* -> stop
 ```
+
+`verify` and `handoff` exist as driver-facing commands but only run as a
+fallback path — the harness requests them only when `verify-feature.sh` is
+absent from the target or when the automated verify/handoff fails.
 
 The harness is the protocol boundary. The agent does not choose the next state
 on its own; it responds to the requested state, writes or sends a JSON envelope,
 and runs the runner again to receive the next instruction.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a layer-by-layer walkthrough of this
+diagram, with the file that implements each component.
 
 ## Participants
 
@@ -96,13 +84,23 @@ and runs the runner again to receive the next instruction.
   and time guards, and dispatches each command to the proper task.
 - **Envelope**: JSON contract exchanged between agent and harness, with `type`,
   `value`, `args`, and optional context.
-- **DevelopmentTasks**: development-specific state machine.
-- **Stores in `.harness/`**: persist state, trace, feature list, inbox, and run
-  configuration.
+- **DevelopmentTasks**: development-specific state machine. Beyond the
+  driver-facing transitions, it also owns the automated verify/handoff path —
+  running the target's `verify-feature.sh` and committing on a pass — and only
+  falls back to a driver turn when that automation is absent or fails.
+- **Stores in `.harness/`**: `StateStore` (current step and feature in
+  progress, reset every `start`), `RunConfigStore` (`verify_cmd`/`target_dir`,
+  written once and kept across a resumed run), `FeatureStore` (the feature
+  backlog, including dependency edges between features), and `Trace` (one line
+  per turn); `Inbox` is the file-based transport for the envelope.
 - **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, or another driver
   able to run the runner, read `stdout`, and respond in JSON.
-- **Project code**: the target changed and verified by the agent during
-  implementation steps.
+- **Project code**: the target repository, changed by the agent one feature at
+  a time and verified — automatically through `verify-feature.sh` when the
+  target provides one, or manually by the agent otherwise.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how each participant maps to source
+files across the engine and flow layers.
 
 ## Collaborations
 
@@ -217,6 +215,17 @@ Local verification:
   protocol from the concrete agent.
 - **Workflow Engine / Process Manager**: the harness governs a long-running,
   persistent, and reentrant execution.
+
+## See Also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — layer-by-layer walkthrough of this
+  architecture, using the same reference figures as Structure above, with the
+  file that implements each component.
+- [RFC-IAO-0001](rfcs/0001-nist-aligned-trustworthy-execution-profile.md) —
+  NIST-aligned trustworthy execution profile: the security, privacy,
+  governance, and assurance controls required to evolve this pattern from
+  deterministic orchestration into deterministic, evidence-producing,
+  risk-governed execution.
 
 ## Experiment
 
