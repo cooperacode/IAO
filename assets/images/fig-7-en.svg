@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1598" height="711" viewBox="0 0 1598 711">
+<rect width="1598" height="711" fill="#fff"/>
+<rect x="0.4" y="0.4" width="1597.2" height="710.08" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="48.81" y="59.81" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 7</text>
+<text x="48.81" y="96.18" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="rgb(17, 17, 17)" letter-spacing="-0.26">Agent, runner and target-project layer</text>
+<text x="48.81" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">The operational protocol linking the configured IDE agent to the harness binary and, from there, to the repository being changed.</text>
+<rect x="49.21" y="161.04" width="463.32" height="98.72" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="67.62" y="193.69" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="600" fill="rgb(17, 17, 17)">.codex/agents/development.toml</text>
+<text x="67.62" y="217.15" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Custom agent: writes the answer to the inbox, runs the wrapper with no</text>
+<text x="67.62" y="235.91" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">arguments and assumes a clean context per feature.</text>
+<rect x="522.93" y="209.65" width="26.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="548.94,205.6 548.94,215.2 556.94,210.4" fill="rgb(17, 17, 17)"/>
+<rect x="567.34" y="161.04" width="463.32" height="98.72" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="585.75" y="193.69" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="600" fill="rgb(17, 17, 17)">.harness/inbox.json</text>
+<text x="585.75" y="217.15" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">File transport: avoids escaped JSON on the command line and keeps stdout</text>
+<text x="585.75" y="235.91" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">exclusive to control.</text>
+<rect x="1041.06" y="209.65" width="26.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="1067.07,205.6 1067.07,215.2 1075.07,210.4" fill="rgb(17, 17, 17)"/>
+<rect x="1085.47" y="161.04" width="463.32" height="98.72" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="1103.88" y="193.69" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="600" fill="rgb(17, 17, 17)">run-development.sh</text>
+<text x="1103.88" y="217.15" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Stable wrapper: looks for the published Release binary and falls back to</text>
+<text x="1103.88" y="235.91" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">dotnet</text>
+<text x="1148.88" y="235.91" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">+ DLL.</text>
+<rect x="49.21" y="284.57" width="738.38" height="389.1" fill="none" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="69.62" y="316.14" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.54">FLOW COMPOSITION</text>
+<rect x="70.02" y="333.78" width="696.77" height="70.17" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="84.42" y="361.85" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">Program.cs</text>
+<text x="84.42" y="384.1" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Registers the 8 tasks, the validators and the snapshots; defines</text>
+<text x="440.64" y="384.1" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">shouldResetOnStart</text>
+<text x="575.63" y="384.1" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">.</text>
+<rect x="70.02" y="416.75" width="696.77" height="70.17" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="84.42" y="444.82" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">DevelopmentTasks.cs</text>
+<text x="84.42" y="467.07" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Transitions and persistent effects of the state machine.</text>
+<rect x="70.02" y="499.73" width="341.99" height="68.62" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="84.42" y="527.21" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="600" fill="rgb(17, 17, 17)">.Verify.cs</text>
+<text x="84.42" y="548.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(68, 68, 68)">Auto-verify with timeout and per-feature log.</text>
+<rect x="424.81" y="499.73" width="341.99" height="68.62" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="439.21" y="527.21" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="600" fill="rgb(17, 17, 17)">.Handoff.cs</text>
+<text x="439.21" y="548.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(68, 68, 68)">Auto-handoff: progress.txt and commit.</text>
+<rect x="70.02" y="581.15" width="696.77" height="70.17" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="84.42" y="609.21" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">DevelopmentTasks.Prompt.cs</text>
+<text x="84.42" y="631.46" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Prompts, tokens and skills per state.</text>
+<rect x="810.4" y="284.57" width="738.38" height="389.1" fill="none" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="830.81" y="316.14" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.54">OPERATIONAL MEMORY IN THE TARGET PROJECT</text>
+<rect x="831.21" y="333.78" width="696.77" height="70.17" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="845.61" y="361.85" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">init.sh</text>
+<text x="845.61" y="384.1" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Standardises setup and smoke test of the repository.</text>
+<rect x="831.21" y="416.75" width="696.77" height="70.17" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="845.61" y="444.82" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">verify-feature.sh &lt;id&gt;</text>
+<text x="845.61" y="467.07" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">The automation switch: when present, PASS/FAIL happens without a driver turn.</text>
+<rect x="831.21" y="499.73" width="696.77" height="70.17" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="845.61" y="527.79" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">progress.txt</text>
+<text x="845.61" y="550.04" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Human-readable summary that re-orients clean sessions.</text>
+<rect x="831.21" y="582.7" width="696.77" height="70.17" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="845.61" y="610.76" font-family="'IBM Plex Mono', monospace" font-size="13.5" font-weight="600" fill="rgb(17, 17, 17)">git log</text>
+<text x="845.61" y="633.01" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Handoff evidence — manual or automatic.</text>
+</svg>

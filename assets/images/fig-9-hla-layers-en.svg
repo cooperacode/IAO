@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1615" height="929" viewBox="0 0 1615 929">
+<rect width="1615" height="929" fill="#fff"/>
+<rect x="0.8" y="0.8" width="1613.4" height="926.49" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="57.59" y="68.59" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 9</text>
+<text x="57.59" y="107.27" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="rgb(17, 17, 17)" letter-spacing="-0.28">High-level architecture — layer view</text>
+<text x="57.59" y="134.62" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">Five layers and the boundary each one crosses. No component detail.</text>
+<rect x="58.39" y="181.38" width="1498.21" height="84.79" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="91.19" y="232.41" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="rgb(17, 17, 17)">Driver</text>
+<text x="463.14" y="229.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="rgb(51, 51, 51)">External agent. Executes instructions; owns no workflow decision.</text>
+<text x="725.51" y="308.44" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(85, 85, 85)">stdout</text>
+<polygon points="786.3,291.76 791.9,282.96 797.5,291.76" fill="rgb(17, 17, 17)"/>
+<rect x="790.9" y="291.76" width="2" height="24" fill="rgb(17, 17, 17)"/>
+<polygon points="786.3,315.76 797.5,315.76 791.9,324.56" fill="rgb(17, 17, 17)"/>
+<text x="811.5" y="308.44" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(85, 85, 85)">inbox.json</text>
+<rect x="58.39" y="341.36" width="1498.21" height="84.79" fill="rgb(250, 250, 250)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="91.19" y="392.39" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="rgb(17, 17, 17)">File transport</text>
+<text x="463.14" y="389.1" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="rgb(51, 51, 51)">Only channel between driver and harness — plain files, no network.</text>
+<rect x="806.5" y="442.95" width="2" height="24" fill="rgb(17, 17, 17)"/>
+<polygon points="801.9,466.94 813.1,466.94 807.5,475.74" fill="rgb(17, 17, 17)"/>
+<rect x="58.39" y="492.54" width="1498.21" height="84.79" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="91.19" y="543.57" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="rgb(17, 17, 17)">Harness.Engine</text>
+<text x="463.14" y="540.28" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="rgb(51, 51, 51)">Domain-agnostic core: dispatch, guards, persistence and telemetry.</text>
+<rect x="806.5" y="594.13" width="2" height="24" fill="rgb(17, 17, 17)"/>
+<polygon points="801.9,618.12 813.1,618.12 807.5,626.92" fill="rgb(17, 17, 17)"/>
+<rect x="58.39" y="643.72" width="1498.21" height="84.79" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="91.19" y="694.75" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="rgb(17, 17, 17)">Flows.Development</text>
+<text x="463.14" y="691.46" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="rgb(51, 51, 51)">Flow policy: states, budget and dependency order.</text>
+<rect x="806.5" y="745.31" width="2" height="24" fill="rgb(17, 17, 17)"/>
+<polygon points="801.9,769.3 813.1,769.3 807.5,778.1" fill="rgb(17, 17, 17)"/>
+<rect x="58.39" y="794.9" width="1498.21" height="84.79" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="91.19" y="845.94" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="24" font-weight="700" fill="rgb(17, 17, 17)">Target project</text>
+<text x="463.14" y="842.65" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="rgb(51, 51, 51)">Repository under change; its files carry state across sessions.</text>
+</svg>

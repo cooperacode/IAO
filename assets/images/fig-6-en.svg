@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1598" height="625" viewBox="0 0 1598 625">
+<rect width="1598" height="625" fill="#fff"/>
+<rect x="0.4" y="0.4" width="1597.2" height="623.56" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="48.81" y="59.81" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 6</text>
+<text x="48.81" y="96.18" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="rgb(17, 17, 17)" letter-spacing="-0.26">Flow layer: the Flows.Development state machine</text>
+<text x="48.81" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">Eight states. Six are driver turns;</text>
+<text x="255" y="122.67" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">pick</text>
+<text x="288.61" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">is an internal harness decision and</text>
+<text x="511.68" y="122.67" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">verify</text>
+<text x="562.09" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">/</text>
+<text x="567.45" y="122.67" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">handoff</text>
+<text x="626.27" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">return to the driver only when automation is missing or fails.</text>
+<rect x="49.21" y="161.04" width="262.47" height="92.82" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="63.62" y="192.45" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">start</text>
+<text x="63.62" y="215.37" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Resumes if work is pending; otherwise</text>
+<text x="63.62" y="232.78" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">resets the stores and asks for the init.</text>
+<rect x="320.08" y="206.7" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="342.09,202.65 342.09,212.25 350.09,207.45" fill="rgb(17, 17, 17)"/>
+<rect x="358.49" y="161.04" width="262.47" height="92.82" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="372.89" y="192.45" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">plan</text>
+<text x="372.89" y="215.37" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Writes up to 10 features with</text>
+<text x="531.45" y="215.37" font-family="'IBM Plex Mono', monospace" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">dependsOn</text>
+<text x="372.89" y="232.78" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">plus the run config.</text>
+<rect x="629.36" y="206.7" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="651.36,202.65 651.36,212.25 659.37,207.45" fill="rgb(17, 17, 17)"/>
+<rect x="667.77" y="161.04" width="262.47" height="92.82" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="682.17" y="192.45" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">bearings</text>
+<text x="682.17" y="215.37" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Re-orients from disk and resets the feature</text>
+<text x="682.17" y="232.78" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">budget.</text>
+<rect x="938.64" y="206.7" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="960.64,202.65 960.64,212.25 968.64,207.45" fill="rgb(17, 17, 17)"/>
+<rect x="977.04" y="161.04" width="262.47" height="92.82" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="991.45" y="192.45" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">smoke</text>
+<text x="991.45" y="215.37" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Runs</text>
+<text x="1021.46" y="215.37" font-family="'IBM Plex Mono', monospace" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">./init.sh</text>
+<text x="1086.27" y="215.37" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">before any edit.</text>
+<rect x="1247.91" y="206.7" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="1269.92,202.65 1269.92,212.25 1277.92,207.45" fill="rgb(17, 17, 17)"/>
+<rect x="1286.32" y="161.04" width="262.47" height="92.82" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="1300.73" y="192.45" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">pick</text>
+<text x="1300.73" y="215.37" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">The harness selects the highest-priority</text>
+<text x="1300.73" y="232.78" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">ready feature.</text>
+<rect x="798.25" y="260.27" width="1.5" height="26.01" fill="rgb(17, 17, 17)"/>
+<polygon points="794.2,286.27 803.8,286.27 799,294.27" fill="rgb(17, 17, 17)"/>
+<rect x="49.21" y="300.68" width="358.09" height="111.23" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="63.62" y="332.08" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">implement</text>
+<text x="63.62" y="355.01" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Edits code and tests for a single feature, then tries to close it</text>
+<text x="63.62" y="372.41" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">by itself.</text>
+<rect x="415.7" y="355.54" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="437.71,351.49 437.71,361.09 445.71,356.29" fill="rgb(17, 17, 17)"/>
+<rect x="454.11" y="300.68" width="358.1" height="111.23" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="468.52" y="328.24" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.32">AUTOMATIC</text>
+<text x="468.52" y="350.49" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">auto-verify</text>
+<text x="468.52" y="373.41" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Runs</text>
+<text x="498.52" y="373.41" font-family="'IBM Plex Mono', monospace" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">verify-feature.sh</text>
+<text x="620.96" y="373.41" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">with a timeout and logs the</text>
+<text x="468.52" y="390.82" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">output.</text>
+<rect x="820.62" y="355.54" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="842.62,351.49 842.62,361.09 850.63,356.29" fill="rgb(17, 17, 17)"/>
+<rect x="859.03" y="300.68" width="358.09" height="111.23" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="873.43" y="328.24" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.32">AUTOMATIC</text>
+<text x="873.43" y="350.49" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(17, 17, 17)">auto-handoff</text>
+<text x="873.43" y="373.41" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Updates</text>
+<text x="921.34" y="373.41" font-family="'IBM Plex Mono', monospace" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">progress.txt</text>
+<text x="1007.76" y="373.41" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">, commits and marks the feature.</text>
+<rect x="1225.52" y="355.54" width="22.01" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="1247.52,351.49 1247.52,361.09 1255.53,356.29" fill="rgb(17, 17, 17)"/>
+<rect x="1264.33" y="301.08" width="284.06" height="110.43" fill="rgb(17, 17, 17)" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="1279.13" y="349.99" font-family="'IBM Plex Mono', monospace" font-size="15" font-weight="600" fill="rgb(255, 255, 255)">stop</text>
+<text x="1279.13" y="372.91" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(204, 204, 204)">When all pass or no pending feature is ready.</text>
+<rect x="49.21" y="430.71" width="1499.58" height="108.83" fill="none" stroke="rgb(136, 136, 136)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<text x="67.62" y="460.28" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.54">FALLBACK PATH — DRIVER TURNS WHEN THE SCRIPT IS MISSING OR AUTOMATION FAILS</text>
+<rect x="68.02" y="475.92" width="281.02" height="44.81" fill="rgb(255, 255, 255)" stroke="rgb(119, 119, 119)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<text x="84.42" y="504.17" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="600" fill="rgb(17, 17, 17)">verify</text>
+<text x="138.62" y="504.25" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(102, 102, 102)">— answer starting with PASS or FAIL</text>
+<polygon points="363.44,493.52 363.44,503.13 371.44,498.32" fill="rgb(119, 119, 119)"/>
+<rect x="385.85" y="475.92" width="278.34" height="44.81" fill="rgb(255, 255, 255)" stroke="rgb(119, 119, 119)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<text x="402.25" y="504.17" font-family="'IBM Plex Mono', monospace" font-size="14" font-weight="600" fill="rgb(17, 17, 17)">handoff</text>
+<text x="464.85" y="504.25" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(102, 102, 102)">— commit hash or NO_GIT: reason</text>
+<text x="686.6" y="502.25" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(85, 85, 85)">FAIL never swaps the feature: it returns to</text>
+<text x="924.64" y="502.25" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(85, 85, 85)">implement</text>
+<text x="992.15" y="502.25" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(85, 85, 85)">to fix the same item.</text>
+<line x1="48.81" y1="558.74" x2="1549.19" y2="558.74" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="48.81" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Cyclic return</text>
+<text x="123.52" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">— after the handoff it goes back to</text>
+<text x="319.94" y="584.05" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">bearings</text>
+<text x="379.95" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">with a clean session.</text>
+<text x="538.63" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Budget</text>
+<text x="580.66" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">—</text>
+<text x="596.31" y="584.05" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">MaxFeatures = 10</text>
+<text x="716.3" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">·</text>
+<text x="726.28" y="584.05" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">StepsPerFeature = 8</text>
+<text x="868.78" y="584.05" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">·</text>
+<text x="878.76" y="584.05" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">StepBudget = 88</text>
+</svg>

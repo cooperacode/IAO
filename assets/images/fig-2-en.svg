@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1598" height="504" viewBox="0 0 1598 504">
+<rect width="1598" height="504" fill="#fff"/>
+<rect x="0.4" y="0.4" width="1597.2" height="502.63" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="48.81" y="59.81" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 2</text>
+<text x="48.81" y="96.18" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="rgb(17, 17, 17)" letter-spacing="-0.26">Entry and dispatch layer</text>
+<text x="48.81" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">One turn per process: envelope reading, budget guards, contextual validation and routing to the task registered by the flow.</text>
+<rect x="49.21" y="161.04" width="1499.58" height="59.21" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="69.62" y="196.77" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="rgb(17, 17, 17)">HarnessHost</text>
+<text x="259.67" y="194.78" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">Entry point of the flow and the only component that writes to stdout. On</text>
+<text x="679.86" y="194.78" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">stop</text>
+<text x="711.07" y="194.78" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">it freezes trace and state into snapshots.</text>
+<rect x="1129.21" y="180.05" width="107.25" height="21.21" fill="rgb(244, 244, 244)" stroke="rgb(204, 204, 204)" stroke-width="0.8"/>
+<text x="1136.61" y="194.61" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ TaskRegistry</text>
+<rect x="1245.26" y="180.05" width="120.46" height="21.21" fill="rgb(244, 244, 244)" stroke="rgb(204, 204, 204)" stroke-width="0.8"/>
+<text x="1252.66" y="194.61" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ Trace.Snapshot</text>
+<rect x="1374.52" y="180.05" width="153.46" height="21.21" fill="rgb(244, 244, 244)" stroke="rgb(204, 204, 204)" stroke-width="0.8"/>
+<text x="1381.92" y="194.61" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ StateStore.Snapshot</text>
+<rect x="798.25" y="220.66" width="1.5" height="30.01" fill="rgb(17, 17, 17)"/>
+<polygon points="793.4,250.66 804.6,250.66 799,259.47" fill="rgb(17, 17, 17)"/>
+<rect x="49.21" y="273.87" width="549.84" height="144.74" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="67.62" y="309.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="rgb(17, 17, 17)">TaskRegistry</text>
+<text x="67.62" y="337.36" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">Domain-agnostic dispatch: parse → guards → validation → routing. An invalid command</text>
+<text x="67.62" y="357.52" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">returns a typed error; the trace records the outcome and instruction size.</text>
+<rect x="68.02" y="375.39" width="120.46" height="21.21" fill="rgb(255, 255, 255)" stroke="rgb(187, 187, 187)" stroke-width="0.8"/>
+<text x="75.42" y="389.96" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ Envelope.Parse</text>
+<rect x="195.27" y="375.39" width="146.86" height="21.21" fill="rgb(255, 255, 255)" stroke="rgb(187, 187, 187)" stroke-width="0.8"/>
+<text x="202.68" y="389.96" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ EnvelopeValidation</text>
+<rect x="348.94" y="375.39" width="94.05" height="21.21" fill="rgb(255, 255, 255)" stroke="rgb(187, 187, 187)" stroke-width="0.8"/>
+<text x="356.34" y="389.96" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ StateStore</text>
+<rect x="449.79" y="375.39" width="107.25" height="21.21" fill="rgb(255, 255, 255)" stroke="rgb(187, 187, 187)" stroke-width="0.8"/>
+<text x="457.19" y="389.96" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(17, 17, 17)">→ Trace.Append</text>
+<rect x="615.85" y="273.87" width="458.06" height="144.74" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="634.26" y="309.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="rgb(17, 17, 17)">Envelope</text>
+<text x="634.26" y="337.36" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">Contract</text>
+<text x="687.41" y="337.36" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">{ type, value, args, context? }</text>
+<text x="929.27" y="337.36" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">. Tolerates markdown</text>
+<text x="634.26" y="357.52" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">fences and surrounding prose; a parse error becomes a protocol error.</text>
+<line x1="634.26" y1="375.39" x2="1055.51" y2="375.39" stroke="rgb(226, 226, 226)" stroke-width="0.8"/>
+<text x="634.26" y="396.96" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(102, 102, 102)">Harness.Engine/Envelope.cs</text>
+<rect x="1090.72" y="273.87" width="458.06" height="144.74" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="1109.13" y="309.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="rgb(17, 17, 17)">EnvelopeValidation</text>
+<text x="1109.13" y="337.36" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">Predicates per command. In Development,</text>
+<text x="1361.77" y="337.36" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">verify</text>
+<text x="1408.58" y="337.36" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">must start with</text>
+<text x="1109.13" y="357.52" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">PASS</text>
+<text x="1140.34" y="357.52" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">or</text>
+<text x="1158.53" y="357.52" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">FAIL</text>
+<text x="1189.74" y="357.52" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">;</text>
+<text x="1196.61" y="357.52" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">handoff</text>
+<text x="1251.23" y="357.52" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">needs a hash or</text>
+<text x="1349.16" y="357.52" font-family="'IBM Plex Mono', monospace" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">NO_GIT</text>
+<text x="1395.97" y="357.52" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">.</text>
+<line x1="1109.13" y1="375.39" x2="1530.38" y2="375.39" stroke="rgb(226, 226, 226)" stroke-width="0.8"/>
+<text x="1109.13" y="396.96" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(102, 102, 102)">← flow validators</text>
+<line x1="48.81" y1="437.81" x2="1549.19" y2="437.81" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="48.81" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Input</text>
+<text x="81.51" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">— envelope read from</text>
+<text x="209.09" y="463.12" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">.harness/inbox.json</text>
+<text x="387.6" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Output</text>
+<text x="428.59" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">— instruction on stdout · diagnostics on stderr</text>
+<text x="723.76" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Guards</text>
+<text x="766.2" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">—</text>
+<text x="781.86" y="463.12" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">MaxSteps</text>
+<text x="841.86" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">,</text>
+<text x="848.21" y="463.12" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">feature_steps</text>
+<text x="945.71" y="463.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">,</text>
+<text x="952.06" y="463.12" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">TimeoutMs</text>
+</svg>

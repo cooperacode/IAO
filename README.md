@@ -45,7 +45,7 @@ contract and no real need to govern multiple iterations.
 
 ## Structure
 
-![High-level architecture — Harness · Flows.Development](assets/images/fig-9-hla-layers.png)
+![High-level architecture — Harness · Flows.Development](assets/images/fig-9-hla-layers-en.svg)
 
 Five layers, top to bottom: the **driver** (IDE agent) executes instructions
 but does not decide the next state; the **transport** (`.harness/inbox.json`
@@ -59,7 +59,7 @@ memory that makes a hard-reset session viable.
 
 Development flow:
 
-![High-level architecture — Harness · Flows.Development](assets/images/fig-06-state-machine.png)
+![High-level architecture — Harness · Flows.Development](assets/images/fig-6-en.svg)
 
 
 `verify` and `handoff` exist as driver-facing commands but only run as a

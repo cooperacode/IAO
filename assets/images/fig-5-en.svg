@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1598" height="437" viewBox="0 0 1598 437">
+<rect width="1598" height="437" fill="#fff"/>
+<rect x="0.4" y="0.4" width="1597.2" height="435.81" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="48.81" y="59.81" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 5</text>
+<text x="48.81" y="96.18" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="rgb(17, 17, 17)" letter-spacing="-0.26">Infrastructure layer and boundaries</text>
+<text x="48.81" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">Low-level mechanisms provided by the engine and, alongside them, what it deliberately does not assume.</text>
+<rect x="49.21" y="161.04" width="908.97" height="238.36" fill="none" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="69.62" y="192.61" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.54">INFRASTRUCTURE — SERIALIZATION, PUBLISHING AND GIT</text>
+<rect x="70.02" y="210.25" width="279.24" height="114.28" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="86.42" y="241.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">HarnessJsonContext</text>
+<text x="86.42" y="265.17" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Source-generated JSON: envelope, state,</text>
+<text x="86.42" y="283.92" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">trace, config and features — no reflection.</text>
+<rect x="364.07" y="210.25" width="279.24" height="114.28" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="380.47" y="241.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">Native AOT</text>
+<text x="380.47" y="265.17" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Optional native publish; the wrapper uses</text>
+<text x="380.47" y="283.92" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">the binary when present and falls back to</text>
+<text x="380.47" y="302.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">the DLL.</text>
+<rect x="658.11" y="210.25" width="279.26" height="114.28" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="674.52" y="241.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">GitCommand</text>
+<text x="674.52" y="265.17" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Shell-safe runner via</text>
+<text x="793.1" y="265.17" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">ArgumentList</text>
+<text x="883.1" y="265.17" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">.</text>
+<text x="674.52" y="283.92" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Excludes</text>
+<text x="727.93" y="283.92" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">.harness/</text>
+<text x="795.44" y="283.92" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">from add and</text>
+<text x="674.52" y="302.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">commit.</text>
+<line x1="69.62" y1="341.34" x2="937.77" y2="341.34" stroke="rgb(221, 221, 221)" stroke-width="0.8"/>
+<text x="69.62" y="367.08" font-family="'IBM Plex Mono', monospace" font-size="11.5" font-weight="400" fill="rgb(102, 102, 102)">rev-parse → add -A → diff --cached → commit → status → rev-parse --short HEAD</text>
+<rect x="980.98" y="161.04" width="567.8" height="238.36" fill="none" stroke="rgb(136, 136, 136)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<text x="1001.39" y="192.61" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.54">BOUNDARY — ABSENT BY DESIGN</text>
+<rect x="1001.79" y="210.25" width="526.19" height="76.77" fill="rgb(255, 255, 255)" stroke="rgb(119, 119, 119)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<text x="1018.19" y="241.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(85, 85, 85)">Execution sandbox</text>
+<text x="1018.19" y="265.17" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(102, 102, 102)">Environment and permissions belong to the IDE and the driver.</text>
+<rect x="1001.79" y="301.83" width="526.19" height="76.77" fill="rgb(255, 255, 255)" stroke="rgb(119, 119, 119)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<text x="1018.19" y="333.23" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(85, 85, 85)">Model API client</text>
+<text x="1018.19" y="356.74" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(102, 102, 102)">The harness never calls a model nor manages provider tokens.</text>
+</svg>

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1598" height="546" viewBox="0 0 1598 546">
+<rect width="1598" height="546" fill="#fff"/>
+<rect x="0.4" y="0.4" width="1597.2" height="544.44" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="48.81" y="59.81" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 1</text>
+<text x="48.81" y="96.18" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="rgb(17, 17, 17)" letter-spacing="-0.26">Inverted agentic orchestration</text>
+<text x="48.81" y="122.67" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">The harness never calls a model. The IDE agent executes the instruction, writes the envelope to disk and invokes the binary; workflow policy stays in</text>
+<text x="48.81" y="143.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="rgb(85, 85, 85)">compiled code.</text>
+<rect x="49.21" y="182.05" width="1499.58" height="256.86" fill="rgb(252, 252, 252)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<rect x="78.02" y="210.85" width="290.87" height="199.25" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="98.42" y="245.17" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="rgb(102, 102, 102)" letter-spacing="1.54">EXTERNAL</text>
+<text x="98.42" y="277.66" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="rgb(17, 17, 17)">Driver</text>
+<text x="98.42" y="307.11" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">IDE agent — interprets the instruction,</text>
+<text x="98.42" y="326.61" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">uses its own tools and returns the JSON</text>
+<text x="98.42" y="346.12" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="rgb(68, 68, 68)">envelope.</text>
+<line x1="98.42" y1="362.14" x2="348.49" y2="362.14" stroke="rgb(221, 221, 221)" stroke-width="0.8"/>
+<text x="98.42" y="383.71" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(102, 102, 102)">Copilot · Devin · Claude Code</text>
+<text x="397.3" y="222.2" font-family="'IBM Plex Mono', monospace" font-size="11.5" font-weight="400" fill="rgb(51, 51, 51)">.harness/inbox.json</text>
+<rect x="540.4" y="217.3" width="958.38" height="1.5" fill="rgb(17, 17, 17)"/>
+<polygon points="1510.78,212.45 1510.78,223.66 1520.38,218.05" fill="rgb(17, 17, 17)"/>
+<rect x="397.7" y="240.06" width="1122.28" height="140.84" fill="rgb(255, 255, 255)" stroke="rgb(136, 136, 136)" stroke-width="0.8" stroke-dasharray="2.4 1.76"/>
+<rect x="414.5" y="256.86" width="262.57" height="107.23" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="428.91" y="282.43" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(119, 119, 119)">01</text>
+<text x="428.91" y="304.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">Envelope</text>
+<text x="428.91" y="327.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Tolerant parsing of</text>
+<text x="532.18" y="327.6" font-family="'IBM Plex Mono', monospace" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">{type,value,args}</text>
+<text x="654.61" y="327.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">.</text>
+<rect x="689.87" y="256.86" width="262.57" height="107.23" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="704.28" y="282.43" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(119, 119, 119)">02</text>
+<text x="704.28" y="304.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">Validation</text>
+<text x="704.28" y="327.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">One predicate per command; off-contract</text>
+<text x="704.28" y="345.01" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">answers are rejected.</text>
+<rect x="965.24" y="256.86" width="262.57" height="107.23" fill="rgb(240, 240, 240)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="979.65" y="282.43" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(119, 119, 119)">03</text>
+<text x="979.65" y="304.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">Dispatch</text>
+<text x="979.65" y="327.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Guards,</text>
+<text x="1024.39" y="327.6" font-family="'IBM Plex Mono', monospace" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">value → Func</text>
+<text x="1110.84" y="327.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">routing and</text>
+<text x="979.65" y="345.01" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">next-state decision.</text>
+<rect x="1240.61" y="256.86" width="262.57" height="107.23" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="0.8"/>
+<text x="1255.01" y="282.43" font-family="'IBM Plex Mono', monospace" font-size="11" font-weight="400" fill="rgb(119, 119, 119)">04</text>
+<text x="1255.01" y="304.68" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="rgb(17, 17, 17)">PromptFormatter</text>
+<text x="1255.01" y="327.6" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">Builds the instruction and injects the step's</text>
+<text x="1255.01" y="345.01" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="rgb(85, 85, 85)">skill.</text>
+<polygon points="406.9,397.3 406.9,408.5 397.3,402.9" fill="rgb(17, 17, 17)"/>
+<rect x="418.9" y="402.15" width="903.19" height="1.5" fill="rgb(17, 17, 17)"/>
+<text x="1334.1" y="407.04" font-family="'IBM Plex Mono', monospace" font-size="11.5" font-weight="400" fill="rgb(51, 51, 51)">single instruction (stdout)</text>
+<line x1="48.81" y1="460.12" x2="538.26" y2="460.12" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="48.81" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Single-shot per turn.</text>
+<text x="170.27" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">The think–act–observe loop runs in the driver; the harness emits</text>
+<text x="48.81" y="502.98" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">one instruction and exits.</text>
+<line x1="554.26" y1="460.12" x2="1043.72" y2="460.12" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="554.26" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">State outside the conversation.</text>
+<text x="737.06" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">Every process re-reads the filesystem:</text>
+<text x="957.26" y="484.22" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">state.json</text>
+<text x="1032.27" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">,</text>
+<text x="554.26" y="502.98" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">run_config.json</text>
+<text x="666.77" y="502.98" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">,</text>
+<text x="673.12" y="502.98" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">feature_list.json</text>
+<text x="800.61" y="502.98" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">.</text>
+<line x1="1059.73" y1="460.12" x2="1549.19" y2="460.12" stroke="rgb(17, 17, 17)" stroke-width="1.6"/>
+<text x="1059.73" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="rgb(17, 17, 17)">Deterministic halt.</text>
+<text x="1171.93" y="484.22" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">StepBudget = 88</text>
+<text x="1284.43" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">;</text>
+<text x="1291.04" y="484.22" font-family="'IBM Plex Mono', monospace" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">stop</text>
+<text x="1321.04" y="484.22" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="rgb(68, 68, 68)">once every feature passes.</text>
+</svg>
