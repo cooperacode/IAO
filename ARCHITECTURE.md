@@ -73,7 +73,7 @@ harness governs a long-running, persistent, reentrant execution).
 
 ## Figure 1 — Inverted Agentic Orchestration
 
-![Figure 1 — Inverted agentic orchestration](assets/images/fig-01-inverted-agentic-orchestration.png)
+![Figure 1 — Inverted agentic orchestration](assets/images/fig-1-en.svg)
 
 The harness never calls a model. The driver writes the envelope to
 `.harness/inbox.json`, invokes the binary, and gets back a single instruction on
@@ -97,7 +97,7 @@ in Figures 2 and 3.
 
 ## Figure 2 — Entry and Dispatch Layer
 
-![Figure 2 — Entry and dispatch layer](assets/images/fig-02-entry-dispatch.png)
+![Figure 2 — Entry and dispatch layer](assets/images/fig-2-en.svg)
 
 One turn, one process: envelope reading, budget guards, contextual validation,
 and routing to the task the flow registered.
@@ -128,7 +128,7 @@ cut off; the process still exits on `stop` even if the task never returns), and
 
 ## Figure 3 — Prompt and Context Layer
 
-![Figure 3 — Prompt and context layer](assets/images/fig-03-prompt-context.png)
+![Figure 3 — Prompt and context layer](assets/images/fig-3-en.svg)
 
 What leaves the harness each turn: an instruction block with `input`, a
 `response` contract, and only the skill required by the current step.
@@ -160,7 +160,7 @@ fails.
 
 ## Figure 4 — Persistence and Telemetry Layer
 
-![Figure 4 — Persistence and telemetry layer](assets/images/fig-04-persistence-telemetry.png)
+![Figure 4 — Persistence and telemetry layer](assets/images/fig-4-en.svg)
 
 Every invocation is a fresh process. Memory between turns lives in files with
 distinct life cycles — that is what makes restarting the session per feature
@@ -199,7 +199,7 @@ disk, not from conversation history.
 
 ## Figure 5 — Infrastructure Layer and Boundaries
 
-![Figure 5 — Infrastructure layer and boundaries](assets/images/fig-05-infrastructure-boundaries.png)
+![Figure 5 — Infrastructure layer and boundaries](assets/images/fig-5-en.svg)
 
 Low-level mechanisms the engine provides — and, just as deliberately, what it
 does not assume.
@@ -225,7 +225,7 @@ does not assume.
 
 ## Figure 6 — Flow Layer: the Flows.Development State Machine
 
-![Figure 6 — Flow layer: the Flows.Development state machine](assets/images/fig-06-state-machine.png)
+![Figure 6 — Flow layer: the Flows.Development state machine](assets/images/fig-6-en.svg)
 
 Eight states. Six are driver turns; `pick` is an internal harness decision, and
 `verify`/`handoff` return to the driver only when automation is missing or
@@ -262,7 +262,7 @@ goes back to `bearings` with a clean session, not straight to the next
 
 ## Figure 7 — Agent, Runner and Target-Project Layer
 
-![Figure 7 — Agent, runner and target-project layer](assets/images/fig-07-agent-runner-target.png)
+![Figure 7 — Agent, runner and target-project layer](assets/images/fig-7-en.svg)
 
 The operational protocol linking the configured IDE agent to the harness
 binary and, from there, to the repository being changed.
@@ -300,7 +300,7 @@ into automatic steps), `progress.txt` (human-readable summary), `git log`
 
 ## Figure 8 — High-Level Architecture (Consolidated View)
 
-![Figure 8 — High-level architecture — Harness · Flows.Development](assets/images/fig-08-hla.png)
+![Figure 8 — High-level architecture — Harness · Flows.Development](assets/images/fig-8-hla-en.svg)
 
 The five layers stacked, top to bottom:
 
