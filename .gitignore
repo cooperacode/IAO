@@ -19,6 +19,7 @@ todo-*/
 app/
 .back_*/
 dist/
+docs/
 
 #Files
 .DS_Store
