@@ -18,6 +18,16 @@ def test_write_e_load_fazem_roundtrip():
     assert loaded[0].title == "A"
 
 
+def test_write_formata_json_para_leitura():
+    feature_store.write([Feature(1, "A", 2, False)])
+
+    json = Path(".harness/feature_list.json").read_text()
+
+    assert "\n" in json
+    assert '  "items": [' in json
+    assert '      "title": "A"' in json
+
+
 def test_parse_array_cru_forca_pendente_e_preserva_campos():
     features = feature_store.parse(
         '[{"id":1,"title":"Login","priority":1},{"id":2,"title":"Logout","priority":3}]'

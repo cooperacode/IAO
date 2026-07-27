@@ -53,11 +53,9 @@ pub fn write(features: &[Feature]) {
     let list = FeatureList {
         items: features.to_vec(),
     };
-    match serde_json::to_string(&list) {
+    match serde_json::to_string_pretty(&list) {
         Ok(json) => {
-            if let Err(e) =
-                crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
-            {
+            if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json) {
                 eprintln!("[FeatureStore] falha ao gravar: {e}");
             }
         }
@@ -307,6 +305,19 @@ mod tests {
 
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].title, "A");
+    }
+
+    #[test]
+    fn write_formata_json_para_leitura() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        write(&[feature(1, "A", 2, false)]);
+
+        let json = std::fs::read_to_string(FILE_PATH).unwrap();
+        assert!(json.contains('\n'));
+        assert!(json.contains("  \"items\": ["));
+        assert!(json.contains("      \"title\": \"A\""));
     }
 
     #[test]

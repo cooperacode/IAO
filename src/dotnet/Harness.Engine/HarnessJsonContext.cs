@@ -21,3 +21,13 @@ namespace Harness.Engine;
 // Array cru p/ desserializar o que o driver devolve no `plan` (`[{id,title,priority}, ...]`).
 [JsonSerializable(typeof(Feature[]), TypeInfoPropertyName = "FeatureArray")]
 internal partial class HarnessJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// Contexto dedicado à visão persistida das features. Mantê-lo separado evita alterar a
+/// serialização compacta dos demais stores e dos eventos JSONL.
+/// </summary>
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    WriteIndented = true)]
+[JsonSerializable(typeof(FeatureList))]
+internal partial class PrettyFeatureListJsonContext : JsonSerializerContext;

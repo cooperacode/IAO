@@ -24,6 +24,18 @@ public class FeatureStoreTests : IDisposable
     }
 
     [Fact]
+    public void Write_FormataJsonParaLeitura()
+    {
+        FeatureStore.Write([new Feature(1, "A", 2, false)]);
+
+        var json = File.ReadAllText(".harness/feature_list.json");
+
+        Assert.Contains(Environment.NewLine, json);
+        Assert.Contains("  \"items\": [", json);
+        Assert.Contains("      \"title\": \"A\"", json);
+    }
+
+    [Fact]
     public void Parse_ArrayCru_ForcaPendenteEPreservaCampos()
     {
         var features = FeatureStore.Parse(

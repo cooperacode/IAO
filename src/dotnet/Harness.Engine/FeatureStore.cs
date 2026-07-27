@@ -26,7 +26,7 @@ public static class FeatureStore
         {
             Directory.CreateDirectory(Dir);
             var json = JsonSerializer.Serialize(
-                new FeatureList([.. features]), HarnessJsonContext.Default.FeatureList);
+                new FeatureList([.. features]), PrettyFeatureListJsonContext.Default.FeatureList);
             AtomicIO.WriteAllTextAtomic(FilePath, json);
         }
         catch (Exception ex)

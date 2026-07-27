@@ -65,8 +65,8 @@ for feature in 1 2; do
 done
 
 [[ "$LAST" == "stop" ]] || { echo "[smoke] esperava 'stop' ao fim do loop, veio: '$LAST'" >&2; exit 1; }
-grep -q '"passes":true' "$SMOKE_DIR/.harness/feature_list.json" \
-  && ! grep -q '"passes":false' "$SMOKE_DIR/.harness/feature_list.json" \
+grep -Eq '"passes"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIR/.harness/feature_list.json" \
+  && ! grep -Eq '"passes"[[:space:]]*:[[:space:]]*false' "$SMOKE_DIR/.harness/feature_list.json" \
   || { echo "[smoke] feature_list.json não fechou com todas passando" >&2; exit 1; }
 [[ -s "$SMOKE_DIR/.harness/logs/verify-feature-2.log" ]] \
   || { echo "[smoke] log de verify-feature não foi criado" >&2; exit 1; }

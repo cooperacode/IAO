@@ -68,7 +68,7 @@ def write(features: list[Feature]) -> None:
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         payload = {"items": [f.to_dict() for f in features]}
-        write_text_atomic(_FILE_PATH, json.dumps(payload, separators=(",", ":")))
+        write_text_atomic(_FILE_PATH, json.dumps(payload, indent=2))
     except Exception as ex:
         print(f"[FeatureStore] falha ao gravar: {ex}", file=sys.stderr)
 
