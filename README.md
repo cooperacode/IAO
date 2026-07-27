@@ -59,9 +59,8 @@ memory that makes a hard-reset session viable.
 
 Development flow:
 
-```text
-start -> plan -> [bearings -> smoke -> pick -> implement -> auto-verify -> auto-handoff]* -> stop
-```
+![High-level architecture — Harness · Flows.Development](assets/images/fig-06-state-machine.png)
+
 
 `verify` and `handoff` exist as driver-facing commands but only run as a
 fallback path — the harness requests them only when `verify-feature.sh` is
