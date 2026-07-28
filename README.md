@@ -76,7 +76,10 @@ diagram, with the file that implements each component.
 ## Participants
 
 - **Brief**: documents in `docs/*.md` or `docs/*.txt` that describe what should
-  be built.
+  be built. Read once at `start` and persisted to `.harness/brief.md`
+  (`ArtifactStore`), so it can be reinjected verbatim into the `bearings` and
+  `implement` prompts later in the loop — not just consumed once at
+  initialization.
 - **HarnessHost**: reusable flow entry point; runs dispatch, publishes output
   to `stdout`, and snapshots state and trace when the flow stops.
 - **TaskRegistry**: parses envelopes, validates commands, applies step, cost,
@@ -90,8 +93,9 @@ diagram, with the file that implements each component.
 - **Stores in `.harness/`**: `StateStore` (current step and feature in
   progress, reset every `start`), `RunConfigStore` (`verify_cmd`/`target_dir`,
   written once and kept across a resumed run), `FeatureStore` (the feature
-  backlog, including dependency edges between features), and `Trace` (one line
-  per turn); `Inbox` is the file-based transport for the envelope.
+  backlog, including dependency edges between features), `ArtifactStore`
+  (named text artifacts — e.g. the persisted brief, `brief.md`), and `Trace`
+  (one line per turn); `Inbox` is the file-based transport for the envelope.
 - **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, or another driver
   able to run the runner, read `stdout`, and respond in JSON.
 - **Project code**: the target repository, changed by the agent one feature at

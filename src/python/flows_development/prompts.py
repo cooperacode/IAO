@@ -6,7 +6,7 @@ o mesmo nome que o driver preenche e devolve como arg do próximo envelope.
 from __future__ import annotations
 
 from flows_development import state_keys
-from harness_engine import prompt_formatter, run_config_store, state_store
+from harness_engine import artifact_store, prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 
@@ -26,6 +26,22 @@ FEATURES_SHAPE = '[{"id":1,"title":"...","priority":1,"dependsOn":[]}, ...]'
 
 def _state(key: str) -> str:
     return state_store.get(key) or ""
+
+
+def _brief_block() -> str:
+    """Reinjeta o brief persistido (artifact_store, state_keys.BRIEF_ARTIFACT_NAME) nos dois
+    pontos do loop que realmente raciocinam sobre "o que construir" — bearings e implement,
+    e só ali: smoke/pick/verify/fix/handoff rodam script ou fazem bookkeeping, sem necessidade
+    de contexto de escopo. Devolve uma linha em branco (mesma quebra de parágrafo de antes
+    desta feature) quando não há brief persistido — modo interativo, ou retomada de um run
+    anterior a esta feature —, ou o bloco "<brief>" com uma linha em branco à direita quando
+    há. Reinjetar sempre o MESMO texto, byte a byte, também é a aposta de menor custo para se
+    beneficiar de cache de prompt do provedor por trás do driver (não garantido: o harness só
+    controla o texto emitido, não se o driver marca um breakpoint de cache ali)."""
+    brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME)
+    if not brief.strip():
+        return "\n"
+    return f"<brief>\n{brief}\n</brief>\n\n"
 
 
 # --- session 0: inicializador -------------------------------------------------
@@ -86,11 +102,11 @@ Repita o comando `{VERIFY_CMD}` e `{TARGET_DIR}`."""
 
 
 def bearings_prompt() -> str:
-    input_text = """=== NOVA SESSÃO (contexto limpo) ===
+    brief = _brief_block()
+    input_text = f"""=== NOVA SESSÃO (contexto limpo) ===
 Você é um agente de codificação começando uma sessão FRESCA. Não assuma nada da
 sessão anterior — todo o estado está nos artefatos persistentes.
-
-Oriente-se com saída curta: rode `pwd`, leia só o fim do `progress.txt` e o
+{brief}Oriente-se com saída curta: rode `pwd`, leia só o fim do `progress.txt` e o
 `git log --oneline` recente para entender o que já foi feito. Não cole logs
 longos; se precisar preservar detalhe, salve em `.harness/logs/`.
 
@@ -121,10 +137,10 @@ implementar (a de maior prioridade ainda pendente — o harness escolhe)."""
 
 
 def implement_prompt(feature: Feature) -> str:
+    brief = _brief_block()
     input_text = f"""Implemente EXCLUSIVAMENTE esta feature, de forma incremental e mínima — nada além
 dela:
-
-Feature #{feature.id} (prioridade {feature.priority}): {feature.title}
+{brief}Feature #{feature.id} (prioridade {feature.priority}): {feature.title}
 
 Trabalhe no diretório-alvo ({run_config_store.load().target_dir}). Se rodar comandos com
 saída longa, salve em `.harness/logs/` e não cole logs no resumo. Ao terminar, resuma o

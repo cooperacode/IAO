@@ -23,7 +23,15 @@ from pathlib import Path
 
 import harness_engine
 from flows_development import prompts, state_keys
-from harness_engine import docs_reader, feature_store, git_command, harness_config, run_config_store, state_store
+from harness_engine import (
+    artifact_store,
+    docs_reader,
+    feature_store,
+    git_command,
+    harness_config,
+    run_config_store,
+    state_store,
+)
 from harness_engine.envelope import Envelope
 from harness_engine.run_config_store import RunConfig
 
@@ -61,12 +69,20 @@ def start() -> str:
     # Flow PRODUTOR da feature_list: novo run apaga a do run anterior.
     feature_store.reset()
     run_config_store.reset()
+    # Sem isto, um run novo no modo interativo (sem docs/) herdaria silenciosamente o
+    # brief.md de um run anterior — o modo interativo nunca chama artifact_store.write,
+    # então só este reset garante que nenhum brief de um tópico antigo sobrevive.
+    artifact_store.reset()
 
     # Brief (o que construir) vem de docs/ ou, sem docs, do modo interativo.
     if not docs_reader.has_docs(_docs_folder()):
         return prompts.initializer_interactive()
 
     content, files = docs_reader.read(_docs_folder())
+    # Persistido para ser reinjetado em bearings/implement (prompts.py) — antes desta
+    # feature, "content" era só uma variável local deste turno, descartada assim que o
+    # inicializador terminava.
+    artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
     state_store.set("origem", "docs")
     return prompts.initializer_prompt(content, files)
 

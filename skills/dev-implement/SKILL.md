@@ -7,7 +7,8 @@ description: "implementar exatamente uma feature, incremental"
 
 Implemente **somente** a feature indicada — nada além dela. A disciplina de uma-por-vez é o
 que mantém cada sessão pequena o bastante para caber num contexto fresco e cada commit
-reversível.
+reversível. Se o prompt trouxer um bloco `<brief>`, use-o só para entender motivação/restrições
+por trás desta feature — não é convite para adiantar outras.
 
 - Faça a menor mudança que entrega a feature completa. Sem "já que estou aqui".
 - Não adiante outras features, mesmo que pareçam triviais — cada uma tem a sua vez.

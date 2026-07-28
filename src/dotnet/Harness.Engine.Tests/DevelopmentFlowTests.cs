@@ -14,6 +14,10 @@ public class DevelopmentFlowTests : IDisposable
     private const string FeaturesJson =
         """[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]""";
 
+    // Pasta "docs" relativa ao CWD do processo de teste (mesma que HarnessConfig.DocsFolder usa
+    // por padrão) — só os testes de brief a populam; criada/apagada por eles mesmos.
+    private static readonly string DocsDir = Path.Combine(Directory.GetCurrentDirectory(), "docs");
+
     private readonly string _targetDir;
 
     public DevelopmentFlowTests()
@@ -28,6 +32,8 @@ public class DevelopmentFlowTests : IDisposable
         Clean();
         if (Directory.Exists(_targetDir))
             Directory.Delete(_targetDir, recursive: true);
+        if (Directory.Exists(DocsDir))
+            Directory.Delete(DocsDir, recursive: true);
     }
 
     private static void Clean()
@@ -36,6 +42,13 @@ public class DevelopmentFlowTests : IDisposable
         Trace.Reset();
         FeatureStore.Reset();
         RunConfigStore.Reset();
+        ArtifactStore.Reset();
+    }
+
+    private static void GivenDocsBrief(string content)
+    {
+        Directory.CreateDirectory(DocsDir);
+        File.WriteAllText(Path.Combine(DocsDir, "brief.md"), content);
     }
 
     // Espelha a fiação real de Flows.Development/Program.cs: só reseta StateStore/Trace no
@@ -76,7 +89,7 @@ public class DevelopmentFlowTests : IDisposable
         return stdout;
     }
 
-    private void Plan() =>
+    private string Plan() =>
         DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", _targetDir));
 
     /// <summary>Leva o flow até deixar uma feature escolhida e implementada (pronta p/ verify).</summary>
@@ -194,6 +207,84 @@ public class DevelopmentFlowTests : IDisposable
 
         // Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
         Assert.Equal(runIdAntesDoStart, RunConfigStore.Load().RunId);
+    }
+
+    // --- brief: persistência em Start() e reinjeção em bearings/implement --------------
+
+    [Fact]
+    public void Start_ComDocsPopulados_PersisteOBriefNoArtifactStore()
+    {
+        GivenDocsBrief("# Brief\n\nConstrua um app de tarefas.");
+
+        DevelopmentTasks.Start();
+
+        // DocsReader.Read antepõe um cabeçalho "## <arquivo>" antes do conteúdo — Contains, não
+        // igualdade exata (mesmo padrão de DocsReaderTests para o conteúdo consolidado).
+        Assert.Contains("Construa um app de tarefas.", ArtifactStore.Read("brief"));
+    }
+
+    [Fact]
+    public void Start_ModoInterativo_NaoPersisteBrief()
+    {
+        DevelopmentTasks.Start(); // sem docs/ → InitializerInteractive()
+
+        Assert.Equal("", ArtifactStore.Read("brief"));
+    }
+
+    [Fact]
+    public void Start_NovoRunSemDocs_ApagaBriefDoRunAnterior()
+    {
+        // Um segundo run com o MESMO docs/ já se autocorrigiria via overwrite (não prova nada
+        // sobre o Reset()); o caso que só o ArtifactStore.Reset() resolve é docs→interativo: o
+        // modo interativo nunca chama Write, então sem o Reset() o brief antigo vazaria.
+        GivenDocsBrief("brief do tópico A");
+        DevelopmentTasks.Start();
+        Plan();
+        foreach (var f in FeatureStore.Load())
+            FeatureStore.MarkPassed(f.Id);
+        Directory.Delete(DocsDir, recursive: true);
+
+        DevelopmentTasks.Start(); // run novo, sem docs/ → interativo
+
+        Assert.Equal("", ArtifactStore.Read("brief"));
+    }
+
+    [Fact]
+    public void Plan_RetornaBearingsComOBriefReinjetado()
+    {
+        GivenDocsBrief("brief do tópico A");
+        DevelopmentTasks.Start();
+
+        var result = Plan();
+
+        Assert.Contains("brief do tópico A", result);
+    }
+
+    [Fact]
+    public void Pick_RetornaImplementComOBriefReinjetado()
+    {
+        GivenDocsBrief("brief do tópico A");
+        DevelopmentTasks.Start();
+        Plan();
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+
+        var result = DevelopmentTasks.Pick(Cmd("pick"));
+
+        Assert.Contains("brief do tópico A", result);
+    }
+
+    [Fact]
+    public void BearingsEImplement_SemBriefPersistido_NaoTemTagBrief()
+    {
+        // Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
+        var bearings = Plan();
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+        var implement = DevelopmentTasks.Pick(Cmd("pick"));
+
+        Assert.DoesNotContain("<brief>", bearings);
+        Assert.DoesNotContain("<brief>", implement);
     }
 
     [Fact]

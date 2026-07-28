@@ -40,6 +40,20 @@ public class ArtifactStoreTests : IDisposable
     }
 
     [Fact]
+    public void Read_ArtefatoExistente_DevolveOConteudo()
+    {
+        ArtifactStore.Write("brief", "# Brief\n\nConstrua X.");
+
+        Assert.Equal("# Brief\n\nConstrua X.", ArtifactStore.Read("brief"));
+    }
+
+    [Fact]
+    public void Read_ArtefatoAusente_DevolveVazio()
+    {
+        Assert.Equal("", ArtifactStore.Read("nunca-gravado"));
+    }
+
+    [Fact]
     public void Reset_ApagaArtefatosEManifesto()
     {
         var path = ArtifactStore.Write("historias", "x");

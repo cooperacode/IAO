@@ -36,6 +36,11 @@ public static partial class DevelopmentTasks
     private const string CurrentFeatureVerifyKey = "current_feature_verify";
     private const string FeatureStepsKey = "feature_steps";
 
+    // Nome do artefato do brief no ArtifactStore (.harness/brief.md) — persistido em Start()
+    // para poder ser reinjetado em bearings/implement (DevelopmentTasks.Prompt.cs), já que o
+    // conteúdo lido de docs/ hoje só existia como variável local do turno do inicializador.
+    private const string BriefArtifactName = "brief";
+
     private static string State(string key) => StateStore.Get(key) ?? "";
     private static string DocsFolder => HarnessConfig.Current.DocsFolder;
 
@@ -56,12 +61,20 @@ public static partial class DevelopmentTasks
         // Flow PRODUTOR da feature_list: novo run apaga a do run anterior.
         FeatureStore.Reset();
         RunConfigStore.Reset();
+        // Sem isto, um run novo no modo interativo (sem docs/) herdaria silenciosamente o
+        // brief.md de um run anterior — o modo interativo nunca chama ArtifactStore.Write,
+        // então só este Reset garante que nenhum brief de um tópico antigo sobrevive.
+        ArtifactStore.Reset();
 
         // Brief (o que construir) vem de docs/ ou, sem docs, do modo interativo.
         if (!DocsReader.HasDocs(DocsFolder))
             return InitializerInteractive();
 
         var (content, files) = DocsReader.Read(DocsFolder);
+        // Persistido para ser reinjetado em bearings/implement (DevelopmentTasks.Prompt.cs) —
+        // antes desta feature, "content" era só uma variável local deste turno, descartada
+        // assim que o inicializador terminava.
+        ArtifactStore.Write(BriefArtifactName, content);
         StateStore.Set("origem", "docs");
         return InitializerPrompt(content, files);
     }

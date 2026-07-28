@@ -2,12 +2,13 @@
 (padrão do gate de avaliação). Cobre as ramificações — verify FAIL↺implement, verify
 PASS→handoff automático, fallback handoff legado — e a guarda por feature."""
 
+import shutil
 import subprocess
 import uuid
 from pathlib import Path
 
 from flows_development import tasks
-from harness_engine import feature_store, run_config_store, state_store, task_registry, trace
+from harness_engine import artifact_store, feature_store, run_config_store, state_store, task_registry, trace
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 from harness_engine.run_config_store import RunConfig
@@ -66,6 +67,11 @@ def _verify_log_path(feature_id: int) -> Path:
     return Path(".harness/logs") / f"verify-feature-{feature_id}.log"
 
 
+def _given_docs_brief(content: str) -> None:
+    Path("docs").mkdir(parents=True, exist_ok=True)
+    (Path("docs") / "brief.md").write_text(content)
+
+
 def test_start_sem_feature_pendente_reseta_feature_list_e_run_config():
     # Um run anterior terminou (tudo passando) - "start" pode começar de verdade do zero.
     _plan()
@@ -102,6 +108,72 @@ def test_start_com_feature_pendente_preserva_o_run_id_do_plan_anterior():
 
     # Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
     assert run_config_store.load().run_id == run_id_antes_do_start
+
+
+# --- brief: persistência em start() e reinjeção em bearings/implement -------------
+
+
+def test_start_com_docs_populados_persiste_o_brief_no_artifact_store():
+    _given_docs_brief("# Brief\n\nConstrua um app de tarefas.")
+
+    tasks.start()
+
+    # docs_reader.read antepõe um cabeçalho "## <arquivo>" — contains, não igualdade exata.
+    assert "Construa um app de tarefas." in artifact_store.read("brief")
+
+
+def test_start_modo_interativo_nao_persiste_brief():
+    tasks.start()  # sem docs/ → initializer_interactive()
+
+    assert artifact_store.read("brief") == ""
+
+
+def test_start_novo_run_sem_docs_apaga_brief_do_run_anterior():
+    # Um segundo run com o MESMO docs/ já se autocorrigiria via overwrite (não prova nada
+    # sobre o reset()); o caso que só artifact_store.reset() resolve é docs→interativo: o
+    # modo interativo nunca chama write, então sem o reset() o brief antigo vazaria.
+    _given_docs_brief("brief do topico A")
+    tasks.start()
+    _plan()
+    for f in feature_store.load():
+        feature_store.mark_passed(f.id)
+    shutil.rmtree("docs")
+
+    tasks.start()  # run novo, sem docs/ → interativo
+
+    assert artifact_store.read("brief") == ""
+
+
+def test_plan_retorna_bearings_com_o_brief_reinjetado():
+    _given_docs_brief("brief do topico A")
+    tasks.start()
+
+    result = _plan()
+
+    assert "brief do topico A" in result
+
+
+def test_pick_retorna_implement_com_o_brief_reinjetado():
+    _given_docs_brief("brief do topico A")
+    tasks.start()
+    _plan()
+    tasks.bearings(_cmd("bearings", "ok"))
+    tasks.smoke(_cmd("smoke", "ok"))
+
+    result = tasks.pick(_cmd("pick"))
+
+    assert "brief do topico A" in result
+
+
+def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
+    # Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
+    bearings_result = _plan()
+    tasks.bearings(_cmd("bearings", "ok"))
+    tasks.smoke(_cmd("smoke", "ok"))
+    implement_result = tasks.pick(_cmd("pick"))
+
+    assert "<brief>" not in bearings_result
+    assert "<brief>" not in implement_result
 
 
 def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():

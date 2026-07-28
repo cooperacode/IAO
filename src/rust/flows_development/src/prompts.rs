@@ -4,9 +4,9 @@
 
 use harness_engine::envelope::{Envelope, envelope_type};
 use harness_engine::feature_store::Feature;
-use harness_engine::{prompt_formatter, run_config_store, state_store};
+use harness_engine::{artifact_store, prompt_formatter, run_config_store, state_store};
 
-use crate::tasks::{CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY};
+use crate::tasks::{BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY};
 
 // Tokens de saída (o driver guarda o artefato do passo nestes e os devolve como args).
 const FEATURES: &str = "$FEATURES";
@@ -22,6 +22,26 @@ const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":
 
 fn state(key: &str) -> String {
     state_store::get(key).unwrap_or_default()
+}
+
+// Reinjeta o brief persistido (artifact_store, BRIEF_ARTIFACT_NAME) nos dois pontos do loop
+// que realmente raciocinam sobre "o que construir" — bearings e implement — e só ali:
+// smoke/pick/verify/fix/handoff rodam script ou fazem bookkeeping, sem necessidade de
+// contexto de escopo. "" quando o run começou no modo interativo (sem docs/) ou é uma
+// retomada de um run anterior a esta feature — nesse caso o bloco some, não fica vazio.
+// Reinjetar sempre o MESMO texto, byte a byte, também é a aposta de menor custo para se
+// beneficiar de cache de prompt do provedor por trás do driver (não garantido: o harness
+// só controla o texto emitido, não se o driver marca um breakpoint de cache ali).
+// Devolve uma linha em branco (mesma quebra de parágrafo de antes desta feature) quando não
+// há brief persistido, ou o bloco "<brief>" com uma linha em branco à direita quando há — os
+// dois pontos de chamada substituem exatamente a linha em branco que já existia ali antes.
+fn brief_block() -> String {
+    let brief = artifact_store::read(BRIEF_ARTIFACT_NAME);
+    if brief.trim().is_empty() {
+        "\n".to_string()
+    } else {
+        format!("<brief>\n{brief}\n</brief>\n\n")
+    }
 }
 
 // --- session 0: inicializador -------------------------------------------------
@@ -115,11 +135,12 @@ Repita o comando `{VERIFY_CMD}` e `{TARGET_DIR}`."
 // --- loop por feature (uma sessão de contexto fresco) --------------------------
 
 pub fn bearings_prompt() -> String {
+    let brief = brief_block();
     let input = format!(
         "=== NOVA SESSÃO (contexto limpo) ===\n\
 Você é um agente de codificação começando uma sessão FRESCA. Não assuma nada da\n\
 sessão anterior — todo o estado está nos artefatos persistentes.\n\
-\n\
+{brief}\
 Oriente-se com saída curta: rode `pwd`, leia só o fim do `progress.txt` e o\n\
 `git log --oneline` recente para entender o que já foi feito. Não cole logs\n\
 longos; se precisar preservar detalhe, salve em `.harness/logs/`.\n\
@@ -163,10 +184,11 @@ implementar (a de maior prioridade ainda pendente — o harness escolhe).";
 
 pub fn implement_prompt(feature: &Feature) -> String {
     let target_dir = run_config_store::load().target_dir;
+    let brief = brief_block();
     let input = format!(
         "Implemente EXCLUSIVAMENTE esta feature, de forma incremental e mínima — nada além\n\
 dela:\n\
-\n\
+{brief}\
 Feature #{} (prioridade {}): {}\n\
 \n\
 Trabalhe no diretório-alvo ({target_dir}). Se rodar comandos com\n\

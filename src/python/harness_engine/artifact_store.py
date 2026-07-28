@@ -48,6 +48,19 @@ def write(name: str, content: str) -> str:
     return path
 
 
+def read(name: str) -> str:
+    """Lê um único artefato por nome (ex.: para reinjeção em prompts). "" se ausente/ilegível."""
+    path = Path(_DIR) / f"{name}.md"
+
+    try:
+        if path.exists():
+            return path.read_text()
+    except Exception as ex:
+        print(f"[ArtifactStore] falha ao ler {name}: {ex}", file=sys.stderr)
+
+    return ""
+
+
 def files() -> list[str]:
     """Caminhos registrados no manifesto, na ordem em que foram gravados."""
     try:

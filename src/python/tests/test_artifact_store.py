@@ -30,6 +30,16 @@ def test_read_all_concatena_na_ordem_de_gravacao():
     assert all_content.index("# Item") < all_content.index("# Histórias")
 
 
+def test_read_devolve_conteudo_gravado():
+    artifact_store.write("brief", "# Brief\n\nConstrua X.")
+
+    assert artifact_store.read("brief") == "# Brief\n\nConstrua X."
+
+
+def test_read_devolve_vazio_quando_artefato_nao_existe():
+    assert artifact_store.read("nunca-gravado") == ""
+
+
 def test_reset_apaga_artefatos_e_manifesto():
     path = artifact_store.write("historias", "x")
 

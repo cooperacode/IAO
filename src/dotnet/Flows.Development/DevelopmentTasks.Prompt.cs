@@ -23,6 +23,27 @@ public static partial class DevelopmentTasks
     private const string FeaturesShape =
         """[{"id":1,"title":"...","priority":1,"dependsOn":[]}, ...]""";
 
+    // Reinjeta o brief persistido (ArtifactStore, BriefArtifactName) nos dois pontos do loop
+    // que realmente raciocinam sobre "o que construir" — bearings e implement — e só ali:
+    // smoke/pick/verify/fix/handoff rodam script ou fazem bookkeeping, sem necessidade de
+    // contexto de escopo. "" quando o run começou no modo interativo (sem docs/) ou é uma
+    // retomada de um run anterior a esta feature — nesse caso o bloco some, não fica vazio.
+    // Reinjetar sempre o MESMO texto, byte a byte, também é a aposta de menor custo para se
+    // beneficiar de cache de prompt do provedor por trás do driver (não garantido: o harness
+    // só controla o texto emitido, não se o driver marca um breakpoint de cache ali).
+    private static string BriefBlock()
+    {
+        var brief = ArtifactStore.Read(BriefArtifactName);
+        return string.IsNullOrWhiteSpace(brief)
+            ? ""
+            : $"""
+            <brief>
+            {brief}
+            </brief>
+
+            """;
+    }
+
     // --- session 0: inicializador -----------------------------------------
 
     private static string InitializerPrompt(string content, string[] files) =>
@@ -81,7 +102,7 @@ public static partial class DevelopmentTasks
             === NOVA SESSÃO (contexto limpo) ===
             Você é um agente de codificação começando uma sessão FRESCA. Não assuma nada da
             sessão anterior — todo o estado está nos artefatos persistentes.
-
+            {BriefBlock()}
             Oriente-se com saída curta: rode `pwd`, leia só o fim do `progress.txt` e o
             `git log --oneline` recente para entender o que já foi feito. Não cole logs
             longos; se precisar preservar detalhe, salve em `.harness/logs/`.
@@ -115,7 +136,7 @@ public static partial class DevelopmentTasks
             input: $"""
             Implemente EXCLUSIVAMENTE esta feature, de forma incremental e mínima — nada além
             dela:
-
+            {BriefBlock()}
             Feature #{feature.Id} (prioridade {feature.Priority}): {feature.Title}
 
             Trabalhe no diretório-alvo ({RunConfigStore.Load().TargetDir}). Se rodar comandos com

@@ -85,6 +85,22 @@ public static class ArtifactStore
     /// <summary>Há artefatos gravados e presentes no disco?</summary>
     public static bool HasArtifacts() => Files().Any(File.Exists);
 
+    /// <summary>Lê um único artefato por nome (ex.: para reinjeção em prompts). "" se ausente/ilegível.</summary>
+    public static string Read(string name)
+    {
+        var path = Path.Combine(Dir, $"{name}.md");
+
+        try
+        {
+            return File.Exists(path) ? File.ReadAllText(path) : "";
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ArtifactStore] falha ao ler {name}: {ex.Message}");
+            return "";
+        }
+    }
+
     /// <summary>Concatena os artefatos na ordem do manifesto — o insumo do juiz-LLM.</summary>
     public static string ReadAll()
     {

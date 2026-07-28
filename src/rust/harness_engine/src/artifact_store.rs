@@ -59,6 +59,21 @@ pub fn write(name: &str, content: &str) -> String {
     path
 }
 
+/// Lê um único artefato por nome (ex.: para reinjeção em prompts). "" se ausente/ilegível.
+pub fn read(name: &str) -> String {
+    let path = format!("{DIR}/{name}.md");
+    let p = std::path::Path::new(&path);
+
+    if p.exists() {
+        match std::fs::read_to_string(p) {
+            Ok(content) => return content,
+            Err(e) => eprintln!("[ArtifactStore] falha ao ler {name}: {e}"),
+        }
+    }
+
+    String::new()
+}
+
 /// Caminhos registrados no manifesto, na ordem em que foram gravados.
 pub fn files() -> Vec<String> {
     let p = std::path::Path::new(MANIFEST_PATH);
@@ -184,6 +199,24 @@ mod tests {
         let all = read_all();
 
         assert!(all.find("# Item") < all.find("# Histórias"));
+    }
+
+    #[test]
+    fn read_devolve_conteudo_gravado() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        write("brief", "# Brief\n\nConstrua X.");
+
+        assert_eq!(read("brief"), "# Brief\n\nConstrua X.");
+    }
+
+    #[test]
+    fn read_nome_inexistente_devolve_vazio() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        assert_eq!(read("nunca-gravado"), "");
     }
 
     #[test]

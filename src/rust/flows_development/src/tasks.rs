@@ -13,7 +13,9 @@
 
 use harness_engine::Envelope;
 use harness_engine::run_config_store::RunConfig;
-use harness_engine::{docs_reader, feature_store, harness_config, run_config_store, state_store};
+use harness_engine::{
+    artifact_store, docs_reader, feature_store, harness_config, run_config_store, state_store,
+};
 
 use crate::{handoff, prompts, verify};
 
@@ -36,6 +38,11 @@ pub const CURRENT_FEATURE_TITLE_KEY: &str = "current_feature_title";
 pub const CURRENT_FEATURE_SUMMARY_KEY: &str = "current_feature_summary";
 pub const CURRENT_FEATURE_VERIFY_KEY: &str = "current_feature_verify";
 pub const FEATURE_STEPS_KEY: &str = "feature_steps";
+
+// Nome do artefato do brief no artifact_store (.harness/brief.md) — persistido em start()
+// para poder ser reinjetado em bearings/implement (prompts.rs), já que o conteúdo lido de
+// docs/ antes só existia como variável local do turno do inicializador.
+pub const BRIEF_ARTIFACT_NAME: &str = "brief";
 
 fn state(key: &str) -> String {
     state_store::get(key).unwrap_or_default()
@@ -61,6 +68,10 @@ pub fn start() -> String {
     // Flow PRODUTOR da feature_list: novo run apaga a do run anterior.
     feature_store::reset();
     run_config_store::reset();
+    // Sem isto, um run novo no modo interativo (sem docs/) herdaria silenciosamente o
+    // brief.md de um run anterior — o modo interativo nunca chama artifact_store::write,
+    // então só este reset garante que nenhum brief de um tópico antigo sobrevive.
+    artifact_store::reset();
 
     // Brief (o que construir) vem de docs/ ou, sem docs, do modo interativo.
     let folder = docs_folder();
@@ -69,6 +80,10 @@ pub fn start() -> String {
     }
 
     let (content, files) = docs_reader::read(&folder);
+    // Persistido para ser reinjetado em bearings/implement (prompts.rs) — antes desta
+    // feature, "content" era só uma variável local deste turno, descartada assim que o
+    // inicializador terminava.
+    artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
     state_store::set("origem", "docs");
     prompts::initializer_prompt(&content, &files)
 }
@@ -400,6 +415,96 @@ mod tests {
 
         // Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
         assert_eq!(run_config_store::load().run_id, run_id_antes_do_start);
+    }
+
+    // --- brief: persistência em start() e reinjeção em bearings/implement -------------
+
+    fn given_docs_brief(content: &str) {
+        std::fs::create_dir_all("docs").unwrap();
+        std::fs::write("docs/brief.md", content).unwrap();
+    }
+
+    #[test]
+    fn start_com_docs_populados_persiste_o_brief_no_artifact_store() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        given_docs_brief("# Brief\n\nConstrua um app de tarefas.");
+
+        start();
+
+        // docs_reader::read antepõe um cabeçalho "## <arquivo>" — contains, não igualdade.
+        assert!(artifact_store::read("brief").contains("Construa um app de tarefas."));
+    }
+
+    #[test]
+    fn start_modo_interativo_nao_persiste_brief() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        start(); // sem docs/ → initializer_interactive()
+
+        assert_eq!(artifact_store::read("brief"), "");
+    }
+
+    #[test]
+    fn start_novo_run_sem_docs_apaga_brief_do_run_anterior() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        // Um segundo run com o MESMO docs/ já se autocorrigiria via overwrite (não prova nada
+        // sobre o reset()); o caso que só artifact_store::reset() resolve é docs→interativo:
+        // o modo interativo nunca chama write, então sem o reset() o brief antigo vazaria.
+        given_docs_brief("brief do topico A");
+        start();
+        plan_default();
+        for f in feature_store::load() {
+            feature_store::mark_passed(f.id);
+        }
+        std::fs::remove_dir_all("docs").unwrap();
+
+        start(); // run novo, sem docs/ → interativo
+
+        assert_eq!(artifact_store::read("brief"), "");
+    }
+
+    #[test]
+    fn plan_retorna_bearings_com_o_brief_reinjetado() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        given_docs_brief("brief do topico A");
+        start();
+
+        let result = plan_default();
+
+        assert!(result.contains("brief do topico A"));
+    }
+
+    #[test]
+    fn pick_retorna_implement_com_o_brief_reinjetado() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        given_docs_brief("brief do topico A");
+        start();
+        plan_default();
+        bearings(Some(&cmd("bearings", vec!["ok"])));
+        smoke(Some(&cmd("smoke", vec!["ok"])));
+
+        let result = pick(Some(&cmd("pick", vec![])));
+
+        assert!(result.contains("brief do topico A"));
+    }
+
+    #[test]
+    fn bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        // Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
+        let bearings_result = plan_default();
+        bearings(Some(&cmd("bearings", vec!["ok"])));
+        smoke(Some(&cmd("smoke", vec!["ok"])));
+        let implement_result = pick(Some(&cmd("pick", vec![])));
+
+        assert!(!bearings_result.contains("<brief>"));
+        assert!(!implement_result.contains("<brief>"));
     }
 
     #[test]
