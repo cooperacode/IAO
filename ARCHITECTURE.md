@@ -9,7 +9,7 @@ For the pattern's formal definition (Intent, Motivation, Applicability,
 Consequences, Known Uses) see [README.md](README.md). This document is the
 structural companion: what each layer is, why it exists, and which files
 implement it. An interactive, click-through version of the same material is
-available in [`arquitetura-v2.html`](arquitetura-v2.html) (Portuguese).
+available in [`arquitetura-v2.html`](assets/arquitetura-v2.html) (Portuguese).
 
 **Scope.** The walkthrough below follows the .NET implementation
 (`src/dotnet/Harness.Engine` + `src/dotnet/Flows.Development`), the primary and
