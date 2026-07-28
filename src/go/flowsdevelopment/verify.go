@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	engine "github.com/cooperacode/IAO/src/go/harnessengine"
@@ -74,7 +73,8 @@ func runVerifyScript(targetDir, script string, featureId int) verifyScriptResult
 	cmd := exec.Command("bash", script, strconv.Itoa(featureId))
 	cmd.Dir = targetDir
 	// New process group so a timeout can kill the whole tree, not just the direct child.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Implemented per-OS in process_unix.go/process_windows.go.
+	setProcessGroup(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -98,7 +98,7 @@ func runVerifyScript(targetDir, script string, featureId int) verifyScriptResult
 		return verifyScriptResult{ExitCode: exitCodeOf(err), Output: stdout.String(), Error: stderr.String()}
 	case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
 		// Kill the whole process group; the script may have spawned children.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		killProcessTree(cmd)
 		<-done
 		return verifyScriptResult{ExitCode: -1, Output: stdout.String(), Error: stderr.String(), TimedOut: true}
 	}
