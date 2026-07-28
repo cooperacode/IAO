@@ -65,6 +65,32 @@ def test_parse_depends_on_ausente_normaliza_para_array_vazio():
     assert features[0].deps == ()
 
 
+def test_parse_description_e_references_ausentes_normalizam_para_vazio():
+    features = feature_store.parse('[{"id":1,"title":"X","priority":1}]')
+
+    assert features[0].description == ""
+    assert features[0].refs == ()
+
+
+def test_parse_preserva_description_e_references():
+    features = feature_store.parse(
+        '[{"id":1,"title":"X","priority":1,"description":"faz Y","references":["RF-003"]}]'
+    )
+
+    assert features[0].description == "faz Y"
+    assert features[0].refs == ("RF-003",)
+
+
+def test_parse_description_acima_do_teto_e_truncada():
+    longa = "a" * (feature_store.DESCRIPTION_MAX_CHARS + 50)
+
+    features = feature_store.parse(
+        f'[{{"id":1,"title":"X","priority":1,"description":"{longa}"}}]'
+    )
+
+    assert len(features[0].description) == feature_store.DESCRIPTION_MAX_CHARS
+
+
 def test_parse_depends_on_ciclico_retorna_vazio_sem_lancar():
     features = feature_store.parse(
         '[{"id":1,"title":"A","priority":1,"dependsOn":[2]},'

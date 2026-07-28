@@ -68,15 +68,22 @@ passo 0. Em ambos os casos, cada feature deve ser:
 - testável de forma independente (tem como dizer "passou" sem ambiguidade);
 - com **prioridade** numérica (1 = mais alta); se uma feature depende de outra (precisa de algo
   que a outra cria), registre isso em `dependsOn` — o harness só a libera depois que a(s)
-  dependência(s) passar(em), além de respeitar a prioridade.
+  dependência(s) passar(em), além de respeitar a prioridade;
+- com **`description`**: uma descrição objetiva do que a feature faz — contexto suficiente para
+  uma sessão futura entender o escopo sem reler o brief inteiro. Até 700 caracteres (o harness
+  corta o excedente, mas não conte com isso — seja objetivo);
+- com **`references`**: os códigos explícitos que o BRIEF cita para essa feature (ex.: "RF-003",
+  "JIRA-142", uma seção nomeada) — array vazio se o brief não tiver nenhum código explícito
+  para essa feature. Não invente um código que não esteja no brief.
 
 Prefira muitas features pequenas a poucas grandes. Uma feature que não dá para verificar
 sozinha está grande demais — quebre.
 
 ## Saída
-- `$FEATURES`: um ARRAY JSON `[{"id":1,"title":"...","priority":1,"dependsOn":[]}, ...]` (só o
-  array; não inclua `passes` — toda feature nasce pendente; `dependsOn` vazio quando não houver
-  dependência).
+- `$FEATURES`: um ARRAY JSON
+  `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]`
+  (só o array; não inclua `passes` — toda feature nasce pendente; `dependsOn`/`references`
+  vazios quando não houver dependência/código explícito).
 - `$VERIFY_CMD`: o comando único que verifica o projeto (ex.: `dotnet test`, `npm test`).
   Brownfield: reaproveite o comando já estabelecido no projeto quando houver um, em vez de
   propor um novo.

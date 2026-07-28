@@ -82,6 +82,36 @@ public class FeatureStoreTests : IDisposable
     }
 
     [Fact]
+    public void Parse_DescriptionEReferencesAusentes_NormalizamParaVazio()
+    {
+        var features = FeatureStore.Parse("""[{"id":1,"title":"X","priority":1}]""");
+
+        Assert.Equal("", features[0].Description);
+        Assert.Empty(features[0].Refs);
+    }
+
+    [Fact]
+    public void Parse_PreservaDescriptionEReferences()
+    {
+        var features = FeatureStore.Parse(
+            """[{"id":1,"title":"X","priority":1,"description":"faz Y","references":["RF-003"]}]""");
+
+        Assert.Equal("faz Y", features[0].Description);
+        Assert.Equal(["RF-003"], features[0].Refs);
+    }
+
+    [Fact]
+    public void Parse_DescriptionAcimaDoTeto_ETruncada()
+    {
+        var longa = new string('a', FeatureStore.DescriptionMaxChars + 50);
+
+        var features = FeatureStore.Parse(
+            $$"""[{"id":1,"title":"X","priority":1,"description":"{{longa}}"}]""");
+
+        Assert.Equal(FeatureStore.DescriptionMaxChars, features[0].Description.Length);
+    }
+
+    [Fact]
     public void Parse_DependsOnCiclico_RetornaVazioSemLancar()
     {
         var features = FeatureStore.Parse(

@@ -14,8 +14,15 @@ use serde::{Deserialize, Serialize};
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/feature_list.json";
 
-/// Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já passa
-/// e de quais outras (por id) depende.
+/// Teto de caracteres de `Feature::description` — cota defensiva contra um driver verboso: a
+/// descrição é reinjetada no prompt de `implement` a cada feature, então sem teto ela infla
+/// silenciosamente o contexto de toda sessão futura.
+pub const DESCRIPTION_MAX_CHARS: usize = 700;
+
+/// Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já passa,
+/// de quais outras (por id) depende, uma descrição livre (até `DESCRIPTION_MAX_CHARS`
+/// caracteres, reinjetada no prompt de `implement`) e códigos de referência explícitos do
+/// brief (ex.: "RF-003"; vazio quando o brief não cita nenhum).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Feature {
     pub id: i32,
@@ -25,6 +32,10 @@ pub struct Feature {
     pub passes: bool,
     #[serde(rename = "dependsOn", default)]
     pub depends_on: Vec<i32>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub references: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,6 +53,10 @@ struct RawFeature {
     priority: i32,
     #[serde(rename = "dependsOn", default)]
     depends_on: Vec<i32>,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    references: Vec<String>,
 }
 
 /// Sobrescreve a lista inteira — usada pelo `plan` (session 0) e por `mark_passed`.
@@ -91,6 +106,8 @@ pub fn parse(json: &str) -> Vec<Feature> {
             priority: f.priority,
             passes: false,
             depends_on: f.depends_on,
+            description: truncate_description(&f.description),
+            references: f.references,
         })
         .collect();
 
@@ -100,6 +117,16 @@ pub fn parse(json: &str) -> Vec<Feature> {
     }
 
     reindexed
+}
+
+// Corta em DESCRIPTION_MAX_CHARS caracteres — nunca lança, nunca rejeita a feature inteira
+// por causa disso, só encurta.
+fn truncate_description(description: &str) -> String {
+    if description.chars().count() > DESCRIPTION_MAX_CHARS {
+        description.chars().take(DESCRIPTION_MAX_CHARS).collect()
+    } else {
+        description.to_string()
+    }
 }
 
 // `None` se o grafo de `depends_on` é válido (todo id existe, sem ciclo); senão, uma
@@ -284,6 +311,8 @@ mod tests {
             priority,
             passes,
             depends_on: Vec::new(),
+            description: String::new(),
+            references: Vec::new(),
         }
     }
 
@@ -368,6 +397,43 @@ mod tests {
         ]);
 
         assert_eq!(next_pending().unwrap().id, 2);
+    }
+
+    #[test]
+    fn parse_description_e_references_ausentes_normalizam_para_vazio() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        let features = parse(r#"[{"id":1,"title":"X","priority":1}]"#);
+
+        assert_eq!(features[0].description, "");
+        assert!(features[0].references.is_empty());
+    }
+
+    #[test]
+    fn parse_preserva_description_e_references() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        let features = parse(
+            r#"[{"id":1,"title":"X","priority":1,"description":"faz Y","references":["RF-003"]}]"#,
+        );
+
+        assert_eq!(features[0].description, "faz Y");
+        assert_eq!(features[0].references, vec!["RF-003".to_string()]);
+    }
+
+    #[test]
+    fn parse_description_acima_do_teto_e_truncada() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        let longa = "a".repeat(DESCRIPTION_MAX_CHARS + 50);
+
+        let features = parse(&format!(
+            r#"[{{"id":1,"title":"X","priority":1,"description":"{longa}"}}]"#
+        ));
+
+        assert_eq!(features[0].description.chars().count(), DESCRIPTION_MAX_CHARS);
     }
 
     #[test]

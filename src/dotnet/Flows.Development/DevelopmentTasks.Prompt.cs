@@ -21,27 +21,44 @@ public static partial class DevelopmentTasks
     // Forma da feature_list em raw string SEM interpolação (chaves literais) — embutida nos
     // prompts via {FeaturesShape} para não colidir com a interpolação de $"""...""".
     private const string FeaturesShape =
-        """[{"id":1,"title":"...","priority":1,"dependsOn":[]}, ...]""";
+        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]""";
+
+    // Reinjeta description/references (FeatureStore.Feature) no prompt de implement — o único
+    // ponto do loop que recebe o objeto Feature inteiro, não só título/id via StateStore. ""
+    // quando a feature não tem nenhum dos dois (ex.: feature_list.json de uma versão anterior
+    // a esta, sem os campos) — o bloco some, não aparece com valores vazios.
+    private static string FeatureContextBlock(Feature feature)
+    {
+        if (string.IsNullOrWhiteSpace(feature.Description) && feature.Refs.Length == 0)
+            return "";
+
+        var references = feature.Refs.Length > 0 ? string.Join(", ", feature.Refs) : "nenhuma";
+        return $"""
+            Descrição: {feature.Description}
+            Referências do brief: {references}
+
+            """;
+    }
 
     // Reinjeta o brief persistido (ArtifactStore, BriefArtifactName) nos dois pontos do loop
     // que realmente raciocinam sobre "o que construir" — bearings e implement — e só ali:
     // smoke/pick/verify/fix/handoff rodam script ou fazem bookkeeping, sem necessidade de
     // contexto de escopo. "" quando o run começou no modo interativo (sem docs/) ou é uma
     // retomada de um run anterior a esta feature — nesse caso o bloco some, não fica vazio.
-    // Reinjetar sempre o MESMO texto, byte a byte, também é a aposta de menor custo para se
-    // beneficiar de cache de prompt do provedor por trás do driver (não garantido: o harness
-    // só controla o texto emitido, não se o driver marca um breakpoint de cache ali).
+    // Mesmo tratamento das skills (PromptFormatter.ReadSkills): quebras de linha viram o
+    // marcador literal "\n" e o bloco inteiro fica numa única linha — o conteúdo do brief não
+    // precisa preservar a formatação Markdown original aqui, só estar disponível. Reinjetar
+    // sempre o MESMO texto, byte a byte, também é a aposta de menor custo para se beneficiar
+    // de cache de prompt do provedor por trás do driver (não garantido: o harness só controla
+    // o texto emitido, não se o driver marca um breakpoint de cache ali).
     private static string BriefBlock()
     {
         var brief = ArtifactStore.Read(BriefArtifactName);
-        return string.IsNullOrWhiteSpace(brief)
-            ? ""
-            : $"""
-            <brief>
-            {brief}
-            </brief>
+        if (string.IsNullOrWhiteSpace(brief))
+            return "";
 
-            """;
+        var singleLine = brief.Replace("\r\n", "\\n").Replace("\n", "\\n");
+        return $"<brief>{singleLine}</brief>";
     }
 
     // --- session 0: inicializador -----------------------------------------
@@ -52,7 +69,7 @@ public static partial class DevelopmentTasks
             Você é o INICIALIZADOR (session 0). A partir do brief abaixo:
             1. Garanta um repositório Git no diretório-alvo (rode `git init` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
             2. Escafolde o ambiente do projeto-alvo: crie um `init.sh` idempotente que instala dependências e sobe/builda o app, um `verify-feature.sh <id>` idempotente que verifica uma feature, e a estrutura mínima de pastas.
-            3. Expanda o brief numa lista PRIORIZADA de features pequenas e verificáveis, cada uma implementável e testável isoladamente. Numere a prioridade (1 = mais alta). Se uma feature só faz sentido depois de outra(s) (ex.: precisa de um schema que outra feature cria), registre os ids delas em `dependsOn` — array vazio quando não houver dependência. O harness respeita essa ordem além da prioridade.
+            3. Expanda o brief numa lista PRIORIZADA de features pequenas e verificáveis, cada uma implementável e testável isoladamente. Numere a prioridade (1 = mais alta). Se uma feature só faz sentido depois de outra(s) (ex.: precisa de um schema que outra feature cria), registre os ids delas em `dependsOn` — array vazio quando não houver dependência. O harness respeita essa ordem além da prioridade. Preencha também, para cada feature: `description`, uma descrição objetiva do que ela faz (até {FeatureStore.DescriptionMaxChars} caracteres); e `references`, os códigos explícitos citados no brief que se relacionam a ela (ex.: "RF-003", "JIRA-142", uma seção nomeada) — array vazio se o brief não citar nenhum código explícito para essa feature (não invente um).
 
             <brief fontes="{string.Join(", ", files)}">
             {content}
@@ -75,7 +92,7 @@ public static partial class DevelopmentTasks
             verificação (ex.: `dotnet test`, `npm test`). Depois:
             1. Garanta um repositório Git no diretório-alvo (rode `git init` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
             2. Escafolde o ambiente: crie um `init.sh` idempotente e um `verify-feature.sh <id>` idempotente no diretório-alvo.
-            3. Expanda o objetivo numa lista PRIORIZADA de features pequenas e verificáveis. Se uma depender de outra, registre os ids em `dependsOn` (array vazio quando não houver).
+            3. Expanda o objetivo numa lista PRIORIZADA de features pequenas e verificáveis. Se uma depender de outra, registre os ids em `dependsOn` (array vazio quando não houver). Preencha também `description` (até {FeatureStore.DescriptionMaxChars} caracteres) e `references` (códigos explícitos citados pelo usuário para essa feature; array vazio se não houver nenhum).
 
             Guarde em '{FEATURES}' um ARRAY JSON {FeaturesShape},
             o comando em '{VERIFY_CMD}' e o diretório em '{TARGET_DIR}'. O `verify-feature.sh`
@@ -138,7 +155,7 @@ public static partial class DevelopmentTasks
             dela:
             {BriefBlock()}
             Feature #{feature.Id} (prioridade {feature.Priority}): {feature.Title}
-
+            {FeatureContextBlock(feature)}
             Trabalhe no diretório-alvo ({RunConfigStore.Load().TargetDir}). Se rodar comandos com
             saída longa, salve em `.harness/logs/` e não cole logs no resumo. Ao terminar,
             resuma o que implementou em '{SUMMARY}' em uma frase curta.

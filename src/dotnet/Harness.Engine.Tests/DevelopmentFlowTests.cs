@@ -288,6 +288,39 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
+    public void Pick_RetornaImplementComDescriptionEReferencesDaFeature()
+    {
+        const string json =
+            """[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]""";
+        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+        DevelopmentTasks.Pick(Cmd("pick")); // escolhe "B" (prioridade 1), sem description/references
+        DevelopmentTasks.Implement(Cmd("implement", "feito"));
+        DevelopmentTasks.Verify(Cmd("verify", "PASS")); // completa "B", avança automaticamente
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+
+        var result = DevelopmentTasks.Pick(Cmd("pick")); // agora escolhe "A"
+
+        Assert.Contains("Descrição: faz X", result);
+        Assert.Contains("Referências do brief: RF-003", result);
+    }
+
+    [Fact]
+    public void Pick_RetornaImplementSemDescriptionNemReferences_NaoTemBlocoDeContexto()
+    {
+        Plan(); // FeaturesJson sem description/references
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
+        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+
+        var result = DevelopmentTasks.Pick(Cmd("pick"));
+
+        Assert.DoesNotContain("Descrição:", result);
+        Assert.DoesNotContain("Referências do brief:", result);
+    }
+
+    [Fact]
     public void Plan_FeaturesInvalidas_ReemiteOPlano()
     {
         var result = DevelopmentTasks.Plan(Cmd("plan", "não é json", "dotnet test", "."));

@@ -8,7 +8,7 @@ from __future__ import annotations
 from flows_development import state_keys
 from harness_engine import artifact_store, prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
-from harness_engine.feature_store import Feature
+from harness_engine.feature_store import DESCRIPTION_MAX_CHARS, Feature
 
 # Tokens de saída (o driver guarda o artefato do passo nestes e os devolve como args).
 FEATURES = "$FEATURES"
@@ -21,7 +21,9 @@ RESULT = "$RESULT"
 COMMIT = "$COMMIT"
 
 # Forma da feature_list embutida nos prompts.
-FEATURES_SHAPE = '[{"id":1,"title":"...","priority":1,"dependsOn":[]}, ...]'
+FEATURES_SHAPE = (
+    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]'
+)
 
 
 def _state(key: str) -> str:
@@ -34,14 +36,30 @@ def _brief_block() -> str:
     e só ali: smoke/pick/verify/fix/handoff rodam script ou fazem bookkeeping, sem necessidade
     de contexto de escopo. Devolve uma linha em branco (mesma quebra de parágrafo de antes
     desta feature) quando não há brief persistido — modo interativo, ou retomada de um run
-    anterior a esta feature —, ou o bloco "<brief>" com uma linha em branco à direita quando
-    há. Reinjetar sempre o MESMO texto, byte a byte, também é a aposta de menor custo para se
-    beneficiar de cache de prompt do provedor por trás do driver (não garantido: o harness só
-    controla o texto emitido, não se o driver marca um breakpoint de cache ali)."""
+    anterior a esta feature —, ou o bloco "<brief>" quando há. Mesmo tratamento das skills
+    (prompt_formatter._read_skills): quebras de linha viram o marcador literal "\\n" e o bloco
+    inteiro fica numa única linha — o conteúdo do brief não precisa preservar a formatação
+    Markdown original aqui, só estar disponível. Reinjetar sempre o MESMO texto, byte a byte,
+    também é a aposta de menor custo para se beneficiar de cache de prompt do provedor por
+    trás do driver (não garantido: o harness só controla o texto emitido, não se o driver
+    marca um breakpoint de cache ali)."""
     brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME)
     if not brief.strip():
         return "\n"
-    return f"<brief>\n{brief}\n</brief>\n\n"
+    single_line = brief.replace("\r\n", "\\n").replace("\n", "\\n")
+    return f"<brief>{single_line}</brief>\n"
+
+
+def _feature_context_block(feature: Feature) -> str:
+    """Reinjeta description/references (harness_engine.feature_store.Feature) no prompt de
+    implement — o único ponto do loop que recebe o Feature inteiro, não só título/id via
+    state_store. Devolve uma linha em branco (mesma quebra de parágrafo de antes desta
+    feature) quando a feature não tem nenhum dos dois — ex.: feature_list.json de uma versão
+    anterior a esta, sem os campos — o bloco some, não aparece com valores vazios."""
+    if not feature.description.strip() and not feature.refs:
+        return "\n"
+    references = ", ".join(feature.refs) if feature.refs else "nenhuma"
+    return f"Descrição: {feature.description}\nReferências do brief: {references}\n\n"
 
 
 # --- session 0: inicializador -------------------------------------------------
@@ -51,7 +69,7 @@ def initializer_prompt(content: str, files: list[str]) -> str:
     input_text = f"""Você é o INICIALIZADOR (session 0). A partir do brief abaixo:
 1. Garanta um repositório Git no diretório-alvo (rode `git init` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
 2. Escafolde o ambiente do projeto-alvo: crie um `init.sh` idempotente que instala dependências e sobe/builda o app, um `verify-feature.sh <id>` idempotente que verifica uma feature, e a estrutura mínima de pastas.
-3. Expanda o brief numa lista PRIORIZADA de features pequenas e verificáveis, cada uma implementável e testável isoladamente. Numere a prioridade (1 = mais alta). Se uma feature só faz sentido depois de outra(s) (ex.: precisa de um schema que outra feature cria), registre os ids delas em `dependsOn` — array vazio quando não houver dependência. O harness respeita essa ordem além da prioridade.
+3. Expanda o brief numa lista PRIORIZADA de features pequenas e verificáveis, cada uma implementável e testável isoladamente. Numere a prioridade (1 = mais alta). Se uma feature só faz sentido depois de outra(s) (ex.: precisa de um schema que outra feature cria), registre os ids delas em `dependsOn` — array vazio quando não houver dependência. O harness respeita essa ordem além da prioridade. Preencha também, para cada feature: `description`, uma descrição objetiva do que ela faz (até {DESCRIPTION_MAX_CHARS} caracteres); e `references`, os códigos explícitos citados no brief que se relacionam a ela (ex.: "RF-003", "JIRA-142", uma seção nomeada) — array vazio se o brief não citar nenhum código explícito para essa feature (não invente um).
 
 <brief fontes="{', '.join(files)}">
 {content}
@@ -75,7 +93,7 @@ def initializer_interactive() -> str:
 verificação (ex.: `dotnet test`, `npm test`). Depois:
 1. Garanta um repositório Git no diretório-alvo (rode `git init` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
 2. Escafolde o ambiente: crie um `init.sh` idempotente e um `verify-feature.sh <id>` idempotente no diretório-alvo.
-3. Expanda o objetivo numa lista PRIORIZADA de features pequenas e verificáveis. Se uma depender de outra, registre os ids em `dependsOn` (array vazio quando não houver).
+3. Expanda o objetivo numa lista PRIORIZADA de features pequenas e verificáveis. Se uma depender de outra, registre os ids em `dependsOn` (array vazio quando não houver). Preencha também `description` (até {DESCRIPTION_MAX_CHARS} caracteres) e `references` (códigos explícitos citados pelo usuário para essa feature; array vazio se não houver nenhum).
 
 Guarde em '{FEATURES}' um ARRAY JSON {FEATURES_SHAPE},
 o comando em '{VERIFY_CMD}' e o diretório em '{TARGET_DIR}'. O `verify-feature.sh`
@@ -138,11 +156,11 @@ implementar (a de maior prioridade ainda pendente — o harness escolhe)."""
 
 def implement_prompt(feature: Feature) -> str:
     brief = _brief_block()
+    context = _feature_context_block(feature)
     input_text = f"""Implemente EXCLUSIVAMENTE esta feature, de forma incremental e mínima — nada além
 dela:
 {brief}Feature #{feature.id} (prioridade {feature.priority}): {feature.title}
-
-Trabalhe no diretório-alvo ({run_config_store.load().target_dir}). Se rodar comandos com
+{context}Trabalhe no diretório-alvo ({run_config_store.load().target_dir}). Se rodar comandos com
 saída longa, salve em `.harness/logs/` e não cole logs no resumo. Ao terminar, resuma o
 que implementou em '{SUMMARY}' em uma frase curta."""
     return prompt_formatter.format(

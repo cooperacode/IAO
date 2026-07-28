@@ -10,6 +10,10 @@ que mantém cada sessão pequena o bastante para caber num contexto fresco e cad
 reversível. Se o prompt trouxer um bloco `<brief>`, use-o só para entender motivação/restrições
 por trás desta feature — não é convite para adiantar outras.
 
+- Leia a `Descrição` e as `Referências do brief` da feature (quando presentes) antes de
+  codificar — são o resumo do que essa feature precisa entregar e, se houver, os códigos do
+  brief (ex.: "RF-003") que ela implementa; não são um convite para revisitar o brief inteiro
+  nem para expandir o escopo além do que a descrição já cobre.
 - Faça a menor mudança que entrega a feature completa. Sem "já que estou aqui".
 - Não adiante outras features, mesmo que pareçam triviais — cada uma tem a sua vez.
 - Deixe o código buildando ao final; um passo intermediário quebrado atrapalha o self-verify.

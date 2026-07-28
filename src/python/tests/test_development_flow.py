@@ -176,6 +176,37 @@ def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
     assert "<brief>" not in implement_result
 
 
+def test_pick_retorna_implement_com_description_e_references_da_feature():
+    json_str = (
+        '[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},'
+        '{"id":2,"title":"B","priority":1}]'
+    )
+    tasks.plan(_cmd("plan", json_str, "dotnet test", "src/app"))
+    tasks.bearings(_cmd("bearings", "ok"))
+    tasks.smoke(_cmd("smoke", "ok"))
+    tasks.pick(_cmd("pick"))  # escolhe "B" (prioridade 1), sem description/references
+    tasks.implement(_cmd("implement", "feito"))
+    tasks.verify(_cmd("verify", "PASS"))  # completa "B", avança automaticamente
+    tasks.bearings(_cmd("bearings", "ok"))
+    tasks.smoke(_cmd("smoke", "ok"))
+
+    result = tasks.pick(_cmd("pick"))  # agora escolhe "A"
+
+    assert "Descrição: faz X" in result
+    assert "Referências do brief: RF-003" in result
+
+
+def test_pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto():
+    _plan()  # FEATURES_JSON sem description/references
+    tasks.bearings(_cmd("bearings", "ok"))
+    tasks.smoke(_cmd("smoke", "ok"))
+
+    result = tasks.pick(_cmd("pick"))
+
+    assert "Descrição:" not in result
+    assert "Referências do brief:" not in result
+
+
 def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():
     # Reproduz o hard reset por feature: uma feature ainda pendente ("B") e um trace/step já
     # acumulados por features anteriores, quando a sessão fresca reabre com "start".

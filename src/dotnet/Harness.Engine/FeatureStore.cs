@@ -19,6 +19,11 @@ public static class FeatureStore
     private const string Dir = ".harness";
     private const string FilePath = ".harness/feature_list.json";
 
+    /// <summary>Teto de caracteres de <see cref="Feature.Description"/> — cota defensiva contra
+    /// um driver verboso: a descrição é reinjetada no prompt de <c>implement</c> a cada feature,
+    /// então sem teto ela infla silenciosamente o contexto de toda sessão futura.</summary>
+    public const int DescriptionMaxChars = 700;
+
     /// <summary>Sobrescreve a lista inteira — usada pelo <c>plan</c> (session 0) e por MarkPassed.</summary>
     public static void Write(IReadOnlyList<Feature> features)
     {
@@ -53,7 +58,14 @@ public static class FeatureStore
             // Reindex primeiro: DependsOn só faz sentido referenciando ids já finais, não os
             // brutos (possivelmente ausentes/duplicados) que vieram do driver.
             var reindexed = parsed
-                .Select((f, i) => f with { Id = f.Id > 0 ? f.Id : i + 1, Passes = false, DependsOn = f.Deps })
+                .Select((f, i) => f with
+                {
+                    Id = f.Id > 0 ? f.Id : i + 1,
+                    Passes = false,
+                    DependsOn = f.Deps,
+                    Description = TruncateDescription(f.Description),
+                    References = f.Refs,
+                })
                 .ToList();
 
             if (DependencyGraphError(reindexed) is { } error)
@@ -70,6 +82,11 @@ public static class FeatureStore
             return [];
         }
     }
+
+    /// <summary>Corta em <see cref="DescriptionMaxChars"/> caracteres — nunca lança, nunca
+    /// rejeita a feature inteira por causa disso, só encurta.</summary>
+    private static string TruncateDescription(string? description) =>
+        description is { Length: > DescriptionMaxChars } d ? d[..DescriptionMaxChars] : description ?? "";
 
     /// <summary>
     /// <c>null</c> se o grafo de <c>DependsOn</c> é válido (todo id existe, sem ciclo); senão,
@@ -184,21 +201,28 @@ public static class FeatureStore
     }
 }
 
-/// <summary>Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já passa
-/// e de quais outras (por id) depende.</summary>
+/// <summary>Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já passa,
+/// de quais outras (por id) depende, uma descrição livre (até <see cref="FeatureStore.DescriptionMaxChars"/>
+/// caracteres, reinjetada no prompt de <c>implement</c>) e códigos de referência explícitos do
+/// brief (ex.: "RF-003"; array vazio quando o brief não cita nenhum).</summary>
 ///
 /// <remarks>
-/// <c>DependsOn</c> é ANULÁVEL de propósito: <c>= []</c> não é constante em tempo de compilação
+/// <c>DependsOn</c>/<c>References</c> são ANULÁVEIS de propósito: <c>= []</c> não é constante em tempo de compilação
 /// (não pode ser default de parâmetro posicional do record); e uma propriedade <c>init</c> extra
 /// fora do construtor tem o inicializador IGNORADO pelo <see cref="System.Text.Json"/> quando a
 /// chave não existe no JSON — grava <c>null</c>, não <c>[]</c>. <see cref="Deps"/> normaliza isso
 /// para quem consome; um <c>feature_list.json</c> gravado por uma versão anterior do harness
 /// (sem <c>dependsOn</c>) continua carregando sem lançar.
 /// </remarks>
-public record Feature(int Id, string Title, int Priority, bool Passes, int[]? DependsOn = null)
+public record Feature(
+    int Id, string Title, int Priority, bool Passes,
+    int[]? DependsOn = null, string Description = "", string[]? References = null)
 {
     [JsonIgnore]
     public int[] Deps => DependsOn ?? [];
+
+    [JsonIgnore]
+    public string[] Refs => References ?? [];
 }
 
 /// <summary>

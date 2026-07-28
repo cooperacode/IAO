@@ -20,15 +20,22 @@ from harness_engine.atomic_io import write_text_atomic
 _DIR = ".harness"
 _FILE_PATH = ".harness/feature_list.json"
 
+# Teto de caracteres de Feature.description — cota defensiva contra um driver verboso: a
+# descrição é reinjetada no prompt de implement a cada feature, então sem teto ela infla
+# silenciosamente o contexto de toda sessão futura.
+DESCRIPTION_MAX_CHARS = 700
+
 
 @dataclass(frozen=True)
 class Feature:
     """Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já
-    passa e de quais outras (por id) depende.
+    passa, de quais outras (por id) depende, uma descrição livre (até DESCRIPTION_MAX_CHARS
+    caracteres, reinjetada no prompt de implement) e códigos de referência explícitos do
+    brief (ex.: "RF-003"; vazio quando o brief não cita nenhum).
 
-    `depends_on` é ANULÁVEL de propósito: um `feature_list.json` gravado por uma versão
-    anterior (sem `dependsOn`) continua carregando sem lançar — `deps` normaliza para
-    quem consome.
+    `depends_on`/`references` são ANULÁVEIS de propósito: um `feature_list.json` gravado
+    por uma versão anterior (sem essas chaves) continua carregando sem lançar — `deps`/
+    `refs` normalizam para quem consome.
     """
 
     id: int
@@ -36,10 +43,16 @@ class Feature:
     priority: int
     passes: bool
     depends_on: tuple[int, ...] | None = None
+    description: str = ""
+    references: tuple[str, ...] | None = None
 
     @property
     def deps(self) -> tuple[int, ...]:
         return self.depends_on if self.depends_on is not None else ()
+
+    @property
+    def refs(self) -> tuple[str, ...]:
+        return self.references if self.references is not None else ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -48,18 +61,24 @@ class Feature:
             "priority": self.priority,
             "passes": self.passes,
             "dependsOn": list(self.depends_on) if self.depends_on is not None else None,
+            "description": self.description,
+            "references": list(self.references) if self.references is not None else None,
         }
 
     @staticmethod
     def from_dict(payload: dict[str, object]) -> "Feature":
         depends_on_raw = payload.get("dependsOn")
         depends_on = tuple(int(x) for x in depends_on_raw) if isinstance(depends_on_raw, list) else None
+        references_raw = payload.get("references")
+        references = tuple(str(x) for x in references_raw) if isinstance(references_raw, list) else None
         return Feature(
             id=int(payload.get("id") or 0),
             title=str(payload.get("title") or ""),
             priority=int(payload.get("priority") or 0),
             passes=bool(payload.get("passes", False)),
             depends_on=depends_on,
+            description=str(payload.get("description") or ""),
+            references=references,
         )
 
 
@@ -92,7 +111,14 @@ def parse(features_json: str) -> list[Feature]:
                 raise TypeError("cada feature deve ser um objeto JSON")
             candidate = Feature.from_dict(raw)
             fid = candidate.id if candidate.id > 0 else i + 1
-            reindexed.append(replace(candidate, id=fid, passes=False, depends_on=candidate.deps))
+            reindexed.append(replace(
+                candidate,
+                id=fid,
+                passes=False,
+                depends_on=candidate.deps,
+                description=_truncate_description(candidate.description),
+                references=candidate.refs,
+            ))
 
         error = _dependency_graph_error(reindexed)
         if error is not None:
@@ -103,6 +129,12 @@ def parse(features_json: str) -> list[Feature]:
     except Exception as ex:
         print(f"[FeatureStore] falha ao interpretar features: {ex}", file=sys.stderr)
         return []
+
+
+def _truncate_description(description: str) -> str:
+    """Corta em DESCRIPTION_MAX_CHARS caracteres — nunca lança, nunca rejeita a feature
+    inteira por causa disso, só encurta."""
+    return description[:DESCRIPTION_MAX_CHARS]
 
 
 def _dependency_graph_error(features: list[Feature]) -> str | None:

@@ -508,6 +508,40 @@ mod tests {
     }
 
     #[test]
+    fn pick_retorna_implement_com_description_e_references_da_feature() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]"#;
+        plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"])));
+        bearings(Some(&cmd("bearings", vec!["ok"])));
+        smoke(Some(&cmd("smoke", vec!["ok"])));
+        pick(Some(&cmd("pick", vec![]))); // escolhe "B" (prioridade 1), sem description/references
+        implement(Some(&cmd("implement", vec!["feito"])));
+        verify(Some(&cmd("verify", vec!["PASS"]))); // completa "B", avança automaticamente
+        bearings(Some(&cmd("bearings", vec!["ok"])));
+        smoke(Some(&cmd("smoke", vec!["ok"])));
+
+        let result = pick(Some(&cmd("pick", vec![]))); // agora escolhe "A"
+
+        assert!(result.contains("Descrição: faz X"));
+        assert!(result.contains("Referências do brief: RF-003"));
+    }
+
+    #[test]
+    fn pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        plan_default(); // FEATURES_JSON sem description/references
+        bearings(Some(&cmd("bearings", vec!["ok"])));
+        smoke(Some(&cmd("smoke", vec!["ok"])));
+
+        let result = pick(Some(&cmd("pick", vec![])));
+
+        assert!(!result.contains("Descrição:"));
+        assert!(!result.contains("Referências do brief:"));
+    }
+
+    #[test]
     fn plan_persiste_features_e_roteia_para_bearings() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
@@ -637,6 +671,8 @@ mod tests {
                 priority: 1,
                 passes: false,
                 depends_on: vec![2],
+                description: String::new(),
+                references: Vec::new(),
             },
             Feature {
                 id: 2,
@@ -644,6 +680,8 @@ mod tests {
                 priority: 2,
                 passes: false,
                 depends_on: vec![1],
+                description: String::new(),
+                references: Vec::new(),
             },
         ]);
         bearings(Some(&cmd("bearings", vec!["ok"])));
