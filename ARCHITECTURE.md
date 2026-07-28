@@ -13,10 +13,11 @@ available in [`arquitetura-v2.html`](assets/arquitetura-v2.html) (Portuguese).
 
 **Scope.** The walkthrough below follows the .NET implementation
 (`src/dotnet/Harness.Engine` + `src/dotnet/Flows.Development`), the primary and
-most complete realization in this repository. A protocol-compatible Python port
-lives in `src/python` and is driven the same way through
-`run-development-py.sh` — same `.harness/` files, same inbox transport, same
-state machine.
+most complete realization in this repository. Protocol-compatible ports live in
+`src/python`, `src/rust`, and `src/go`, driven the same way through
+`run-development-py.sh`, `run-development-rs.sh`, and `run-development-go.sh`
+respectively — same `.harness/` files, same inbox transport, same state
+machine.
 
 ## The pattern in one paragraph
 
@@ -277,8 +278,9 @@ binary and, from there, to the repository being changed.
   command line (one forgotten quote can hang a shell before the program even
   runs) and keeps `stdout` exclusive to control.
 - **`run-development.sh`** — the stable wrapper: looks for a published Release
-  binary and falls back to `dotnet` + DLL. `run-development-py.sh` is the
-  Python-runtime equivalent, same inbox protocol.
+  binary and falls back to `dotnet` + DLL. `run-development-py.sh`,
+  `run-development-rs.sh`, and `run-development-go.sh` are the Python-,
+  Rust-, and Go-runtime equivalents, same inbox protocol.
 
 **Flow composition** (what registers the state machine in Figure 6):
 
@@ -337,6 +339,10 @@ black box is a terminal state.
   and 7.
 - `src/python/` — the protocol-compatible Python port, driven through
   `run-development-py.sh`.
+- `src/rust/` — the protocol-compatible Rust port, driven through
+  `run-development-rs.sh`.
+- `src/go/` — the protocol-compatible Go port, driven through
+  `run-development-go.sh`.
 
 ## References
 

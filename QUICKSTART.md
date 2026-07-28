@@ -8,25 +8,27 @@ Only the engine you choose to package needs its toolchain installed:
 
 - **dotnet**: SDK supporting `net10.0`
 - **rust**: stable toolchain + `cargo`
+- **go**: Go toolchain (`go build`)
 - **python**: 3.11+ interpreter on the target machine's PATH
 
 ## 1. Build a package
 
 ```bash
-./package.sh --engine <dotnet|python|rust> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
+./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
 
 # or run with no flags for an interactive menu
 ./package.sh
 ```
 
 - `--os` (RID) only applies to `--engine dotnet` — Native AOT compiles per OS (`osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`).
-- `rust` and `python` packages are built for/run on the host you run this script on (no cross-compile).
+- `rust`, `go`, and `python` packages are built for/run on the host you run this script on (no cross-compile).
 
 This produces a self-contained folder in `dist/`:
 
 ```
 dist/flows-<rid>-v<version>/          # --engine dotnet
 dist/flows-rust-<host-rid>-v<version>/ # --engine rust
+dist/flows-go-<host-rid>-v<version>/   # --engine go
 dist/flows-python-v<version>/          # --engine python
 ```
 

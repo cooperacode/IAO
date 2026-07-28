@@ -23,22 +23,27 @@
 #     skills/, scripts/, run-development.sh (+ .cmd win) # mesmo layout do dotnet, wrapper → ./bin
 #     <adaptador da IDE>, <config de aprovação>, START-HERE.md
 #
+#   --engine go → dist/flows-go-<host-rid>-v<version>/
+#     bin/flowsdevelopment            # binário nativo (go build ./flowsdevelopment)
+#     skills/, scripts/, run-development.sh (+ .cmd win) # mesmo layout do rust, wrapper → ./bin
+#     <adaptador da IDE>, <config de aprovação>, START-HERE.md
+#
 # Uso:
-#   ./package.sh --engine <dotnet|python|rust> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
+#   ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
 #   ./package.sh                     # modo interativo (menus)
 #
 # --os/--rid só se aplica a --engine dotnet (Native AOT compila por SO). O engine python
-# roda igual em qualquer SO com o interpretador no PATH — não há RID para ele. O engine rust
-# também ignora --os: `cargo build --release` não faz cross-compile aqui, então o binário sai
-# nativo do host onde este script rodou — o <host-rid> no nome do pacote é autodetectado
-# (uname -s/-m), não selecionável.
+# roda igual em qualquer SO com o interpretador no PATH — não há RID para ele. Os engines
+# rust e go também ignoram --os: nem `cargo build --release` nem `go build` fazem
+# cross-compile aqui, então o binário sai nativo do host onde este script rodou — o
+# <host-rid> no nome do pacote é autodetectado (uname -s/-m), não selecionável.
 # RIDs (só --engine dotnet): osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-ENGINES=(dotnet python rust)
+ENGINES=(dotnet python rust go)
 RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)
 IDES=(claude copilot devin codex)
 # Neste branch o projeto empacotado é apenas o fluxo de desenvolvimento.
@@ -50,13 +55,13 @@ IDE=""
 VERSION="1.0.0"
 
 usage() {
-  echo "uso: ./package.sh --engine <dotnet|python|rust> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]"
+  echo "uso: ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]"
   echo "engines: ${ENGINES[*]}"
   echo "RIDs (só --engine dotnet): ${RIDS[*]}"
 }
 
-# Autodetecta um RID-like p/ nomear o pacote --engine rust (cargo não faz cross-compile aqui;
-# o binário só roda no mesmo SO/arquitetura do host que rodou este script).
+# Autodetecta um RID-like p/ nomear o pacote --engine rust/go (nem cargo nem go build fazem
+# cross-compile aqui; o binário só roda no mesmo SO/arquitetura do host que rodou este script).
 host_rid() {
   local os arch
   case "$(uname -s)" in
@@ -105,6 +110,10 @@ esac; }
 rust_bin_for() { case "$1" in
   development) echo "flows_development";;
 esac; }
+# só para --engine go: nome do binário do pacote main em src/go/ que implementa o fluxo.
+go_bin_for() { case "$1" in
+  development) echo "flowsdevelopment";;
+esac; }
 # adaptador por IDE+fluxo → "SRC<TAB>REL" (REL = caminho esperado pela IDE dentro do pacote)
 adapter_for() { case "$1:$2" in
   claude:development)  printf '%s\t%s\n' ".claude/agents/development.agent.md"    ".claude/agents/development.agent.md";;
@@ -134,8 +143,8 @@ contains "$ENGINE" "${ENGINES[@]}" || { echo "engine inválido: '$ENGINE' (use: 
 if [[ "$ENGINE" == "dotnet" ]]; then
   contains "$RID" "${RIDS[@]}" || { echo "RID inválido: '$RID' (use: ${RIDS[*]})" >&2; exit 1; }
 elif [[ -n "$RID" ]]; then
-  if [[ "$ENGINE" == "rust" ]]; then
-    echo "[aviso] --os '$RID' ignorado: engine 'rust' não faz cross-compile (binário nativo do host, RID autodetectado)." >&2
+  if [[ "$ENGINE" == "rust" || "$ENGINE" == "go" ]]; then
+    echo "[aviso] --os '$RID' ignorado: engine '$ENGINE' não faz cross-compile (binário nativo do host, RID autodetectado)." >&2
   else
     echo "[aviso] --os '$RID' ignorado: engine 'python' não usa RID (roda em qualquer SO com o interpretador no PATH)." >&2
   fi
@@ -167,6 +176,11 @@ elif [[ "$ENGINE" == "rust" ]]; then
   echo "[aviso] engine 'rust': binário nativo do host de build ($HOSTRID) — cargo não faz cross-compile aqui; rode este script no SO/arquitetura do alvo se for diferente." >&2
   WINEXT=""; [[ "$HOSTRID" == win-* ]] && WINEXT=".exe"
   OUT="dist/flows-rust-$HOSTRID-v$VERSION"
+elif [[ "$ENGINE" == "go" ]]; then
+  HOSTRID="$(host_rid)"
+  echo "[aviso] engine 'go': binário nativo do host de build ($HOSTRID) — este script não faz cross-compile (GOOS/GOARCH) por padrão; rode-o no SO/arquitetura do alvo se for diferente." >&2
+  WINEXT=""; [[ "$HOSTRID" == win-* ]] && WINEXT=".exe"
+  OUT="dist/flows-go-$HOSTRID-v$VERSION"
 else
   WINEXT=""
   OUT="dist/flows-python-v$VERSION"
@@ -175,7 +189,7 @@ fi
 echo "[package] montando $OUT …"
 rm -rf "$OUT"
 mkdir -p "$OUT"
-[[ "$ENGINE" == "dotnet" || "$ENGINE" == "rust" ]] && mkdir -p "$OUT/bin"
+[[ "$ENGINE" == "dotnet" || "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && mkdir -p "$OUT/bin"
 cp -R skills "$OUT/skills"
 cp harness.json "$OUT/harness.json"   # config das variáveis do harness (tetos, docs)
 
@@ -290,6 +304,42 @@ cd /d "%~dp0"
 "bin\\$bin" %*
 EOF
     fi
+  elif [[ "$ENGINE" == "go" ]]; then
+    bin_name="$(go_bin_for "$flow")"
+    bin="$bin_name$WINEXT"
+
+    command -v go >/dev/null 2>&1 || { echo "[erro] go não encontrado — instale via https://go.dev/dl/" >&2; exit 1; }
+
+    echo "[package] compilando (go build) — ${flow}…"
+    ( cd "src/go" && go build -o "bin/$bin" "./$bin_name" )
+
+    pubbin="src/go/bin/$bin"
+    [[ -f "$pubbin" ]] || { echo "[erro] binário não encontrado em $pubbin" >&2; exit 1; }
+    cp "$pubbin" "$OUT/bin/"
+
+    # wrapper .sh — mesma convenção do dotnet/rust: cwd na raiz do pacote, chama ./bin/<bin>.
+    cat > "$OUT/$wrapper" <<EOF
+#!/usr/bin/env bash
+# Inicia um passo do fluxo '$flow'. Rode a partir desta pasta (o estado e as skills
+# são relativos a ela). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
+set -euo pipefail
+DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+cd "\$DIR"
+exec "./bin/$bin" "\$@"
+EOF
+    chmod +x "$OUT/$wrapper"
+
+    # wrapper .cmd — só faz sentido se o binário foi compilado num host Windows (este
+    # script não faz cross-compile GOOS/GOARCH, então não há caso "RID win num host
+    # não-Windows").
+    if [[ "$WINEXT" == ".exe" ]]; then
+      cmd="${wrapper%.sh}.cmd"
+      cat > "$OUT/$cmd" <<EOF
+@echo off
+cd /d "%~dp0"
+"bin\\$bin" %*
+EOF
+    fi
   else
     module="$(python_module_for "$flow")"
 
@@ -390,7 +440,7 @@ esac
 WINROW=""
 if { [[ "$ENGINE" == "dotnet" ]] && [[ "$RID" == win-* ]]; } \
   || [[ "$ENGINE" == "python" ]] \
-  || { [[ "$ENGINE" == "rust" ]] && [[ "$WINEXT" == ".exe" ]]; }; then
+  || { [[ "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && [[ "$WINEXT" == ".exe" ]]; }; then
   WINROW="| \`run-development.cmd\` | wrapper de execução no Windows |
 "
 fi
@@ -419,6 +469,13 @@ elif [[ "$ENGINE" == "rust" ]]; then
 da IDE correspondente. **O binário é nativo do host onde \`package.sh\` rodou** — o \`cargo\`
 não faz cross-compile aqui, então gere o pacote no mesmo SO/arquitetura do alvo."
   ENGINE_ROW="| \`bin/flows_development$WINEXT\` | binário nativo (Rust) do fluxo de desenvolvimento |"
+elif [[ "$ENGINE" == "go" ]]; then
+  TITLE_META="$HOSTRID · v$VERSION · IDE: $IDE · engine: go (native)"
+  ENGINE_INTRO="Pacote autocontido com o fluxo de desenvolvimento em binário nativo Go (compilado via
+\`go build\`, sem runtime necessário na máquina-alvo), mais as skills e o adaptador da IDE
+correspondente. **O binário é nativo do host onde \`package.sh\` rodou** — este script não
+faz cross-compile (GOOS/GOARCH) aqui, então gere o pacote no mesmo SO/arquitetura do alvo."
+  ENGINE_ROW="| \`bin/flowsdevelopment$WINEXT\` | binário nativo (Go) do fluxo de desenvolvimento |"
 else
   TITLE_META="python · v$VERSION · IDE: $IDE · engine: python"
   ENGINE_INTRO="Pacote com o fluxo de desenvolvimento no motor Python (\`engine/\`, fonte — sem build),
