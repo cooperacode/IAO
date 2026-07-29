@@ -2,7 +2,7 @@
 //! Anthropic). An initializer (session 0) expands the brief into a prioritized feature
 //! list; then a loop of fresh-context sessions implements ONE feature at a time:
 //!
-//!   start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
+//!   start → plan → [implement → verify(auto-handoff)]*
 //!
 //! The state that survives the hard resets lives in persistent artifacts: the
 //! `feature_store` (feature_list.json, the harness's) and progress.txt + git (the target
@@ -63,7 +63,7 @@ pub fn start() -> String {
         eprintln!(
             "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting."
         );
-        return prompts::bearings_prompt();
+        return bearings(None);
     }
 
     // Flow that PRODUCES feature_list: a new run erases the previous run's.
@@ -124,14 +124,17 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
         run_id: uuid::Uuid::new_v4().to_string(),
     });
 
-    prompts::bearings_prompt()
+    // Bearings, smoke, and pick are deterministic harness work. Keep them inside the
+    // same dispatch so the first driver turn after planning is the creative implementation
+    // turn, matching the .NET flow.
+    bearings(None)
 }
 
 pub fn bearings(_envelope: Option<&Envelope>) -> String {
     // New session (one feature): resets the per-feature guard counter.
     state_store::set(FEATURE_STEPS_KEY, "1");
     capture_bearings();
-    prompts::smoke_prompt()
+    smoke(None)
 }
 
 pub fn smoke(_envelope: Option<&Envelope>) -> String {
@@ -140,7 +143,8 @@ pub fn smoke(_envelope: Option<&Envelope>) -> String {
     } else if let Err(failure) = run_smoke() {
         prompts::smoke_fix_prompt(&failure)
     } else {
-        prompts::pick_prompt()
+        // Selection is deterministic and does not need a driver acknowledgement.
+        pick(None)
     }
 }
 
@@ -356,12 +360,12 @@ mod tests {
     }
 
     fn plan_default() -> String {
+        std::fs::create_dir_all("src/app").unwrap();
+        std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
         let result = plan(Some(&cmd(
             "plan",
             vec![FEATURES_JSON, "dotnet test", "src/app"],
         )));
-        std::fs::create_dir_all("src/app").unwrap();
-        std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
         result
     }
 
@@ -369,9 +373,6 @@ mod tests {
     /// with no `verify-feature.sh` in the target (the deterministic fallback fails).
     fn advance_to_verify() {
         plan_default();
-        bearings(Some(&cmd("bearings", vec!["orientado"])));
-        smoke(Some(&cmd("smoke", vec!["baseline ok"])));
-        pick(Some(&cmd("pick", vec![])));
         implement(Some(&cmd("implement", vec!["implementei"])));
     }
 
@@ -415,7 +416,7 @@ mod tests {
 
         let result = start();
 
-        assert!(result.contains("NEW SESSION"));
+        assert!(result.contains(r#""value":"implement"#));
         assert_eq!(feature_store::load().len(), 2);
         assert_eq!(feature_store::pending_count(), 2);
         assert_eq!(run_config_store::load().verify_cmd, "dotnet test");
@@ -505,11 +506,7 @@ mod tests {
         let _iso = Isolated::new();
         given_docs_brief("brief do topico A");
         start();
-        plan_default();
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        smoke(Some(&cmd("smoke", vec!["ok"])));
-
-        let result = pick(Some(&cmd("pick", vec![])));
+        let result = plan_default();
 
         assert!(result.contains("brief do topico A"));
     }
@@ -520,9 +517,7 @@ mod tests {
         let _iso = Isolated::new();
         // No docs/: interactive mode, no persisted brief — the block disappears, not empty.
         let bearings_result = plan_default();
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        smoke(Some(&cmd("smoke", vec!["ok"])));
-        let implement_result = pick(Some(&cmd("pick", vec![])));
+        let implement_result = bearings_result.clone();
 
         assert!(!bearings_result.contains("<brief>"));
         assert!(!implement_result.contains("<brief>"));
@@ -533,19 +528,11 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
         let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]"#;
-        plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"])));
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        smoke(Some(&cmd("smoke", vec!["ok"])));
-        pick(Some(&cmd("pick", vec![]))); // escolhe "B" (prioridade 1), sem description/references
+        plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"]))); // escolhe "B"
         write_verify_feature_script(std::path::Path::new("src/app"), "#!/usr/bin/env bash\nset -e\n");
-        implement(Some(&cmd("implement", vec!["feito"])));
-        verify(Some(&cmd("verify", vec!["PASS"]))); // completes "B", auto-advances
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        smoke(Some(&cmd("smoke", vec!["ok"])));
-
-        let result = pick(Some(&cmd("pick", vec![]))); // agora escolhe "A"
+        let result = implement(Some(&cmd("implement", vec!["feito"]))); // verifica B, entrega A
 
         assert!(result.contains("Description: faz X"));
         assert!(result.contains("Brief references: RF-003"));
@@ -555,11 +542,7 @@ mod tests {
     fn pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        plan_default(); // FEATURES_JSON sem description/references
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        smoke(Some(&cmd("smoke", vec!["ok"])));
-
-        let result = pick(Some(&cmd("pick", vec![])));
+        let result = plan_default(); // FEATURES_JSON sem description/references
 
         assert!(!result.contains("Description:"));
         assert!(!result.contains("Brief references:"));
@@ -570,13 +553,15 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
+        std::fs::create_dir_all("web").unwrap();
+        std::fs::write("web/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
+
         let result = plan(Some(&cmd("plan", vec![FEATURES_JSON, "npm test", "web"])));
 
         assert_eq!(feature_store::load().len(), 2);
         assert_eq!(run_config_store::load().verify_cmd, "npm test");
         assert_eq!(run_config_store::load().target_dir, "web");
-        assert!(result.contains("NEW SESSION"));
-        assert!(result.contains(r#""value":"bearings"#));
+        assert!(result.contains(r#""value":"implement"#));
     }
 
     #[test]
@@ -649,12 +634,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        plan_default();
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        let after_smoke = smoke(Some(&cmd("smoke", vec!["ok"])));
-        assert!(after_smoke.contains(r#""value":"pick"#));
-
-        let implement_prompt = pick(Some(&cmd("pick", vec![])));
+        let implement_prompt = plan_default();
 
         assert_eq!(
             state_store::get(CURRENT_FEATURE_ID_KEY),
@@ -670,11 +650,9 @@ mod tests {
         let _iso = Isolated::new();
 
         let json = r#"[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"depende","priority":1,"dependsOn":[1]}]"#;
-        plan(Some(&cmd("plan", vec![json, "dotnet test", "."])));
-        bearings(Some(&cmd("bearings", vec!["ok"])));
-        smoke(Some(&cmd("smoke", vec!["ok"])));
-
-        pick(Some(&cmd("pick", vec![])));
+        std::fs::create_dir_all("src/app").unwrap();
+        std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
+        plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"])));
 
         assert_eq!(
             state_store::get(CURRENT_FEATURE_ID_KEY),
@@ -741,7 +719,7 @@ mod tests {
 
         let result = verify(Some(&cmd("verify", vec!["PASS"])));
 
-        assert!(result.contains("NEW SESSION"));
+        assert!(result.contains(r#""value":"implement"#));
         assert!(!result.contains(r#""value":"handoff"#));
         assert_eq!(feature_store::pending_count(), 1);
         assert!(
@@ -770,18 +748,15 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
+        plan_default();
         write_verify_feature_script(
             std::path::Path::new("src/app"),
             "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n",
         );
-        plan_default();
-        bearings(Some(&cmd("bearings", vec!["orientado"])));
-        smoke(Some(&cmd("smoke", vec!["baseline ok"])));
-        pick(Some(&cmd("pick", vec![])));
 
         let result = implement(Some(&cmd("implement", vec!["implementei"])));
 
-        assert!(result.contains("NEW SESSION"));
+        assert!(result.contains(r#""value":"implement"#));
         assert!(!result.contains(r#""value":"verify"#));
         assert_eq!(feature_store::pending_count(), 1);
         let progress = std::fs::read_to_string("src/app/progress.txt").unwrap();
@@ -800,9 +775,6 @@ mod tests {
             "#!/usr/bin/env bash\nset -euo pipefail\necho \"FAIL: feature $1 quebrou\"\necho \"LINHA DETALHADA QUE FICA SO NO LOG\"\nexit 7\n",
         );
         plan_default();
-        bearings(Some(&cmd("bearings", vec!["orientado"])));
-        smoke(Some(&cmd("smoke", vec!["baseline ok"])));
-        pick(Some(&cmd("pick", vec![])));
 
         let result = implement(Some(&cmd("implement", vec!["implementei"])));
 

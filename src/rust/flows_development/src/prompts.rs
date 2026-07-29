@@ -150,55 +150,9 @@ Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."
     )
 }
 
-// --- per-feature loop (one fresh-context session) --------------------------
-
-pub fn bearings_prompt() -> String {
-    let brief = brief_block();
-    let input = format!(
-        "=== NEW SESSION (clean context) ===\n\
-You are a coding agent starting a FRESH session. Do not assume anything from the\n\
-previous session — all state lives in the persistent artifacts.\n\
-{brief}\
-The harness already captured bounded bearings (working directory, progress tail, and recent\n\
-git history). Continue with the smoke step; do not return a bearings note."
-    );
-
-    prompt_formatter::format(
-        &input,
-        &Envelope::new(envelope_type::COMMAND, "bearings", vec![]),
-        Some(&prompt_formatter::skills(&["dev-bearings"])),
-    )
-}
-
-pub fn smoke_prompt() -> String {
-    let target_dir = run_config_store::load().target_dir;
-    let input = format!(
-        "The harness runs `./init.sh` deterministically in the target directory ({target_dir}) and confirms\n\
-that the baseline comes up/builds without error before touching any feature. The harness\n\
-saves the full output to `.harness/logs/smoke.log`; proceed without a smoke verdict."
-    );
-
-    prompt_formatter::format(
-        &input,
-        &Envelope::new(envelope_type::COMMAND, "smoke", vec![]),
-        Some(&prompt_formatter::skills(&["dev-smoke"])),
-    )
-}
-
 pub fn smoke_fix_prompt(failure: &str) -> String {
     let input = format!("Smoke failed deterministically: {failure}\nFix the target setup, then return `smoke` without arguments.");
     prompt_formatter::format(&input, &Envelope::new(envelope_type::COMMAND, "smoke", vec![]), Some(&prompt_formatter::skills(&["dev-smoke"])))
-}
-
-pub fn pick_prompt() -> String {
-    let input = "Baseline confirmed. Send the `pick` command to receive the next feature to\n\
-implement (the highest-priority one still pending — the harness chooses).";
-
-    prompt_formatter::format(
-        input,
-        &Envelope::new(envelope_type::COMMAND, "pick", vec![]),
-        None,
-    )
 }
 
 pub fn implement_prompt(feature: &Feature) -> String {

@@ -2,7 +2,7 @@
 pattern, Anthropic). An initializer (session 0) expands the brief into a prioritized
 feature list; then a loop of fresh-context sessions implements ONE feature at a time:
 
-    start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
+    start → plan → [implement → verify(auto-handoff)]*
 
 State that survives hard resets lives in persistent artifacts: feature_store
 (feature_list.json, from the harness) and progress.txt + git (from the target
@@ -68,7 +68,7 @@ def start() -> str:
             "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.",
             file=sys.stderr,
         )
-        return prompts.bearings_prompt()
+        return bearings(None)
 
     # PRODUCER flow of the feature list: a new run discards the previous one's.
     feature_store.reset()
@@ -120,14 +120,17 @@ def plan(envelope: Envelope | None) -> str:
         str(uuid.uuid4()),
     ))
 
-    return prompts.bearings_prompt()
+    # Bearings, smoke, and pick are deterministic harness work. Keep them inside the
+    # same dispatch so the first driver turn after planning is the creative implementation
+    # turn, matching the .NET flow.
+    return bearings(None)
 
 
 def bearings(envelope: Envelope | None) -> str:
     # New session (one feature): resets the per-feature guard counter.
     state_store.set(state_keys.FEATURE_STEPS, "1")
     _capture_bearings()
-    return prompts.smoke_prompt()
+    return smoke(None)
 
 
 def smoke(envelope: Envelope | None) -> str:
@@ -136,7 +139,8 @@ def smoke(envelope: Envelope | None) -> str:
     ok, failure = _run_smoke()
     if not ok:
         return prompts.smoke_fix_prompt(failure)
-    return prompts.pick_prompt()
+    # Selection is deterministic and does not need a driver acknowledgement.
+    return pick(None)
 
 
 def pick(envelope: Envelope | None) -> str:
@@ -214,7 +218,9 @@ def _complete_verified_feature(verify_result: str) -> str:
     except ValueError:
         pass
 
-    return _done() if feature_store.all_passing() else prompts.bearings_prompt()
+    # Reconstruct the next feature session inside the same dispatch. Bearings, smoke, and
+    # pick are deterministic harness work; the next driver turn should implement directly.
+    return _done() if feature_store.all_passing() else bearings(None)
 
 
 def _try_automated_handoff(verify_result: str) -> tuple[bool, str, str | None]:

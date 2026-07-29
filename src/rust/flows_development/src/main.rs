@@ -2,7 +2,7 @@
 //! time. No orchestration here — dispatch, guards, and transport live in
 //! `harness_engine`.
 //!
-//!   start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
+//!   start → plan → [implement → verify(auto-handoff)]*
 
 mod handoff;
 mod prompts;

@@ -1,7 +1,7 @@
 """The "long-running agent" pattern: initializer + loop of fresh sessions, one feature at
 a time. No orchestration here — dispatch, guards, and transport live in harness_engine.
 
-    start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
+    start → plan → [implement → verify(auto-handoff)]*
 """
 
 from __future__ import annotations

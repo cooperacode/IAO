@@ -46,19 +46,16 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _plan() -> str:
-    result = tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", "src/app"))
     target = Path("src/app")
     target.mkdir(parents=True, exist_ok=True)
     (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
+    result = tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", "src/app"))
     return result
 
 
 def _advance_to_verify() -> None:
     """Leva o flow até deixar uma feature escolhida e implementada (pronta p/ verify)."""
     _plan()
-    tasks.bearings(_cmd("bearings", "orientado"))
-    tasks.smoke(_cmd("smoke", "baseline ok"))
-    tasks.pick(_cmd("pick"))
     tasks.implement(_cmd("implement", "implementei"))
 
 
@@ -96,7 +93,7 @@ def test_start_com_feature_pendente_retoma_via_bearings_em_vez_de_resetar():
 
     result = tasks.start()
 
-    assert "NEW SESSION" in result  # bearings_prompt, não o inicializador
+    assert '"value":"implement"' in result  # fases determinísticas já foram executadas
     assert len(feature_store.load()) == 2  # intacta
     assert feature_store.pending_count() == 2  # nenhuma marcada como passando
     assert run_config_store.load().verify_cmd == "dotnet test"  # intacto
@@ -160,11 +157,7 @@ def test_plan_retorna_bearings_com_o_brief_reinjetado():
 def test_pick_retorna_implement_com_o_brief_reinjetado():
     _given_docs_brief("brief do topico A")
     tasks.start()
-    _plan()
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-
-    result = tasks.pick(_cmd("pick"))
+    result = _plan()
 
     assert "brief do topico A" in result
 
@@ -172,9 +165,7 @@ def test_pick_retorna_implement_com_o_brief_reinjetado():
 def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
     # Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
     bearings_result = _plan()
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-    implement_result = tasks.pick(_cmd("pick"))
+    implement_result = bearings_result
 
     assert "<brief>" not in bearings_result
     assert "<brief>" not in implement_result
@@ -185,30 +176,18 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
         '[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},'
         '{"id":2,"title":"B","priority":1}]'
     )
-    tasks.plan(_cmd("plan", json_str, "dotnet test", "src/app"))
     Path("src/app").mkdir(parents=True, exist_ok=True)
     (Path("src/app") / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-    tasks.pick(_cmd("pick"))  # escolhe "B" (prioridade 1), sem description/references
+    tasks.plan(_cmd("plan", json_str, "dotnet test", "src/app"))  # escolhe "B"
     _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
-    tasks.implement(_cmd("implement", "feito"))
-    tasks.verify(_cmd("verify", "PASS"))  # completa "B", avança automaticamente
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-
-    result = tasks.pick(_cmd("pick"))  # agora escolhe "A"
+    result = tasks.implement(_cmd("implement", "feito"))  # verifica B, entrega A
 
     assert "Description: faz X" in result
     assert "Brief references: RF-003" in result
 
 
 def test_pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto():
-    _plan()  # FEATURES_JSON sem description/references
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-
-    result = tasks.pick(_cmd("pick"))
+    result = _plan()  # FEATURES_JSON sem description/references
 
     assert "Description:" not in result
     assert "Brief references:" not in result
@@ -223,7 +202,7 @@ def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():
 
     result = _dispatch_json('{"type":"text","value":"start"}')
 
-    assert "NEW SESSION" in result  # retomou via bearings, não reiniciou
+    assert '"value":"implement"' in result  # retomou via fases determinísticas
     assert any(e.step == 41 and e.command == "handoff" for e in trace.load())  # trace preservado
     assert state_store.load().step == step_antes_do_start + 1  # contador continuou, não voltou a 1
 
@@ -242,13 +221,14 @@ def test_dispatch_start_sem_feature_pendente_trunca_trace_e_step():
 
 
 def test_plan_persiste_features_e_roteia_para_bearings():
+    Path("web").mkdir(parents=True, exist_ok=True)
+    (Path("web") / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
     result = tasks.plan(_cmd("plan", FEATURES_JSON, "npm test", "web"))
 
     assert len(feature_store.load()) == 2
     assert run_config_store.load().verify_cmd == "npm test"
     assert run_config_store.load().target_dir == "web"
-    assert "NEW SESSION" in result
-    assert '"value":"bearings"' in result
+    assert '"value":"implement"' in result
 
 
 def test_plan_gera_um_run_id_novo_e_nao_vazio():
@@ -270,12 +250,7 @@ def test_plan_features_invalidas_reemite_o_plano():
 
 
 def test_pick_escolhe_maior_prioridade_e_grava_a_feature_corrente():
-    _plan()
-    tasks.bearings(_cmd("bearings", "ok"))
-    after_smoke = tasks.smoke(_cmd("smoke", "ok"))
-    assert '"value":"pick"' in after_smoke
-
-    implement = tasks.pick(_cmd("pick"))
+    implement = _plan()
 
     assert state_store.get("current_feature_id") == "2"  # prioridade 1 = id 2 ("B")
     assert "B" in implement
@@ -292,11 +267,11 @@ def test_verify_fail_volta_para_implement():
 
 
 def test_verify_pass_executa_handoff_automatico_e_avanca():
-    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     _advance_to_verify()
+    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     result = tasks.implement(_cmd("implement", "PASS"))
 
-    assert "NEW SESSION" in result
+    assert '"value":"implement"' in result
     assert '"value":"handoff"' not in result
     assert feature_store.pending_count() == 1
     assert "Feature #2" in Path("src/app/progress.txt").read_text()
@@ -305,16 +280,13 @@ def test_verify_pass_executa_handoff_automatico_e_avanca():
 def test_implement_com_verify_feature_passando_executa_verify_e_handoff_automaticos():
     _write_verify_feature_script(Path("src/app"), """#!/usr/bin/env bash
 set -euo pipefail
-echo "PASS: feature $1 verificada"
+    echo "PASS: feature $1 verificada"
 """)
     _plan()
-    tasks.bearings(_cmd("bearings", "orientado"))
-    tasks.smoke(_cmd("smoke", "baseline ok"))
-    tasks.pick(_cmd("pick"))
 
     result = tasks.implement(_cmd("implement", "implementei"))
 
-    assert "NEW SESSION" in result
+    assert '"value":"implement"' in result
     assert '"value":"verify"' not in result
     assert feature_store.pending_count() == 1
     progress = Path("src/app/progress.txt").read_text()
@@ -332,10 +304,6 @@ echo "LINHA DETALHADA QUE FICA SO NO LOG"
 exit 7
 """)
     _plan()
-    tasks.bearings(_cmd("bearings", "orientado"))
-    tasks.smoke(_cmd("smoke", "baseline ok"))
-    tasks.pick(_cmd("pick"))
-
     result = tasks.implement(_cmd("implement", "implementei"))
 
     assert "FAILED" in result
@@ -370,19 +338,15 @@ def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
 
 def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     # 1ª feature (id 2)
-    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     _advance_to_verify()
+    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     after_first = tasks.implement(_cmd("implement", "PASS"))
 
-    assert "NEW SESSION" in after_first  # ainda falta a id 1
+    assert '"value":"implement"' in after_first  # ainda falta a id 1
     assert feature_store.pending_count() == 1
 
     # 2ª feature (id 1)
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-    tasks.pick(_cmd("pick"))
-    tasks.implement(_cmd("implement", "feito"))
-    after_second = tasks.implement(_cmd("implement", "PASS"))
+    after_second = tasks.implement(_cmd("implement", "feito"))
 
     assert after_second == "stop"
     assert feature_store.all_passing()
@@ -406,17 +370,12 @@ def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
     _git(repo, "config", "user.name", "Harness Test")
     (repo / "outside.txt").write_text("fora do target")
 
-    tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", str(target)))
     (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
+    tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", str(target)))
     _write_verify_feature_script(target, "#!/usr/bin/env bash\nset -e\n")
-    tasks.bearings(_cmd("bearings", "ok"))
-    tasks.smoke(_cmd("smoke", "ok"))
-    tasks.pick(_cmd("pick"))
-    tasks.implement(_cmd("implement", "feito no target"))
+    result = tasks.implement(_cmd("implement", "feito no target"))
 
-    result = tasks.implement(_cmd("implement", "PASS: tudo verde"))
-
-    assert "NEW SESSION" in result
+    assert '"value":"implement"' in result
     committed_files = _git(repo, "show", "--name-only", "--format=", "HEAD")
     assert "app/progress.txt" in committed_files
     assert "outside.txt" not in committed_files

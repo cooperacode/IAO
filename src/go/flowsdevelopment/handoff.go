@@ -38,7 +38,9 @@ func completeVerifiedFeature(verifyResult string) string {
 	if engine.AllFeaturesPassing() {
 		return done()
 	}
-	return BearingsPrompt()
+	// Reconstruct the next feature session inside the same dispatch. Bearings, smoke, and
+	// pick are deterministic harness work; the next driver turn should implement directly.
+	return Bearings(nil)
 }
 
 func tryAutomatedHandoff(verifyResult string) handoffResult {

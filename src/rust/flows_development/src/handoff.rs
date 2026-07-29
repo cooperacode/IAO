@@ -23,7 +23,10 @@ pub fn complete_verified_feature(verify_result: &str) -> String {
             if feature_store::all_passing() {
                 crate::tasks::done()
             } else {
-                prompts::bearings_prompt()
+                // Reconstruct the next feature session inside the same dispatch. Bearings,
+                // smoke, and pick are deterministic harness work; the next driver turn
+                // should implement directly.
+                crate::tasks::bearings(None)
             }
         }
         Err(failure) => {

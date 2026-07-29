@@ -55,19 +55,16 @@ func cmd(value string, args ...string) *engine.Envelope {
 }
 
 func planWith(targetDir string) string {
-	result := Plan(cmd("plan", featuresJSON, "dotnet test", targetDir))
 	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		panic(err)
 	}
+	result := Plan(cmd("plan", featuresJSON, "dotnet test", targetDir))
 	return result
 }
 
 // advanceToVerify drives the flow up to an implemented, not-yet-verified feature.
 func advanceToVerify(targetDir string) {
 	planWith(targetDir)
-	Bearings(cmd("bearings", "oriented"))
-	Smoke(cmd("smoke", "baseline ok"))
-	Pick(cmd("pick"))
 	Implement(cmd("implement", "implemented"))
 }
 
@@ -131,8 +128,8 @@ func TestStart_WithPendingFeature_ResumesViaBearingsInsteadOfResetting(t *testin
 
 	result := Start()
 
-	if !strings.Contains(result, "NEW SESSION") {
-		t.Fatalf("expected bearings prompt, got: %s", result)
+	if !strings.Contains(result, `"value":"implement"`) {
+		t.Fatalf("expected implementation prompt, got: %s", result)
 	}
 	if len(engine.LoadFeatures()) != 2 || engine.PendingFeatureCount() != 2 {
 		t.Fatalf("expected features intact and pending")
@@ -160,8 +157,8 @@ func TestDispatch_StartWithPendingFeature_DoesNotTruncateTraceOrStep(t *testing.
 	shouldReset := func() bool { return engine.PendingFeatureCount() == 0 }
 	result := engine.Dispatch([]string{`{"type":"text","value":"start"}`}, tasks, nil, nil, shouldReset)
 
-	if !strings.Contains(result, "NEW SESSION") {
-		t.Fatalf("expected resume via bearings, got: %s", result)
+	if !strings.Contains(result, `"value":"implement"`) {
+		t.Fatalf("expected resume through deterministic phases, got: %s", result)
 	}
 	found := false
 	for _, e := range engine.LoadTrace() {
@@ -179,6 +176,12 @@ func TestDispatch_StartWithPendingFeature_DoesNotTruncateTraceOrStep(t *testing.
 
 func TestPlan_PersistsFeaturesAndRoutesToBearings(t *testing.T) {
 	_, _ = isolate(t)
+	if err := os.MkdirAll("web", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("web/init.sh", []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	result := Plan(cmd("plan", featuresJSON, "npm test", "web"))
 
@@ -188,7 +191,7 @@ func TestPlan_PersistsFeaturesAndRoutesToBearings(t *testing.T) {
 	if engine.LoadRunConfig().VerifyCmd != "npm test" || engine.LoadRunConfig().TargetDir != "web" {
 		t.Fatalf("unexpected run config: %+v", engine.LoadRunConfig())
 	}
-	if !strings.Contains(result, "NEW SESSION") || !strings.Contains(result, `"value":"bearings"`) {
+	if !strings.Contains(result, `"value":"implement"`) {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
@@ -273,11 +276,7 @@ func TestPick_ReturnsImplementWithBriefReinjected(t *testing.T) {
 	targetDir, docsDir := isolate(t)
 	givenDocsBrief(t, docsDir, "topic A brief")
 	Start()
-	planWith(targetDir)
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-
-	result := Pick(cmd("pick"))
+	result := planWith(targetDir)
 
 	if !strings.Contains(result, "topic A brief") {
 		t.Fatalf("unexpected result: %s", result)
@@ -288,9 +287,7 @@ func TestBearingsAndImplement_WithoutPersistedBrief_HaveNoBriefTag(t *testing.T)
 	targetDir, _ := isolate(t)
 
 	bearings := planWith(targetDir)
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-	implement := Pick(cmd("pick"))
+	implement := bearings
 
 	if strings.Contains(bearings, "<brief>") || strings.Contains(implement, "<brief>") {
 		t.Fatalf("unexpected brief tag present")
@@ -300,20 +297,12 @@ func TestBearingsAndImplement_WithoutPersistedBrief_HaveNoBriefTag(t *testing.T)
 func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) {
 	targetDir, _ := isolate(t)
 	json := `[{"id":1,"title":"A","priority":2,"description":"does X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]`
-	Plan(cmd("plan", json, "dotnet test", targetDir))
 	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-	Pick(cmd("pick")) // picks "B" (priority 1), no description/references
+	Plan(cmd("plan", json, "dotnet test", targetDir)) // picks "B" (priority 1)
 	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\n")
-	Implement(cmd("implement", "done"))
-	Verify(cmd("verify", "PASS")) // completes "B", auto-advances
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-
-	result := Pick(cmd("pick")) // now picks "A"
+	result := Implement(cmd("implement", "done")) // verifies B, hands off, and picks A
 
 	if !strings.Contains(result, "Description: does X") || !strings.Contains(result, "Brief references: RF-003") {
 		t.Fatalf("unexpected result: %s", result)
@@ -322,11 +311,7 @@ func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) 
 
 func TestPick_WithoutDescriptionOrReferences_HasNoContextBlock(t *testing.T) {
 	targetDir, _ := isolate(t)
-	planWith(targetDir)
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-
-	result := Pick(cmd("pick"))
+	result := planWith(targetDir)
 
 	if strings.Contains(result, "Description:") || strings.Contains(result, "Brief references:") {
 		t.Fatalf("unexpected context block: %s", result)
@@ -351,14 +336,7 @@ func TestPlan_InvalidFeatures_ReemitsThePlan(t *testing.T) {
 
 func TestPick_ChoosesHighestPriorityAndRecordsCurrentFeature(t *testing.T) {
 	targetDir, _ := isolate(t)
-	planWith(targetDir)
-	Bearings(cmd("bearings", "ok"))
-	afterSmoke := Smoke(cmd("smoke", "ok"))
-	if !strings.Contains(afterSmoke, `"value":"pick"`) {
-		t.Fatalf("unexpected smoke result: %s", afterSmoke)
-	}
-
-	implement := Pick(cmd("pick"))
+	implement := planWith(targetDir)
 
 	if got := engine.GetState(currentFeatureIdKey); got == nil || *got != "2" {
 		t.Fatalf("unexpected current feature id: %v", got)
@@ -386,7 +364,7 @@ func TestVerify_Pass_RunsAutomatedHandoffAndAdvances(t *testing.T) {
 
 	result := Verify(cmd("verify", "PASS"))
 
-	if !strings.Contains(result, "NEW SESSION") { // id 1 still pending
+	if !strings.Contains(result, `"value":"implement"`) { // id 1 still pending
 		t.Fatalf("unexpected result: %s", result)
 	}
 	if strings.Contains(result, `"value":"handoff"`) {
@@ -404,13 +382,9 @@ func TestImplement_WithPassingVerifyFeature_RunsVerifyAndHandoffAutomatically(t 
 	targetDir, _ := isolate(t)
 	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verified\"\n")
 	planWith(targetDir)
-	Bearings(cmd("bearings", "oriented"))
-	Smoke(cmd("smoke", "baseline ok"))
-	Pick(cmd("pick"))
-
 	result := Implement(cmd("implement", "implemented"))
 
-	if !strings.Contains(result, "NEW SESSION") || strings.Contains(result, `"value":"verify"`) {
+	if !strings.Contains(result, `"value":"implement"`) || strings.Contains(result, `"value":"verify"`) {
 		t.Fatalf("unexpected result: %s", result)
 	}
 	if engine.PendingFeatureCount() != 1 {
@@ -498,15 +472,11 @@ func TestHandoff_WithPending_OpensNewSession_AllPassing_Stops(t *testing.T) {
 	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\n")
 	afterFirst := Verify(cmd("verify", "PASS"))
 
-	if !strings.Contains(afterFirst, "NEW SESSION") || engine.PendingFeatureCount() != 1 {
+	if !strings.Contains(afterFirst, `"value":"implement"`) || engine.PendingFeatureCount() != 1 {
 		t.Fatalf("unexpected state after first feature: %s", afterFirst)
 	}
 
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-	Pick(cmd("pick"))
-	Implement(cmd("implement", "done"))
-	afterSecond := Implement(cmd("implement", "PASS"))
+	afterSecond := Implement(cmd("implement", "done"))
 
 	if afterSecond != "stop" || !engine.AllFeaturesPassing() {
 		t.Fatalf("unexpected end state: %s", afterSecond)
@@ -538,19 +508,14 @@ func TestVerify_Pass_AutomatedHandoffOnlyCommitsTargetDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	Plan(cmd("plan", featuresJSON, "dotnet test", target))
 	if err := os.WriteFile(filepath.Join(target, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	Plan(cmd("plan", featuresJSON, "dotnet test", target))
 	writeVerifyFeatureScript(t, target, "#!/usr/bin/env bash\nset -e\n")
-	Bearings(cmd("bearings", "ok"))
-	Smoke(cmd("smoke", "ok"))
-	Pick(cmd("pick"))
-	Implement(cmd("implement", "done in target"))
+	result := Implement(cmd("implement", "done in target"))
 
-	result := Implement(cmd("implement", "PASS: all green"))
-
-	if !strings.Contains(result, "NEW SESSION") {
+	if !strings.Contains(result, `"value":"implement"`) {
 		t.Fatalf("unexpected result: %s", result)
 	}
 	committedFiles := gitRun(t, repo, "show", "--name-only", "--format=", "HEAD")

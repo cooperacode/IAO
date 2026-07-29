@@ -117,47 +117,9 @@ Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."""
     )
 
 
-# --- per-feature loop (one fresh-context session) --------------------------
-
-
-def bearings_prompt() -> str:
-    brief = _brief_block()
-    input_text = f"""=== NEW SESSION (clean context) ===
-You are a coding agent starting a FRESH session. Do not assume anything from the
-previous session — all state lives in the persistent artifacts.
-{brief}The harness already captured bounded bearings (working directory, progress tail, and recent
-git history). Continue with the smoke step; do not return a bearings note.
-
-The harness already captured bounded bearings. Continue with the smoke step; do not return a bearings note."""
-    return prompt_formatter.format(
-        input_text,
-        Envelope(EnvelopeType.COMMAND, "bearings", ()),
-        prompt_formatter.skills("dev-bearings"),
-    )
-
-
-def smoke_prompt() -> str:
-    input_text = f"""The harness runs `./init.sh` deterministically in the target directory ({run_config_store.load().target_dir}) and confirms
-that the baseline comes up/builds without error before touching any feature. The harness
-saves the full output to `.harness/logs/smoke.log`; proceed without a smoke verdict."""
-    return prompt_formatter.format(
-        input_text,
-        Envelope(EnvelopeType.COMMAND, "smoke", ()),
-        prompt_formatter.skills("dev-smoke"),
-    )
-
-
 def smoke_fix_prompt(failure: str) -> str:
     input_text = f"Smoke failed deterministically: {failure}\nFix the target setup, then return `smoke` without arguments."
     return prompt_formatter.format(input_text, Envelope(EnvelopeType.COMMAND, "smoke", ()), prompt_formatter.skills("dev-smoke"))
-
-
-def pick_prompt() -> str:
-    input_text = """Baseline confirmed. Send the `pick` command to receive the next feature to
-implement (the highest-priority one still pending — the harness chooses)."""
-    return prompt_formatter.format(input_text, Envelope(EnvelopeType.COMMAND, "pick", ()))
-
-
 def implement_prompt(feature: Feature) -> str:
     brief = _brief_block()
     context = _feature_context_block(feature)

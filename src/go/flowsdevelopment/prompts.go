@@ -108,36 +108,6 @@ Repeat the command '%s' and '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd
 		nil)
 }
 
-// --- per-feature loop (one fresh-context session) ------------------
-
-func BearingsPrompt() string {
-	input := "=== NEW SESSION (clean context) ===\n" + briefBlock() +
-		"The harness already captured bounded bearings (working directory, progress tail, and recent git history).\n" +
-		"Continue with the smoke step; do not return a bearings note."
-
-	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "bearings", []string{}),
-		engine.Skills("dev-bearings"))
-}
-
-func SmokePrompt() string {
-	input := fmt.Sprintf("The harness runs `./init.sh` deterministically in the target directory (%s).\n"+
-		"It stores full output in `.harness/logs/smoke.log`; proceed without a smoke verdict.", engine.LoadRunConfig().TargetDir)
-
-	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{}),
-		engine.Skills("dev-smoke"))
-}
-
-func PickPrompt() string {
-	input := "Baseline confirmed. Send the `pick` command to receive the next feature to\n" +
-		"implement (the highest-priority one still pending — the harness chooses)."
-
-	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "pick", []string{}),
-		nil)
-}
-
 func SmokeFixPrompt(failure string) string {
 	input := fmt.Sprintf("Smoke failed deterministically: %s\nFix the target setup, then return `smoke` without arguments.", failure)
 	return engine.Format(input, engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{}), engine.Skills("dev-smoke"))

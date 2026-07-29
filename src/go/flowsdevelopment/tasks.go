@@ -4,7 +4,7 @@
 // prioritized feature list; then a loop of fresh-context sessions implements ONE feature at
 // a time:
 //
-//	start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
+//	start → plan → [implement → verify(auto-handoff)]*
 //
 // State that survives hard resets lives in persistent artifacts: the feature store
 // (feature_list.json, from the harness) and progress.txt + git (from the target
@@ -70,7 +70,7 @@ func Start() string {
 	if engine.PendingFeatureCount() > 0 {
 		fmt.Fprintln(os.Stderr,
 			"[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.")
-		return BearingsPrompt()
+		return Bearings(nil)
 	}
 
 	// PRODUCER flow of the feature list: a new run discards the previous one's.
@@ -136,7 +136,10 @@ func Plan(envelope *engine.Envelope) string {
 		RunId:     newRunId(),
 	})
 
-	return BearingsPrompt()
+	// Bearings, smoke, and pick are deterministic harness work. Keep them inside the
+	// same dispatch so the first driver turn after planning is the creative implementation
+	// turn, matching the .NET flow.
+	return Bearings(nil)
 }
 
 func capFeatures(features []engine.Feature, max int) []engine.Feature {
@@ -172,7 +175,7 @@ func less(a, b engine.Feature) bool {
 func Bearings(envelope *engine.Envelope) string {
 	engine.SetState(featureStepsKey, "1")
 	captureBearings()
-	return SmokePrompt()
+	return Smoke(nil)
 }
 
 // Smoke checks the per-feature budget after the smoke test.
@@ -183,7 +186,8 @@ func Smoke(envelope *engine.Envelope) string {
 	if failure := runSmoke(); failure != "" {
 		return SmokeFixPrompt(failure)
 	}
-	return PickPrompt()
+	// Selection is deterministic and does not need a driver acknowledgement.
+	return Pick(nil)
 }
 
 // Pick deterministically selects the next ready feature.
