@@ -1,5 +1,5 @@
-"""Evaluators determinísticos são funções puras — testadas sem tocar disco nem LLM. São
-o portão barato antes do juiz-LLM."""
+"""Deterministic evaluators are pure functions — tested without touching disk or an LLM.
+They're the cheap gate before the LLM judge."""
 
 import pytest
 
@@ -13,7 +13,7 @@ from harness_engine.trace import TraceEntry, TraceOutcome
     [
         ("Bug", "Bug", 1.0),
         ("Bug", "  Bug  ", 1.0),
-        ("Bug", "Épico", 0.0),
+        ("Bug", "Epic", 0.0),
     ],
 )
 def test_exact_match_normaliza_espacos_e_compara_conteudo(expected, actual, value):
@@ -26,21 +26,21 @@ def test_matches_regex_avalia_o_padrao():
 
 
 def test_trajectory_caminho_identico_pontua_cheio():
-    esperado = ["start", "classify", "finalize"]
+    expected = ["start", "classify", "finalize"]
 
-    score = evaluators.trajectory(esperado, ["start", "classify", "finalize"])
+    score = evaluators.trajectory(expected, ["start", "classify", "finalize"])
 
     assert score.passed
     assert score.value == 1.0
 
 
 def test_trajectory_diverge_no_meio_conta_so_o_prefixo_em_ordem():
-    esperado = ["start", "classify", "split", "finalize"]
+    expected = ["start", "classify", "split", "finalize"]
 
-    # Acerta start+classify, depois pula direto para finalize (fora de ordem).
-    score = evaluators.trajectory(esperado, ["start", "classify", "finalize"])
+    # Matches start+classify, then jumps straight to finalize (out of order).
+    score = evaluators.trajectory(expected, ["start", "classify", "finalize"])
 
-    assert score.value == 0.5  # 2 de 4
+    assert score.value == 0.5  # 2 of 4
     assert not score.passed
 
 
@@ -50,12 +50,12 @@ def test_trajectory_esperado_vazio_pontua_cheio():
 
 def test_completeness_conta_chaves_preenchidas():
     state = HarnessState(3, {
-        "descricao": "Login",
-        "tipo": "Feature",
-        "historias": "   ",  # em branco não conta
+        "description": "Login",
+        "type": "Feature",
+        "stories": "   ",  # blank doesn't count
     })
 
-    score = evaluators.completeness(state, ["descricao", "tipo", "historias"])
+    score = evaluators.completeness(state, ["description", "type", "stories"])
 
     assert score.value == pytest.approx(2.0 / 3.0)
     assert not score.passed
@@ -88,7 +88,7 @@ def test_step_budget_cortado_pelo_timeout_falha_e_distingue_de_nao_terminou():
     score = evaluators.step_budget(trace_entries)
 
     assert not score.passed
-    assert score.detail == "cortado pelo teto de tempo (timeout)"
+    assert score.detail == "cut off by the time ceiling (timeout)"
 
 
 def test_commands_of_ignora_voltas_de_erro_por_padrao():

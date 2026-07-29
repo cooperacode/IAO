@@ -1,8 +1,8 @@
-"""Escrita atômica de arquivos texto: grava num temporário no MESMO diretório do destino e
-troca via `os.replace` (atômico na mesma partição, tanto em POSIX quanto em Windows). Evita
-que uma falha a meio da escrita (processo morto, disco cheio) deixe o arquivo de estado
-autoritativo truncado/corrompido — o leitor sempre vê a versão anterior completa ou a nova
-completa, nunca uma mistura.
+"""Atomic writes for text files: writes to a temp file in the SAME directory as the
+destination and swaps it in via `os.replace` (atomic on the same partition, on both
+POSIX and Windows). Prevents a failure mid-write (killed process, full disk) from
+leaving the authoritative state file truncated/corrupted — the reader always sees
+either the complete previous version or the complete new one, never a mix.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 def write_text_atomic(path: str, content: str) -> None:
-    """Grava `content` em `path` de forma atômica. O diretório-pai deve existir."""
+    """Writes `content` to `path` atomically. The parent directory must exist."""
     destination = Path(path)
     tmp_path = destination.with_name(f"{destination.name}.tmp-{uuid.uuid4().hex}")
 

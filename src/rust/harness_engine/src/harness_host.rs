@@ -1,5 +1,5 @@
-//! Ponto de entrada reutilizável de um flow. Um novo domínio só precisa definir suas
-//! tasks e chamar `run` — toda a orquestração (dispatch, guardas, transporte) fica aqui.
+//! Reusable entry point for a flow. A new domain only needs to define its tasks and call
+//! `run` — all the orchestration (dispatch, guards, transport) lives here.
 
 use std::collections::HashMap;
 
@@ -18,16 +18,16 @@ pub fn run(
 ) -> i32 {
     let result = task_registry::dispatch(args, tasks, validators, max_steps, should_reset_on_start);
 
-    // Run concluído: congela trajetória E estado final como evidência para a avaliação
-    // posterior, antes que um próximo flow resete o trace e o state vivos. Cada flow
-    // publica no SEU caminho (o refinamento em last-run.*, a avaliação em
-    // last-evaluation.*), para que a avaliação não sobrescreva o que ela mesma consome.
+    // Run complete: freeze the trajectory AND final state as evidence for later
+    // evaluation, before a subsequent flow resets the live trace and state. Each flow
+    // publishes to ITS OWN path (refinement to last-run.*, evaluation to
+    // last-evaluation.*), so evaluation never overwrites what it itself consumes.
     if result == "stop" {
         trace::snapshot(trace_snapshot_path);
         state_store::snapshot(state_snapshot_path);
     }
 
-    // Único ponto que escreve no stdout — o canal de transporte do harness.
+    // The only point that writes to stdout — the harness's transport channel.
     println!("{result}");
     0
 }
@@ -72,7 +72,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        state_store::set("descricao", "x");
+        state_store::set("description", "x");
 
         run(
             &[r#"{"type":"command","value":"finalize"}"#.to_string()],
@@ -89,7 +89,7 @@ mod tests {
         assert_eq!(
             state_store::load_from(state_store::LAST_RUN_STATE_PATH)
                 .data
-                .get("descricao"),
+                .get("description"),
             Some(&"x".to_string())
         );
     }
@@ -99,8 +99,8 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        // 1) Refinamento conclui → last-run.* guarda a evidência do refinamento.
-        state_store::set("descricao", "refino");
+        // 1) Refinement completes → last-run.* holds the refinement's evidence.
+        state_store::set("description", "refinement");
         run(
             &[r#"{"type":"command","value":"finalize"}"#.to_string()],
             &finalize_task(),
@@ -110,9 +110,9 @@ mod tests {
             None,
             None,
         );
-        let refino_trace = std::fs::read_to_string(trace::LAST_RUN_PATH).unwrap();
+        let refinement_trace = std::fs::read_to_string(trace::LAST_RUN_PATH).unwrap();
 
-        // 2) Avaliação conclui usando os SEUS caminhos (last-evaluation.*).
+        // 2) Evaluation completes using ITS OWN paths (last-evaluation.*).
         let mut start_task: HashMap<String, Action> = HashMap::new();
         start_task.insert("start".to_string(), Arc::new(|_| "stop".to_string()));
         run(
@@ -125,18 +125,18 @@ mod tests {
             None,
         );
 
-        // A avaliação gravou a própria evidência...
+        // Evaluation recorded its own evidence...
         assert!(std::path::Path::new(trace::LAST_EVALUATION_PATH).exists());
-        // ...e NÃO tocou na do refinamento.
+        // ...and did NOT touch the refinement's.
         assert_eq!(
             std::fs::read_to_string(trace::LAST_RUN_PATH).unwrap(),
-            refino_trace
+            refinement_trace
         );
         assert_eq!(
             state_store::load_from(state_store::LAST_RUN_STATE_PATH)
                 .data
-                .get("descricao"),
-            Some(&"refino".to_string())
+                .get("description"),
+            Some(&"refinement".to_string())
         );
     }
 }

@@ -32,16 +32,16 @@ func DefaultRunConfig() RunConfig {
 // (written by `plan`, cleared only when `start` decides there's no run to resume).
 func WriteRunConfig(config RunConfig) {
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[RunConfigStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[RunConfigStore] failed to write: %s\n", err)
 		return
 	}
 	data, err := json.Marshal(config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[RunConfigStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[RunConfigStore] failed to write: %s\n", err)
 		return
 	}
 	if err := writeAtomic(runConfigFilePath, string(data)); err != nil {
-		fmt.Fprintf(os.Stderr, "[RunConfigStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[RunConfigStore] failed to write: %s\n", err)
 	}
 }
 
@@ -57,9 +57,9 @@ func LoadRunConfig() RunConfig {
 				}
 				return config
 			}
-			fmt.Fprintf(os.Stderr, "[RunConfigStore] falha ao carregar: %s\n", err)
+			fmt.Fprintf(os.Stderr, "[RunConfigStore] failed to load: %s\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "[RunConfigStore] falha ao carregar: %s\n", err)
+			fmt.Fprintf(os.Stderr, "[RunConfigStore] failed to load: %s\n", err)
 		}
 	}
 	return DefaultRunConfig()
@@ -71,6 +71,6 @@ func ResetRunConfig() {
 		return
 	}
 	if err := os.Remove(runConfigFilePath); err != nil {
-		fmt.Fprintf(os.Stderr, "[RunConfigStore] falha ao limpar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[RunConfigStore] failed to clear: %s\n", err)
 	}
 }

@@ -11,5 +11,5 @@ type HarnessTimeoutError struct {
 }
 
 func (e *HarnessTimeoutError) Error() string {
-	return fmt.Sprintf("timeout de %dms excedido na execução da task; encerrando.", e.TimeoutMs)
+	return fmt.Sprintf("task execution exceeded the %dms timeout; stopping.", e.TimeoutMs)
 }

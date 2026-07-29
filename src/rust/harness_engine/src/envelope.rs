@@ -1,10 +1,10 @@
-//! Contrato de dados trafegado entre o driver (agente) e a máquina de estados.
-//! O modelo devolve este envelope como JSON; a engine faz o dispatch por `value`.
+//! Data contract exchanged between the driver (agent) and the state machine.
+//! The model returns this envelope as JSON; the engine dispatches on `value`.
 //!
-//! Não há campo de tokens: o driver típico é um LLM sem acesso ao `usage` da própria
-//! requisição, então qualquer contagem auto-reportada seria confabulada. O teto de custo
-//! usa apenas medidas que a engine atesta sozinha (passos e chars de instrução — ver
-//! `task_registry`); tokens reais vivem nos metadados de billing do caller.
+//! There's no tokens field: the typical driver is an LLM with no access to its own
+//! request's `usage`, so any self-reported count would be confabulated. The cost ceiling
+//! only uses measures the engine attests to on its own (steps and instruction chars — see
+//! `task_registry`); real tokens live in the caller's billing metadata.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -12,7 +12,7 @@ use std::io::Write;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Sinais de protocolo carregados em [`Envelope::type_`].
+/// Protocol signals carried in [`Envelope::type_`].
 pub mod envelope_type {
     pub const TEXT: &str = "text";
     pub const TOOL: &str = "tool";
@@ -42,17 +42,17 @@ impl Envelope {
     }
 
     pub fn to_json(&self) -> String {
-        // Compacto (sem espaços) — mesmo formato de fio que .NET/Python.
-        serde_json::to_string(self).expect("Envelope sempre serializa")
+        // Compact (no whitespace) — the same wire format as .NET/Python.
+        serde_json::to_string(self).expect("Envelope always serializes")
     }
 
-    /// Parse tolerante: aceita cercas markdown e texto ao redor do objeto JSON.
+    /// Tolerant parse: accepts markdown fences and surrounding text around the JSON object.
     pub fn parse(value: &str) -> Option<Envelope> {
         match Self::try_parse(value) {
             Ok(envelope) => Some(envelope),
             Err(err) => {
-                // Diagnóstico vai para stderr — stdout é o canal de transporte do harness
-                // (o driver lê stdout como a próxima instrução) e não pode ser poluído.
+                // Diagnostic goes to stderr — stdout is the harness's transport channel
+                // (the driver reads stdout as the next instruction) and must not be polluted.
                 let _ = writeln!(std::io::stderr(), "{err}");
                 None
             }
@@ -61,14 +61,14 @@ impl Envelope {
 
     fn try_parse(value: &str) -> Result<Envelope, String> {
         if value.trim().is_empty() {
-            return Err("O envelope JSON não pode ser nulo ou vazio.".to_string());
+            return Err("The JSON envelope cannot be null or empty.".to_string());
         }
 
         let sanitized = Self::sanitize(value);
         let root: Value = serde_json::from_str(&sanitized).map_err(|e| e.to_string())?;
         let root = root
             .as_object()
-            .ok_or_else(|| "O payload do envelope deve ser um objeto JSON.".to_string())?;
+            .ok_or_else(|| "The envelope payload must be a JSON object.".to_string())?;
 
         let type_ = Self::string_field(root.get("type"))?;
         let envelope_value = Self::string_field(root.get("value"))?;
@@ -78,7 +78,7 @@ impl Envelope {
             for item in items {
                 let item = item
                     .as_str()
-                    .ok_or_else(|| "cada item de 'args' deve ser uma string.".to_string())?;
+                    .ok_or_else(|| "each item of 'args' must be a string.".to_string())?;
                 if !item.trim().is_empty() {
                     args.push(item.to_string());
                 }
@@ -90,7 +90,7 @@ impl Envelope {
                 let mut ctx = HashMap::new();
                 for (key, val) in map {
                     let val = val.as_str().ok_or_else(|| {
-                        "cada valor de 'context' deve ser uma string.".to_string()
+                        "each value of 'context' must be a string.".to_string()
                     })?;
                     ctx.insert(key.clone(), val.to_string());
                 }
@@ -107,17 +107,17 @@ impl Envelope {
         })
     }
 
-    /// Campo string opcional: ausente/null vira `""`; qualquer outro tipo é erro de parse.
+    /// Optional string field: absent/null becomes `""`; any other type is a parse error.
     fn string_field(field: Option<&Value>) -> Result<String, String> {
         match field {
             None | Some(Value::Null) => Ok(String::new()),
             Some(Value::String(s)) => Ok(s.clone()),
-            Some(_) => Err("'type' e 'value' devem ser strings.".to_string()),
+            Some(_) => Err("'type' and 'value' must be strings.".to_string()),
         }
     }
 
-    /// Modelos frequentemente embrulham o JSON em cercas markdown (` ```json … ``` `)
-    /// ou adicionam texto ao redor. Normaliza para o objeto JSON bruto antes do parse.
+    /// Models often wrap the JSON in markdown fences (` ```json … ``` `) or add
+    /// surrounding text. Normalizes to the raw JSON object before parsing.
     fn sanitize(value: &str) -> String {
         let mut v = value.trim().to_string();
 
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn parse_com_texto_ao_redor_extrai_o_objeto() {
         let raw =
-            r#"Claro! Aqui está: {"type":"text","value":"start","args":[]} — espero ter ajudado."#;
+            r#"Sure! Here it is: {"type":"text","value":"start","args":[]} — hope that helps."#;
 
         let envelope = Envelope::parse(raw).unwrap();
 
@@ -196,10 +196,10 @@ mod tests {
             "",
             "   ",
             "{ \"type\": \"text\", \"value\": ",
-            "isso não é json",
+            "this is not json",
             "[1,2,3]",
         ] {
-            assert!(Envelope::parse(raw).is_none(), "esperava None para {raw:?}");
+            assert!(Envelope::parse(raw).is_none(), "expected None for {raw:?}");
         }
     }
 
@@ -208,7 +208,7 @@ mod tests {
         let original = Envelope::new(
             envelope_type::COMMAND,
             "finalize",
-            vec!["Épico".to_string()],
+            vec!["Epic".to_string()],
         );
 
         let roundtrip = Envelope::parse(&original.to_json()).unwrap();
@@ -258,7 +258,7 @@ mod tests {
         let envelope = Envelope::new(
             envelope_type::COMMAND,
             "finalize",
-            vec!["Épico".to_string()],
+            vec!["Epic".to_string()],
         );
 
         assert!(!envelope.to_json().contains("context"));
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn parse_ignora_campos_desconhecidos() {
-        // Campos extras (ex.: um "tokens" de driver antigo) não derrubam o parse.
+        // Extra fields (e.g. a "tokens" from an old driver) don't break the parse.
         let envelope =
             Envelope::parse(r#"{"type":"tool","value":"classify","args":["x"],"tokens":1234}"#)
                 .unwrap();

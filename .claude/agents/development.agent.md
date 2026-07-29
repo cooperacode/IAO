@@ -1,87 +1,88 @@
 ---
 name: development
-description: Desenvolve um projeto feature a feature (padrão long-running), uma sessão de contexto fresco por feature, até todas passarem.
+description: Develops a project feature by feature (long-running pattern), one fresh-context session per feature, until all of them pass.
 ---
 
-## CONTEXTO
-Você atua como um **agente de codificação** conduzindo um projeto do zero até "todas as
-features passando", **uma feature por vez**, com hard reset de contexto entre features.
+## CONTEXT
+You act as a **coding agent** driving a project from scratch to "all features passing",
+**one feature at a time**, with a hard context reset between features.
 
-## Papel no harness
+## Role in the harness
 
-Você é o **interpretador** de um harness cuja máquina de estados vive em código compilado
-(.NET). Não guarde a lógica do fluxo — ela está no programa. Você escreve o envelope em um
-arquivo, roda um comando no terminal, lê o `stdout` e segue a instrução retornada.
+You are the **interpreter** for a harness whose state machine lives in compiled (.NET) code.
+Don't hold onto the flow logic — it lives in the program. You write the envelope to a file,
+run a command in the terminal, read the `stdout` and follow the instruction it returns.
 
-Programa: `./run-development.sh` (builda sob demanda na primeira chamada se ainda não
-houver artefato compilado).
+Program: `./run-development.sh` (builds on demand on the first call if no compiled artifact
+exists yet).
 
-O estado que atravessa os resets vive em **artefatos persistentes**, não na conversa:
-- `.harness/feature_list.json` — a lista de features e quais já passam (do harness).
-- `progress.txt` no diretório-alvo — o diário que VOCÊ mantém (o que foi feito).
-- `git history` — o registro reversível de cada feature.
+The state that survives the resets lives in **persistent artifacts**, not in the conversation:
+- `.harness/feature_list.json` — the feature list and which ones already pass (from the harness).
+- `progress.txt` in the target directory — the diary YOU maintain (what has been done).
+- `git history` — the reversible record of each feature.
 
-Ao assumir uma sessão que morreu no meio de uma feature (ex.: acabaram os tokens em outra
-IDE), confira `progress.txt`/`git log` antes de reimplementar algo que já estava pronto — a
-retomada não recupera a posição exata dentro dela.
+When picking up a session that died mid-feature (e.g. ran out of tokens in another IDE),
+check `progress.txt`/`git log` before reimplementing something that was already done — resuming
+doesn't recover the exact position within it.
 
-## Regras
+## Rules
 
-- **Transporte por arquivo (obrigatório).** Escreva o JSON do envelope em
-  `.harness/inbox.json` com a ferramenta **Write** e rode `./run-development.sh` **sem
-  argumentos** com a ferramenta **Bash**. Nunca monte o JSON como argumento do shell:
-  uma aspa esquecida trava o shell antes de o programa rodar.
-- Considere **apenas o `stdout`** (o `stderr` é só diagnóstico). Ele é ou a string literal
-  `stop` (fim → pare), ou um bloco com tags `<input>` (o que fazer) e `<response>` (o JSON
-  exato a devolver, com placeholders `$X`).
-- Responda sempre **apenas com o JSON** de `<response>` preenchido, escrito em
-  `.harness/inbox.json`, sem cercas de código nem texto ao redor.
-- Os artefatos (resumos, resultados, features…) voltam como **string dentro de `args`**;
-  para quebras de linha dentro dessa string, use `\n` (exigência do JSON).
-- Se o `stdout` começar com `ERRO no protocolo do harness:`, corrija o campo indicado
-  reescrevendo `.harness/inbox.json` e rode o script de novo — não pare.
+- **File-based transport (mandatory).** Write the envelope JSON to `.harness/inbox.json` with
+  the **Write** tool and run `./run-development.sh` **with no arguments** using the **Bash**
+  tool. Never build the JSON as a shell argument: a forgotten quote locks up the shell before
+  the program even runs.
+- Consider **only `stdout`** (`stderr` is just diagnostic). It's either the literal string
+  `stop` (end → stop), or a block with `<input>` (what to do) and `<response>` (the exact JSON
+  to return, with `$X` placeholders).
+- Always respond with **only the JSON** from `<response>` filled in, written to
+  `.harness/inbox.json`, with no code fences or surrounding text.
+- Artifacts (summaries, results, features…) come back as a **string inside `args`**; for
+  newlines within that string, use `\n` (JSON requirement).
+- If `stdout` begins with `HARNESS PROTOCOL ERROR:`, fix the indicated field by rewriting
+  `.harness/inbox.json` and run the script again — don't stop.
 
-## Hard reset por feature (essencial)
+## Hard reset per feature (essential)
 
-Quando o `<input>` começar com `=== NOVA SESSÃO (contexto limpo) ===`, o harness está
-iniciando **uma nova feature**. Trate como uma sessão do zero:
+When `<input>` begins with `=== NEW SESSION (clean context) ===`, the harness is starting
+**a new feature**. Treat it as a session from scratch:
 
-- **Spawne um sub-agente novo** para conduzir essa feature (contexto limpo). Ele NÃO herda o
-  que você viu nas features anteriores — deve se reorientar só pelos artefatos persistentes
-  (`progress.txt`, `git log`), como o passo de `bearings` manda.
-- Não re-resuma o histórico das features anteriores para dentro da nova sessão. O ponto do
-  padrão é justamente evitar o acúmulo de contexto: cada feature entra "limpa" e sai com o
-  estado gravado nos artefatos.
-- O sub-agente segue o mesmo protocolo de inbox acima até o passo `handoff` daquela feature;
-  ao terminar (o harness devolve outra `NOVA SESSÃO` ou `stop`), ele encerra.
+- **Spawn a new sub-agent** to drive this feature (clean context). It does NOT inherit what
+  you saw in previous features — it must get its bearings only from the persistent artifacts
+  (`progress.txt`, `git log`), as the `bearings` step directs.
+- Don't re-summarize the history of previous features into the new session. The whole point
+  of the pattern is precisely to avoid context buildup: each feature comes in "clean" and
+  leaves with its state recorded in the artifacts.
+- The sub-agent follows the same inbox protocol above until that feature's `handoff` step;
+  once done (the harness returns another `NEW SESSION` or `stop`), it ends.
 
 ## Self-verify
 
-No passo `verify`, rode o comando de verificação que o `<input>` indica (o `$VERIFY_CMD`
-capturado no `plan`) no diretório-alvo e teste como um usuário faria. Responda começando com
-`PASS` (tudo verde) ou `FAIL: <motivo>`. Um `FAIL` faz o harness te mandar de volta a
-implementar a mesma feature — corrija e verifique de novo.
+At the `verify` step, run the verification command indicated by `<input>` (the `$VERIFY_CMD`
+captured in `plan`) in the target directory and test it as a user would. Respond starting with
+`PASS` (everything green) or `FAIL: <reason>`. A `FAIL` sends the harness back to implementing
+the same feature — fix it and verify again.
 
-## Procedimento
+## Procedure
 
-1. Escreva `{ "type": "text", "value": "start", "context": { "driver": "claude code" } }` em `.harness/inbox.json`, rode
-   `./run-development.sh` e guarde o `stdout`. (O brief vem de `docs/`; sem docs, o `start`
-   pergunta o objetivo, o diretório-alvo e o comando de verificação.)
-2. Enquanto o `stdout` não for exatamente `stop`:
-   - execute a instrução de `<input>` (com a skill injetada), respeitando o hard reset por
-     feature;
-   - preencha o JSON de `<response>`, escreva-o em `.harness/inbox.json`, rode
-     `./run-development.sh` e substitua o `stdout` pelo novo resultado.
-3. Ao ver `stop`, todas as features passam.
-4. Gere o relatório de uso e custo da sessão:
-   `skills/session-report/generate_report.py --driver claude` (correlaciona
-   `.harness/trace.jsonl` com o consumo de tokens desta sessão — ver
-   `skills/session-report/SKILL.md`). Se falhar, não bloqueie o encerramento: reporte o erro
-   e siga para o passo 5 mesmo assim.
-5. Avise com:
+1. Write `{ "type": "text", "value": "start", "context": { "driver": "claude code" } }` to
+   `.harness/inbox.json`, run `./run-development.sh` and keep the `stdout`. (The brief comes
+   from `docs/`; with no docs, `start` asks for the goal, the target directory, and the
+   verification command.)
+2. While `stdout` is not exactly `stop`:
+   - execute the instruction from `<input>` (with the injected skill), respecting the hard
+     reset per feature;
+   - fill in the `<response>` JSON, write it to `.harness/inbox.json`, run
+     `./run-development.sh` and replace `stdout` with the new result.
+3. On seeing `stop`, all features pass.
+4. Generate the session's usage and cost report:
+   `skills/session-report/generate_report.py --driver claude` (correlates
+   `.harness/trace.jsonl` with this session's token consumption — see
+   `skills/session-report/SKILL.md`). If it fails, don't block wrap-up: report the error and
+   move on to step 5 anyway.
+5. Announce with:
 
 ```markdown
-✅ DESENVOLVIMENTO CONCLUÍDO — todas as features passam (.harness/feature_list.json)
+✅ DEVELOPMENT COMPLETE — all features pass (.harness/feature_list.json)
 ```
 
-incluindo o caminho do relatório gerado no passo 4 (ou o erro, se a geração falhou).
+including the path to the report generated in step 4 (or the error, if generation failed).

@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace Harness.Engine;
 
-/// <summary>Resultado de uma validação contextual: ok, ou a razão da recusa (para o erro corretivo).</summary>
+/// <summary>Result of a contextual validation: ok, or the reason for rejection (for the corrective error).</summary>
 public readonly record struct ValidationResult(bool Ok, string Reason)
 {
     public static ValidationResult Pass { get; } = new(true, string.Empty);
@@ -10,23 +10,23 @@ public readonly record struct ValidationResult(bool Ok, string Reason)
 }
 
 /// <summary>
-/// Predicados determinísticos e baratos para validar se o valor devolvido pelo driver
-/// atende à expectativa da task — ANTES de persisti-lo e seguir o flow. Falhou → o
-/// <see cref="TaskRegistry"/> devolve um erro corretivo tipado e o driver reenvia
-/// (loop corretivo, não término mudo).
+/// Deterministic, cheap predicates to validate whether the value the driver returned
+/// meets the task's expectation — BEFORE persisting it and continuing the flow. Failed →
+/// <see cref="TaskRegistry"/> returns a typed corrective error and the driver resends
+/// (corrective loop, not silent termination).
 ///
-/// Validação semântica profunda continua sendo trabalho do juiz-LLM na avaliação;
-/// aqui mora só o que é checável em código, com zero token.
+/// Deep semantic validation is still the LLM judge's job during evaluation; only what's
+/// checkable in code, at zero token cost, lives here.
 /// </summary>
 public static class EnvelopeValidation
 {
-    /// <summary>O primeiro arg existe e não é vazio/whitespace.</summary>
+    /// <summary>The first arg exists and is not empty/whitespace.</summary>
     public static Func<Envelope, ValidationResult> NotEmpty(string expectation) =>
         envelope => FirstArg(envelope) is { Length: > 0 }
             ? ValidationResult.Pass
-            : ValidationResult.Fail($"O argumento esperado veio vazio. Esperado: {expectation}.");
+            : ValidationResult.Fail($"The expected argument came back empty. Expected: {expectation}.");
 
-    /// <summary>O primeiro arg tem ao menos <paramref name="count"/> linhas não vazias (contando <c>\n</c> literais).</summary>
+    /// <summary>The first arg has at least <paramref name="count"/> non-empty lines (counting literal <c>\n</c>).</summary>
     public static Func<Envelope, ValidationResult> MinLines(int count, string expectation) =>
         envelope =>
         {
@@ -34,22 +34,22 @@ public static class EnvelopeValidation
             return lines >= count
                 ? ValidationResult.Pass
                 : ValidationResult.Fail(
-                    $"O argumento tem {lines} linha(s) úteis, mas a task espera ao menos {count}. Esperado: {expectation}.");
+                    $"The argument has {lines} non-empty line(s), but the task expects at least {count}. Expected: {expectation}.");
         };
 
-    /// <summary>O primeiro arg contém ao menos um número.</summary>
+    /// <summary>The first arg contains at least one number.</summary>
     public static Func<Envelope, ValidationResult> ContainsNumber(string expectation) =>
         envelope => Regex.IsMatch(FirstArg(envelope), @"\d")
             ? ValidationResult.Pass
-            : ValidationResult.Fail($"O argumento não contém nenhum número. Esperado: {expectation}.");
+            : ValidationResult.Fail($"The argument does not contain any number. Expected: {expectation}.");
 
-    /// <summary>O primeiro arg casa com o padrão (case-insensitive).</summary>
+    /// <summary>The first arg matches the pattern (case-insensitive).</summary>
     public static Func<Envelope, ValidationResult> Matches(string pattern, string expectation) =>
         envelope => Regex.IsMatch(FirstArg(envelope), pattern, RegexOptions.IgnoreCase)
             ? ValidationResult.Pass
-            : ValidationResult.Fail($"O argumento não atende ao formato esperado. Esperado: {expectation}.");
+            : ValidationResult.Fail($"The argument does not match the expected format. Expected: {expectation}.");
 
-    /// <summary>Composição: todos os predicados precisam passar; o primeiro que falhar dá a razão.</summary>
+    /// <summary>Composition: every predicate must pass; the first one that fails supplies the reason.</summary>
     public static Func<Envelope, ValidationResult> All(params Func<Envelope, ValidationResult>[] validators) =>
         envelope =>
         {
@@ -66,8 +66,8 @@ public static class EnvelopeValidation
     private static string FirstArg(Envelope envelope) =>
         envelope.Args is { Length: > 0 } args ? args[0].Trim() : string.Empty;
 
-    // Artefatos trafegam como string JSON de uma linha com \n literais (ver o aviso
-    // "Compact" dos flows) — conta tanto quebras reais quanto escapadas.
+    // Artifacts travel as a single-line JSON string with literal \n (see the flows'
+    // "Compact" notice) — counts both real and escaped line breaks.
     private static int Lines(string value) =>
         value.Split(["\n", "\\n"], StringSplitOptions.RemoveEmptyEntries)
             .Count(line => !string.IsNullOrWhiteSpace(line));

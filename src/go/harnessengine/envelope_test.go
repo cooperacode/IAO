@@ -27,7 +27,7 @@ func TestParseEnvelope_MarkdownFence_Tolerated(t *testing.T) {
 }
 
 func TestParseEnvelope_SurroundingText_ExtractsObject(t *testing.T) {
-	raw := `Claro! Aqui está: {"type":"text","value":"start","args":[]} — espero ter ajudado.`
+	raw := `Sure! Here it is: {"type":"text","value":"start","args":[]} — hope that helps.`
 	e := ParseEnvelope(raw)
 	if e == nil || e.Value != "start" {
 		t.Fatalf("unexpected result: %+v", e)
@@ -53,7 +53,7 @@ func TestParseEnvelope_InvalidInput_ReturnsNil(t *testing.T) {
 		"",
 		"   ",
 		`{ "type": "text", "value": `,
-		"isso não é json",
+		"this is not json",
 		"[1,2,3]",
 	}
 	for _, raw := range cases {
@@ -64,12 +64,12 @@ func TestParseEnvelope_InvalidInput_ReturnsNil(t *testing.T) {
 }
 
 func TestEnvelope_ToJSON_RoundTrips(t *testing.T) {
-	original := NewEnvelope(EnvelopeType.Command, "finalize", []string{"Épico"})
+	original := NewEnvelope(EnvelopeType.Command, "finalize", []string{"Epic"})
 	roundtrip := ParseEnvelope(original.ToJSON())
 	if roundtrip == nil || roundtrip.Type != original.Type || roundtrip.Value != original.Value {
 		t.Fatalf("roundtrip mismatch: %+v vs %+v", original, roundtrip)
 	}
-	if len(roundtrip.Args) != 1 || roundtrip.Args[0] != "Épico" {
+	if len(roundtrip.Args) != 1 || roundtrip.Args[0] != "Epic" {
 		t.Fatalf("unexpected args: %+v", roundtrip.Args)
 	}
 }
@@ -99,7 +99,7 @@ func TestEnvelope_ToJSON_WithContext_RoundTrips(t *testing.T) {
 }
 
 func TestEnvelope_ToJSON_WithoutContext_OmitsField(t *testing.T) {
-	e := NewEnvelope(EnvelopeType.Command, "finalize", []string{"Épico"})
+	e := NewEnvelope(EnvelopeType.Command, "finalize", []string{"Epic"})
 	if strings.Contains(e.ToJSON(), "context") {
 		t.Fatalf("expected no context field in %s", e.ToJSON())
 	}

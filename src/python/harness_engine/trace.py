@@ -1,9 +1,9 @@
-"""Grava uma linha por volta do loop em `.harness/trace.jsonl`. É a base tanto da
-telemetria quanto do evaluator de trajetória: state_store guarda só o estado final —
-sobrescreve `data` a cada passo —, então sem esta sequência gravada não há como avaliar
-o caminho que o agente percorreu.
+"""Writes one line per loop turn to `.harness/trace.jsonl`. It's the foundation of both
+telemetry and the trajectory evaluator: state_store only keeps the final state —
+overwriting `data` on every step — so without this recorded sequence there's no way to
+evaluate the path the agent took.
 
-Custo: zero token e uma escrita append por invocação.
+Cost: zero tokens and one append write per invocation.
 """
 
 from __future__ import annotations
@@ -19,50 +19,50 @@ from pathlib import Path
 _DIR = ".harness"
 _FILE_PATH = ".harness/trace.jsonl"
 
-# Hash de gênese: usado como `prev_hash` da primeira entrada de um trace (arquivo ausente
-# ou vazio) — 64 zeros, o mesmo comprimento de um digest sha256 hex, para que todo
-# `prevHash` gravado tenha formato uniforme independente da posição na cadeia.
+# Genesis hash: used as `prev_hash` for a trace's first entry (file absent or empty) —
+# 64 zeros, the same length as a sha256 hex digest, so every recorded `prevHash` has a
+# uniform shape regardless of its position in the chain.
 _GENESIS_HASH = "0" * 64
 
-# Trajetória congelada do último run que terminou em `stop`. harness_host grava aqui ao
-# concluir o flow produtor, para que outro flow (a avaliação) leia a evidência mesmo
-# depois de resetar o `trace.jsonl` vivo no próprio `start`.
+# Frozen trajectory of the last run that ended in `stop`. harness_host writes here when
+# the producer flow finishes, so another flow (evaluation) can read the evidence even
+# after resetting the live `trace.jsonl` in its own `start`.
 LAST_RUN_PATH = ".harness/last-run.trace.jsonl"
 
-# Trajetória congelada do último run de avaliação. Caminho próprio para que a avaliação
-# (que também termina em `stop`) não sobrescreva a evidência do run em LAST_RUN_PATH.
+# Frozen trajectory of the last evaluation run. Its own path so evaluation (which also
+# ends in `stop`) doesn't overwrite the run's evidence in LAST_RUN_PATH.
 LAST_EVALUATION_PATH = ".harness/last-evaluation.trace.jsonl"
 
 
 class TraceOutcome:
-    """Desfechos possíveis de um passo, gravados em `TraceEntry.outcome`."""
+    """Possible outcomes for a step, recorded in `TraceEntry.outcome`."""
 
-    INSTRUCTION = "instruction"  # seguiu para o próximo passo
-    STOP = "stop"                # término normal do flow
-    ERROR = "error"              # erro tipado devolvido ao driver
-    BUDGET = "budget"            # corte pelo teto de passos
-    TIMEOUT = "timeout"          # corte pelo teto de tempo por passo
+    INSTRUCTION = "instruction"  # advanced to the next step
+    STOP = "stop"                # normal end of the flow
+    ERROR = "error"              # typed error returned to the driver
+    BUDGET = "budget"            # cut off by the step ceiling
+    TIMEOUT = "timeout"          # cut off by the per-step time ceiling
 
 
 @dataclass(frozen=True)
 class TraceEntry:
-    """Uma volta do loop: passo, comando recebido, desfecho, custo (chars da instrução
-    emitida), horário de gravação e o hash da linha anterior da cadeia (`prev_hash`) —
-    encadeamento que torna uma edição/remoção retroativa de uma entrada detectável (a
-    entrada seguinte deixa de bater com o hash gravado). `prev_hash` tem default "" para
-    que traces antigos, gravados antes deste campo existir, continuem desserializando.
+    """One loop turn: step, received command, outcome, cost (emitted-instruction chars),
+    recording timestamp, and the previous line's hash in the chain (`prev_hash`) —
+    chaining that makes a retroactive edit/removal of an entry detectable (the following
+    entry stops matching the recorded hash). `prev_hash` defaults to "" so that old
+    traces, recorded before this field existed, keep deserializing.
 
-    `label` é a etiqueta opcional e agnóstica de domínio (ex.: "feature:3") que resolve a
-    mesma dor do state_store: `step` é um contador global do run inteiro, não identifica a
-    QUE unidade de trabalho o passo pertence. trace só carrega o valor — quem decide o que
-    ele significa é o flow (ver flows_development.tasks.pick). Default "" pelo mesmo motivo
-    de prev_hash: paridade com traces gravados antes deste campo existir."""
+    `label` is the optional, domain-agnostic tag (e.g. "feature:3") that solves the same
+    pain as state_store: `step` is a global counter for the entire run, it doesn't
+    identify WHICH unit of work the step belongs to. trace only carries the value — the
+    flow decides what it means (see flows_development.tasks.pick). Defaults to "" for the
+    same reason as prev_hash: parity with traces recorded before this field existed."""
 
     step: int
     command: str
     outcome: str
     instruction_chars: int
-    timestamp: str  # ISO 8601 com offset, gravado como string (paridade com o wire JSON)
+    timestamp: str  # ISO 8601 with offset, recorded as a string (parity with the wire JSON)
     prev_hash: str = ""
     label: str = ""
 
@@ -91,11 +91,11 @@ class TraceEntry:
 
 
 def reset() -> None:
-    """Trunca o trace no início de um novo workflow (junto do state_store.reset)."""
+    """Truncates the trace at the start of a new workflow (alongside state_store.reset)."""
     try:
         Path(_FILE_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[Trace] falha ao limpar: {ex}", file=sys.stderr)
+        print(f"[Trace] failed to clear: {ex}", file=sys.stderr)
 
 
 def append(step: int, command: str, outcome: str, instruction_chars: int, label: str = "") -> None:
@@ -105,14 +105,14 @@ def append(step: int, command: str, outcome: str, instruction_chars: int, label:
         entry = TraceEntry(step, command, outcome, instruction_chars, _now_iso(), prev_hash, label)
         line = json.dumps(entry.to_dict(), separators=(",", ":")) + "\n"
         with open(_FILE_PATH, "a") as f:
-            f.write(line)  # uma única write() — o evento inteiro é atômico ao nível de linha
+            f.write(line)  # a single write() — the whole event is atomic at the line level
     except Exception as ex:
-        print(f"[Trace] falha ao gravar: {ex}", file=sys.stderr)
+        print(f"[Trace] failed to write: {ex}", file=sys.stderr)
 
 
 def _last_entry_hash() -> str:
-    """sha256 hex da última linha não-vazia gravada, ou o hash de gênese se o trace
-    estiver ausente/vazio (inclui logo após `reset()`) — a raiz da cadeia."""
+    """sha256 hex of the last non-empty line recorded, or the genesis hash if the trace
+    is absent/empty (including right after `reset()`) — the chain's root."""
     try:
         p = Path(_FILE_PATH)
         if not p.exists():
@@ -128,27 +128,27 @@ def _last_entry_hash() -> str:
 
         return hashlib.sha256(last_line.encode("utf-8")).hexdigest()
     except Exception as ex:
-        print(f"[Trace] falha ao calcular prevHash: {ex}", file=sys.stderr)
+        print(f"[Trace] failed to compute prevHash: {ex}", file=sys.stderr)
         return _GENESIS_HASH
 
 
 def snapshot(destination: str) -> None:
-    """Congela o trace vivo no caminho de destino — a evidência do run concluído."""
+    """Freezes the live trace at the destination path — the evidence of the finished run."""
     try:
         if Path(_FILE_PATH).exists():
             Path(_DIR).mkdir(parents=True, exist_ok=True)
             shutil.copyfile(_FILE_PATH, destination)
     except Exception as ex:
-        print(f"[Trace] falha ao congelar: {ex}", file=sys.stderr)
+        print(f"[Trace] failed to freeze: {ex}", file=sys.stderr)
 
 
 def load() -> list[TraceEntry]:
-    """Relê o trace vivo na ordem em que foi gravado."""
+    """Re-reads the live trace in the order it was recorded."""
     return load_from(_FILE_PATH)
 
 
 def load_from(path: str) -> list[TraceEntry]:
-    """Relê um trace de um caminho arbitrário — insumo dos evaluators (ex.: o snapshot)."""
+    """Re-reads a trace from an arbitrary path — input for the evaluators (e.g. the snapshot)."""
     try:
         p = Path(path)
         if not p.exists():
@@ -161,7 +161,7 @@ def load_from(path: str) -> list[TraceEntry]:
             entries.append(TraceEntry.from_dict(json.loads(line)))
         return entries
     except Exception as ex:
-        print(f"[Trace] falha ao carregar: {ex}", file=sys.stderr)
+        print(f"[Trace] failed to load: {ex}", file=sys.stderr)
         return []
 
 

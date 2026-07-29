@@ -1,5 +1,5 @@
-"""O store é o que permite manter o envelope mínimo (economia de tokens): o estado
-acumulado fica em arquivo entre invocações, não na janela de contexto."""
+"""The store is what keeps the envelope minimal (token savings): the accumulated state
+lives in a file between invocations, not in the context window."""
 
 from pathlib import Path
 
@@ -7,20 +7,20 @@ from harness_engine import state_store
 
 
 def test_set_e_get_persistem_entre_chamadas():
-    state_store.set("descricao", "Login com Google")
+    state_store.set("description", "Login with Google")
 
-    assert state_store.get("descricao") == "Login com Google"
+    assert state_store.get("description") == "Login with Google"
 
 
 def test_get_chave_inexistente_retorna_none():
-    assert state_store.get("nao-existe") is None
+    assert state_store.get("does-not-exist") is None
 
 
 def test_set_sobrescreve_a_chave_existente():
-    state_store.set("tipo", "Bug")
-    state_store.set("tipo", "Épico")
+    state_store.set("type", "Bug")
+    state_store.set("type", "Epic")
 
-    assert state_store.get("tipo") == "Épico"
+    assert state_store.get("type") == "Epic"
 
 
 def test_increment_avanca_o_contador():
@@ -31,14 +31,14 @@ def test_increment_avanca_o_contador():
 
 
 def test_increment_preserva_os_dados_acumulados():
-    state_store.set("descricao", "x")
+    state_store.set("description", "x")
     state_store.increment()
 
-    assert state_store.get("descricao") == "x"
+    assert state_store.get("description") == "x"
 
 
 def test_reset_limpa_contador_e_dados():
-    state_store.set("descricao", "x")
+    state_store.set("description", "x")
     state_store.increment()
 
     state_store.reset()
@@ -66,9 +66,9 @@ def test_reset_limpa_o_contexto():
 
 
 def test_save_nao_deixa_arquivo_temporario_para_tras():
-    # Escrita atômica: temp no mesmo diretório + os.replace. Depois de salvar, só o
-    # arquivo final deve sobrar em .harness — nenhum "state.json.tmp-*" residual.
-    state_store.set("descricao", "x")
+    # Atomic write: temp in the same directory + os.replace. After saving, only the
+    # final file should remain in .harness — no leftover "state.json.tmp-*".
+    state_store.set("description", "x")
 
     tmp_leftovers = list(Path(".harness").glob("state.json.tmp-*"))
 

@@ -1,13 +1,13 @@
-//! Persiste o resultado de cada avaliação em `.harness/scores.jsonl` (uma linha por
-//! run). É o lado "notas" da telemetria, consumido por relatórios.
+//! Persists the result of each evaluation to `.harness/scores.jsonl` (one line per
+//! run). This is the "scores" side of telemetry, consumed by reports.
 
 use serde::{Deserialize, Serialize};
 
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/scores.jsonl";
 
-/// Nota de uma avaliação: o veredito do portão determinístico (0 tokens) e, quando ele
-/// passa, a nota do juiz-LLM. `judge_score` = 0 quando o portão reprova.
+/// Score for an evaluation: the deterministic gate's verdict (0 tokens) and, when it
+/// passes, the LLM judge's score. `judge_score` = 0 when the gate fails.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScoreReport {
     #[serde(default)]
@@ -24,13 +24,13 @@ pub struct ScoreReport {
 
 pub fn append(report: &ScoreReport) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[ScoreStore] falha ao gravar: {e}");
+        eprintln!("[ScoreStore] failed to write: {e}");
         return;
     }
     let line = match serde_json::to_string(report) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[ScoreStore] falha ao gravar: {e}");
+            eprintln!("[ScoreStore] failed to write: {e}");
             return;
         }
     };
@@ -43,10 +43,10 @@ pub fn append(report: &ScoreReport) {
     {
         Ok(mut f) => {
             if let Err(e) = writeln!(f, "{line}") {
-                eprintln!("[ScoreStore] falha ao gravar: {e}");
+                eprintln!("[ScoreStore] failed to write: {e}");
             }
         }
-        Err(e) => eprintln!("[ScoreStore] falha ao gravar: {e}"),
+        Err(e) => eprintln!("[ScoreStore] failed to write: {e}"),
     }
 }
 
@@ -63,7 +63,7 @@ pub fn load() -> Vec<ScoreReport> {
             .filter_map(|line| serde_json::from_str::<ScoreReport>(line).ok())
             .collect(),
         Err(e) => {
-            eprintln!("[ScoreStore] falha ao carregar: {e}");
+            eprintln!("[ScoreStore] failed to load: {e}");
             Vec::new()
         }
     }
@@ -107,7 +107,7 @@ mod tests {
             gate_passed: true,
             gate_detail: "ok".to_string(),
             judge_score: 8,
-            judge_rationale: "boa cobertura".to_string(),
+            judge_rationale: "good coverage".to_string(),
         });
 
         let loaded = load();

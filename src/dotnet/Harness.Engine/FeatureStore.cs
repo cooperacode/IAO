@@ -4,27 +4,28 @@ using System.Text.Json.Serialization;
 namespace Harness.Engine;
 
 /// <summary>
-/// A lista de features do flow de desenvolvimento, persistida em
-/// <c>.harness/feature_list.json</c> — o "persistent artifact" que atravessa os hard resets
-/// de contexto: cada sessão (uma feature) lê e escreve aqui, sem depender do histórico da
-/// conversa. Todas nascem com <see cref="Feature.Passes"/> = false; o flow vira uma por vez
-/// até não sobrar nenhuma pendente.
+/// The development flow's feature list, persisted to <c>.harness/feature_list.json</c> —
+/// the "persistent artifact" that survives context hard resets: each session (one
+/// feature) reads and writes here, without depending on the conversation history. All are
+/// born with <see cref="Feature.Passes"/> = false; the flow turns one at a time until
+/// none remain pending.
 ///
-/// Mora na engine porque a serialização AOT-safe depende do <see cref="HarnessJsonContext"/>,
-/// interno ao assembly. Mesma tolerância dos demais stores: ausente ou ilegível → lista vazia,
-/// nunca derruba o run.
+/// Lives in the engine because AOT-safe serialization depends on
+/// <see cref="HarnessJsonContext"/>, internal to the assembly. Same tolerance as the other
+/// stores: missing or unreadable → empty list, never brings down the run.
 /// </summary>
 public static class FeatureStore
 {
     private const string Dir = ".harness";
     private const string FilePath = ".harness/feature_list.json";
 
-    /// <summary>Teto de caracteres de <see cref="Feature.Description"/> — cota defensiva contra
-    /// um driver verboso: a descrição é reinjetada no prompt de <c>implement</c> a cada feature,
-    /// então sem teto ela infla silenciosamente o contexto de toda sessão futura.</summary>
+    /// <summary>Character ceiling for <see cref="Feature.Description"/> — a defensive quota
+    /// against a verbose driver: the description is reinjected into the <c>implement</c>
+    /// prompt on every feature, so without a ceiling it silently inflates every future
+    /// session's context.</summary>
     public const int DescriptionMaxChars = 700;
 
-    /// <summary>Sobrescreve a lista inteira — usada pelo <c>plan</c> (session 0) e por MarkPassed.</summary>
+    /// <summary>Overwrites the whole list — used by <c>plan</c> (session 0) and MarkPassed.</summary>
     public static void Write(IReadOnlyList<Feature> features)
     {
         try
@@ -36,16 +37,17 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] falha ao gravar: {ex.Message}");
+            Console.Error.WriteLine($"[FeatureStore] failed to write: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Interpreta o array cru de features que o driver devolve no <c>plan</c>
-    /// (<c>[{"id":1,"title":"...","priority":1}, ...]</c>). Força <c>Passes = false</c> (toda
-    /// feature nasce pendente) e reindexa ids ausentes/duplicados pela ordem. Lista vazia se o
-    /// JSON não interpretar — o caller re-emite o pedido (loop corretivo), não derruba o run.
-    /// O parse vive na engine porque o <see cref="HarnessJsonContext"/> (AOT) é interno ao assembly.
+    /// Parses the raw feature array the driver returns in <c>plan</c>
+    /// (<c>[{"id":1,"title":"...","priority":1}, ...]</c>). Forces <c>Passes = false</c>
+    /// (every feature is born pending) and reindexes missing/duplicate ids by order. Empty
+    /// list if the JSON doesn't parse — the caller re-issues the request (corrective loop),
+    /// doesn't bring down the run. Parsing lives in the engine because
+    /// <see cref="HarnessJsonContext"/> (AOT) is internal to the assembly.
     /// </summary>
     public static IReadOnlyList<Feature> Parse(string json)
     {
@@ -55,8 +57,8 @@ public static class FeatureStore
             if (parsed is null || parsed.Length == 0)
                 return [];
 
-            // Reindex primeiro: DependsOn só faz sentido referenciando ids já finais, não os
-            // brutos (possivelmente ausentes/duplicados) que vieram do driver.
+            // Reindex first: DependsOn only makes sense referencing already-final ids, not
+            // the raw (possibly missing/duplicated) ones that came from the driver.
             var reindexed = parsed
                 .Select((f, i) => f with
                 {
@@ -70,7 +72,7 @@ public static class FeatureStore
 
             if (DependencyGraphError(reindexed) is { } error)
             {
-                Console.Error.WriteLine($"[FeatureStore] grafo de dependências inválido: {error}");
+                Console.Error.WriteLine($"[FeatureStore] invalid dependency graph: {error}");
                 return [];
             }
 
@@ -78,24 +80,24 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] falha ao interpretar features: {ex.Message}");
+            Console.Error.WriteLine($"[FeatureStore] failed to parse features: {ex.Message}");
             return [];
         }
     }
 
-    /// <summary>Corta em <see cref="DescriptionMaxChars"/> caracteres — nunca lança, nunca
-    /// rejeita a feature inteira por causa disso, só encurta.</summary>
+    /// <summary>Cuts at <see cref="DescriptionMaxChars"/> characters — never throws, never
+    /// rejects the whole feature over it, just shortens.</summary>
     private static string TruncateDescription(string? description) =>
         description is { Length: > DescriptionMaxChars } d ? d[..DescriptionMaxChars] : description ?? "";
 
     /// <summary>
-    /// <c>null</c> se o grafo de <c>DependsOn</c> é válido (todo id existe, sem ciclo); senão,
-    /// uma descrição do problema. Kahn (ordenação topológica): sobra nó fora do conjunto
-    /// resolvido ⇒ ciclo. Checa dangling ref primeiro — senão uma dependência fantasma seria
-    /// contada como eternamente não-resolvida e reportada como "ciclo" quando na verdade é id
-    /// inválido. Usa GroupBy/lookup tolerante (não <c>ToDictionary</c> direto) porque ids
-    /// duplicados não são deduplicados hoje pelo reindex acima — não é escopo desta mudança
-    /// corrigir isso, só não lançar por causa disso.
+    /// <c>null</c> if the <c>DependsOn</c> graph is valid (every id exists, no cycle);
+    /// otherwise, a description of the problem. Kahn's algorithm (topological sort): a
+    /// node left outside the resolved set ⇒ cycle. Checks dangling refs first — otherwise
+    /// a phantom dependency would be counted as eternally unresolved and reported as a
+    /// "cycle" when it's actually an invalid id. Uses a tolerant GroupBy/lookup (not a
+    /// direct <c>ToDictionary</c>) because duplicate ids aren't deduplicated today by the
+    /// reindex above — fixing that isn't this change's scope, just not throwing over it.
     /// </summary>
     private static string? DependencyGraphError(IReadOnlyList<Feature> features)
     {
@@ -105,7 +107,7 @@ public static class FeatureStore
             .SelectMany(f => f.Deps.Where(dep => !validIds.Contains(dep)).Select(dep => $"{f.Id}->{dep}"))
             .ToList();
         if (dangling.Count > 0)
-            return $"dependsOn referencia id(s) inexistente(s): {string.Join(", ", dangling)}";
+            return $"dependsOn references nonexistent id(s): {string.Join(", ", dangling)}";
 
         var indegree = features.GroupBy(f => f.Id).ToDictionary(g => g.Key, g => g.First().Deps.Length);
         var dependents = features.SelectMany(f => f.Deps.Select(dep => (dep, f.Id))).ToLookup(x => x.dep, x => x.Id);
@@ -125,7 +127,7 @@ public static class FeatureStore
 
         return resolved.Count == indegree.Count
             ? null
-            : $"dependência cíclica entre as features: {string.Join(", ", indegree.Keys.Except(resolved))}";
+            : $"cyclic dependency among features: {string.Join(", ", indegree.Keys.Except(resolved))}";
     }
 
     public static IReadOnlyList<Feature> Load()
@@ -141,18 +143,19 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] falha ao carregar: {ex.Message}");
+            Console.Error.WriteLine($"[FeatureStore] failed to load: {ex.Message}");
             return [];
         }
     }
 
     /// <summary>
-    /// A próxima feature a implementar: a de maior prioridade (menor <see cref="Feature.Priority"/>)
-    /// entre as PRONTAS (todo id em <see cref="Feature.Deps"/> já com <c>Passes == true</c>);
-    /// desempate por <see cref="Feature.Id"/>. <c>null</c> quando não há pendência pronta — pode
-    /// significar fim de fato (nenhuma pendência) ou dependências bloqueadas (ver <c>Pick</c> em
-    /// <c>Flows.Development</c>). "Ready set" de Kahn recalculado a cada chamada sobre a lista
-    /// carregada — sem estrutura de grafo persistida.
+    /// The next feature to implement: the highest-priority one (lowest
+    /// <see cref="Feature.Priority"/>) among the READY ones (every id in
+    /// <see cref="Feature.Deps"/> already has <c>Passes == true</c>); ties broken by
+    /// <see cref="Feature.Id"/>. <c>null</c> when there's no ready pending feature — this
+    /// can mean genuinely done (nothing pending) or blocked dependencies (see <c>Pick</c>
+    /// in <c>Flows.Development</c>). Kahn's "ready set" recomputed on every call over the
+    /// loaded list — no persisted graph structure.
     /// </summary>
     public static Feature? NextPending()
     {
@@ -166,7 +169,7 @@ public static class FeatureStore
             .FirstOrDefault();
     }
 
-    /// <summary>Marca a feature como concluída e regrava a lista. No-op se o id não existe.</summary>
+    /// <summary>Marks the feature as completed and rewrites the list. No-op if the id doesn't exist.</summary>
     public static void MarkPassed(int id)
     {
         var features = Load();
@@ -176,17 +179,17 @@ public static class FeatureStore
         Write([.. features.Select(f => f.Id == id ? f with { Passes = true } : f)]);
     }
 
-    /// <summary>Quantas features ainda faltam (<c>Passes == false</c>).</summary>
+    /// <summary>How many features are still left (<c>Passes == false</c>).</summary>
     public static int PendingCount() => Load().Count(f => !f.Passes);
 
-    /// <summary>Há features e todas passaram — condição de término do loop.</summary>
+    /// <summary>There are features and all of them passed — the loop's termination condition.</summary>
     public static bool AllPassing()
     {
         var features = Load();
         return features.Count > 0 && features.All(f => f.Passes);
     }
 
-    /// <summary>Apaga a lista do run anterior — o flow PRODUTOR reseta no seu <c>start</c>.</summary>
+    /// <summary>Erases the previous run's list — the PRODUCING flow resets it on its own <c>start</c>.</summary>
     public static void Reset()
     {
         try
@@ -196,23 +199,25 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] falha ao limpar: {ex.Message}");
+            Console.Error.WriteLine($"[FeatureStore] failed to clear: {ex.Message}");
         }
     }
 }
 
-/// <summary>Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já passa,
-/// de quais outras (por id) depende, uma descrição livre (até <see cref="FeatureStore.DescriptionMaxChars"/>
-/// caracteres, reinjetada no prompt de <c>implement</c>) e códigos de referência explícitos do
-/// brief (ex.: "RF-003"; array vazio quando o brief não cita nenhum).</summary>
+/// <summary>A feature from the development backlog: priority (lower = higher), whether it
+/// already passes, which others (by id) it depends on, a free-form description (up to
+/// <see cref="FeatureStore.DescriptionMaxChars"/> characters, reinjected into the
+/// <c>implement</c> prompt), and explicit reference codes from the brief (e.g. "RF-003";
+/// empty array when the brief cites none).</summary>
 ///
 /// <remarks>
-/// <c>DependsOn</c>/<c>References</c> são ANULÁVEIS de propósito: <c>= []</c> não é constante em tempo de compilação
-/// (não pode ser default de parâmetro posicional do record); e uma propriedade <c>init</c> extra
-/// fora do construtor tem o inicializador IGNORADO pelo <see cref="System.Text.Json"/> quando a
-/// chave não existe no JSON — grava <c>null</c>, não <c>[]</c>. <see cref="Deps"/> normaliza isso
-/// para quem consome; um <c>feature_list.json</c> gravado por uma versão anterior do harness
-/// (sem <c>dependsOn</c>) continua carregando sem lançar.
+/// <c>DependsOn</c>/<c>References</c> are NULLABLE on purpose: <c>= []</c> is not a
+/// compile-time constant (it can't be a record positional parameter's default); and an
+/// extra <c>init</c> property outside the constructor has its initializer IGNORED by
+/// <see cref="System.Text.Json"/> when the key doesn't exist in the JSON — it writes
+/// <c>null</c>, not <c>[]</c>. <see cref="Deps"/> normalizes this for consumers; a
+/// <c>feature_list.json</c> written by an earlier harness version (with no
+/// <c>dependsOn</c>) still loads without throwing.
 /// </remarks>
 public record Feature(
     int Id, string Title, int Priority, bool Passes,
@@ -226,7 +231,8 @@ public record Feature(
 }
 
 /// <summary>
-/// Envelope de topo da <c>feature_list.json</c>. Tipo dedicado (não <c>List&lt;Feature&gt;</c> solto)
-/// para ser servível pelo source generator do System.Text.Json, requisito do Native AOT.
+/// Top-level envelope for <c>feature_list.json</c>. Dedicated type (not a bare
+/// <c>List&lt;Feature&gt;</c>) so it's servable by System.Text.Json's source generator, a
+/// Native AOT requirement.
 /// </summary>
 public record FeatureList(List<Feature> Items);

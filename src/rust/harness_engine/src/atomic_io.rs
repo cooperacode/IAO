@@ -1,25 +1,26 @@
-//! Escrita atômica de arquivos "finais" (o estado inteiro é substituído de uma vez —
-//! diferente dos appends de log, que crescem linha a linha). Grava num arquivo temporário
-//! no MESMO diretório do destino e troca via `rename`, que é atômico dentro da mesma
-//! partição: um processo interrompido a meio da gravação (kill, queda de energia, crash)
-//! nunca deixa o arquivo destino truncado/corrompido — ou fica o conteúdo antigo inteiro,
-//! ou o novo inteiro.
+//! Atomic writes for "final" files (the whole state is replaced at once — unlike log
+//! appends, which grow line by line). Writes to a temporary file in the SAME directory as
+//! the destination and swaps it in via `rename`, which is atomic within the same
+//! partition: a process interrupted mid-write (kill, power loss, crash) never leaves the
+//! destination file truncated/corrupted — it's either the whole old content or the whole
+//! new content.
 
 use std::io::Write;
 use std::path::Path;
 
-/// Grava `content` em `path` de forma atômica: escreve num temp único no mesmo diretório,
-/// sincroniza em disco e troca via `rename`. Limpa o temp se algo falhar antes do rename.
+/// Writes `content` to `path` atomically: writes to a unique temp file in the same
+/// directory, syncs it to disk, and swaps it in via `rename`. Cleans up the temp file if
+/// anything fails before the rename.
 pub fn write_atomic(path: &Path, content: &str) -> std::io::Result<()> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("arquivo");
+        .unwrap_or("file");
 
-    // Sem crate de uuid/rand no workspace: pid + tempo monotônico (nanos desde epoch) é
-    // suficiente para um nome único o bastante — dois processos nunca colidem (pid
-    // distinto), e o mesmo processo escrevendo duas vezes em sequência já avança o relógio.
+    // No uuid/rand crate in the workspace: pid + monotonic time (nanos since epoch) is
+    // unique enough — two processes never collide (distinct pid), and the same process
+    // writing twice in a row already advances the clock.
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -53,7 +54,7 @@ mod tests {
     #[test]
     fn write_atomic_grava_o_conteudo() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("arquivo.json");
+        let path = dir.path().join("file.json");
 
         write_atomic(&path, r#"{"a":1}"#).unwrap();
 
@@ -63,26 +64,26 @@ mod tests {
     #[test]
     fn write_atomic_sobrescreve_arquivo_existente() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("arquivo.json");
-        std::fs::write(&path, "velho").unwrap();
+        let path = dir.path().join("file.json");
+        std::fs::write(&path, "old").unwrap();
 
-        write_atomic(&path, "novo").unwrap();
+        write_atomic(&path, "new").unwrap();
 
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "novo");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
     }
 
     #[test]
     fn write_atomic_nao_deixa_arquivo_temporario_para_tras() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("arquivo.json");
+        let path = dir.path().join("file.json");
 
-        write_atomic(&path, "conteudo").unwrap();
+        write_atomic(&path, "content").unwrap();
 
-        let sobras: Vec<_> = std::fs::read_dir(dir.path())
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
             .collect();
-        assert!(sobras.is_empty());
+        assert!(leftovers.is_empty());
     }
 }

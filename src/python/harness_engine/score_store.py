@@ -1,4 +1,4 @@
-"""Persiste o resultado de cada avaliação em `.harness/scores.jsonl` (uma linha por run)."""
+"""Persists the result of each evaluation to `.harness/scores.jsonl` (one line per run)."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ _FILE_PATH = ".harness/scores.jsonl"
 
 @dataclass(frozen=True)
 class ScoreReport:
-    """Nota de uma avaliação: o veredito do portão determinístico (0 tokens) e, quando ele
-    passa, a nota do juiz-LLM. `judge_score` = 0 quando o portão reprova."""
+    """Score for one evaluation: the deterministic gate's verdict and, when it passes,
+    the LLM judge's score. `judge_score` = 0 when the gate fails."""
 
     timestamp: str
     gate_passed: bool
@@ -48,7 +48,7 @@ def append(report: ScoreReport) -> None:
         with open(_FILE_PATH, "a") as f:
             f.write(json.dumps(report.to_dict(), separators=(",", ":")) + "\n")
     except Exception as ex:
-        print(f"[ScoreStore] falha ao gravar: {ex}", file=sys.stderr)
+        print(f"[ScoreStore] failed to write: {ex}", file=sys.stderr)
 
 
 def load() -> list[ScoreReport]:
@@ -63,5 +63,5 @@ def load() -> list[ScoreReport]:
             if line.strip()
         ]
     except Exception as ex:
-        print(f"[ScoreStore] falha ao carregar: {ex}", file=sys.stderr)
+        print(f"[ScoreStore] failed to load: {ex}", file=sys.stderr)
         return []

@@ -6,7 +6,7 @@ import (
 )
 
 func TestMinLines_CountsLiteralAndRealBreaks(t *testing.T) {
-	validator := MinLines(2, "lista de histórias")
+	validator := MinLines(2, "list of stories")
 
 	escaped := NewEnvelope("tool", "acceptance", []string{`1. a\n2. b`})
 	real := NewEnvelope("tool", "acceptance", []string{"1. a\n2. b"})
@@ -24,49 +24,49 @@ func TestMinLines_CountsLiteralAndRealBreaks(t *testing.T) {
 }
 
 func TestContainsNumber_RequiresAtLeastOneDigit(t *testing.T) {
-	validator := ContainsNumber("estimativas")
+	validator := ContainsNumber("estimates")
 
-	if !validator(NewEnvelope("tool", "risks", []string{"5 pontos"})).Ok {
+	if !validator(NewEnvelope("tool", "risks", []string{"5 points"})).Ok {
 		t.Error("expected pass with digit")
 	}
-	if validator(NewEnvelope("tool", "risks", []string{"sem pontos"})).Ok {
+	if validator(NewEnvelope("tool", "risks", []string{"no points"})).Ok {
 		t.Error("expected fail without digit")
 	}
 }
 
 func TestMatches_CaseInsensitive(t *testing.T) {
-	validator := Matches("READY|NOT READY", "veredito do DoR")
+	validator := Matches("READY|NOT READY", "DoR verdict")
 
-	if !validator(NewEnvelope("tool", "finalize", []string{"Veredito: ready com ressalva"})).Ok {
+	if !validator(NewEnvelope("tool", "finalize", []string{"Verdict: ready with reservation"})).Ok {
 		t.Error("expected case-insensitive match")
 	}
-	if validator(NewEnvelope("tool", "finalize", []string{"aprovado"})).Ok {
+	if validator(NewEnvelope("tool", "finalize", []string{"approved"})).Ok {
 		t.Error("expected no match")
 	}
 }
 
 func TestMatches_AnchoredPattern_RejectsPrefixOnlyContent(t *testing.T) {
-	validator := Matches(`^(PASS\b|FAIL\b)`, "veredito")
+	validator := Matches(`^(PASS\b|FAIL\b)`, "verdict")
 
-	if !validator(NewEnvelope("command", "verify", []string{"PASS: testes verdes"})).Ok {
+	if !validator(NewEnvelope("command", "verify", []string{"PASS: green tests"})).Ok {
 		t.Error("expected PASS to match")
 	}
-	if !validator(NewEnvelope("command", "verify", []string{"FAIL: testes vermelhos"})).Ok {
+	if !validator(NewEnvelope("command", "verify", []string{"FAIL: red tests"})).Ok {
 		t.Error("expected FAIL to match")
 	}
-	if validator(NewEnvelope("command", "verify", []string{"rodei os testes e deu PASS"})).Ok {
+	if validator(NewEnvelope("command", "verify", []string{"I ran the tests and got PASS"})).Ok {
 		t.Error("expected non-anchored content to fail")
 	}
 }
 
 func TestAllOf_FailsOnFirstReason(t *testing.T) {
-	validator := AllOf(NotEmpty("estimativas"), ContainsNumber("estimativas com pontos"))
+	validator := AllOf(NotEmpty("estimates"), ContainsNumber("estimates with points"))
 
-	result := validator(NewEnvelope("tool", "risks", []string{"sem numeros"}))
+	result := validator(NewEnvelope("tool", "risks", []string{"no numbers"}))
 	if result.Ok {
 		t.Fatal("expected failure")
 	}
-	if !strings.Contains(result.Reason, "número") {
+	if !strings.Contains(result.Reason, "number") {
 		t.Errorf("unexpected reason: %s", result.Reason)
 	}
 }

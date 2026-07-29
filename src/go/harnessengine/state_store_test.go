@@ -5,9 +5,9 @@ import "testing"
 func TestState_SetAndGet_PersistAcrossCalls(t *testing.T) {
 	isolate(t)
 
-	SetState("descricao", "Login com Google")
+	SetState("description", "Login with Google")
 
-	if got := GetState("descricao"); got == nil || *got != "Login com Google" {
+	if got := GetState("description"); got == nil || *got != "Login with Google" {
 		t.Fatalf("unexpected value: %v", got)
 	}
 }
@@ -15,7 +15,7 @@ func TestState_SetAndGet_PersistAcrossCalls(t *testing.T) {
 func TestState_Get_MissingKey_ReturnsNil(t *testing.T) {
 	isolate(t)
 
-	if got := GetState("nao-existe"); got != nil {
+	if got := GetState("does-not-exist"); got != nil {
 		t.Fatalf("expected nil, got %v", *got)
 	}
 }
@@ -23,10 +23,10 @@ func TestState_Get_MissingKey_ReturnsNil(t *testing.T) {
 func TestState_Set_OverwritesExistingKey(t *testing.T) {
 	isolate(t)
 
-	SetState("tipo", "Bug")
-	SetState("tipo", "Épico")
+	SetState("type", "Bug")
+	SetState("type", "Epic")
 
-	if got := GetState("tipo"); got == nil || *got != "Épico" {
+	if got := GetState("type"); got == nil || *got != "Epic" {
 		t.Fatalf("unexpected value: %v", got)
 	}
 }
@@ -45,10 +45,10 @@ func TestState_Increment_AdvancesCounter(t *testing.T) {
 func TestState_Increment_PreservesAccumulatedData(t *testing.T) {
 	isolate(t)
 
-	SetState("descricao", "x")
+	SetState("description", "x")
 	IncrementStep()
 
-	if got := GetState("descricao"); got == nil || *got != "x" {
+	if got := GetState("description"); got == nil || *got != "x" {
 		t.Fatalf("unexpected value: %v", got)
 	}
 }
@@ -56,14 +56,14 @@ func TestState_Increment_PreservesAccumulatedData(t *testing.T) {
 func TestState_Reset_ClearsCounterAndData(t *testing.T) {
 	isolate(t)
 
-	SetState("descricao", "x")
+	SetState("description", "x")
 	IncrementStep()
 	ResetState()
 
 	if LoadState().Step != 0 {
 		t.Fatalf("unexpected step: %d", LoadState().Step)
 	}
-	if GetState("descricao") != nil {
+	if GetState("description") != nil {
 		t.Fatal("expected data cleared")
 	}
 }

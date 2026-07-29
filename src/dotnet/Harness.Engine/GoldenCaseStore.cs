@@ -3,8 +3,8 @@ using System.Text.Json;
 namespace Harness.Engine;
 
 /// <summary>
-/// Carrega os casos do golden set do disco. Mora na engine porque a desserialização
-/// AOT-safe depende do <see cref="HarnessJsonContext"/>, interno ao assembly.
+/// Loads the golden-set cases from disk. Lives in the engine because AOT-safe
+/// deserialization depends on <see cref="HarnessJsonContext"/>, internal to the assembly.
 /// </summary>
 public static class GoldenCaseStore
 {
@@ -17,12 +17,12 @@ public static class GoldenCaseStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[GoldenCaseStore] falha ao carregar {path}: {ex.Message}");
+            Console.Error.WriteLine($"[GoldenCaseStore] failed to load {path}: {ex.Message}");
             return null;
         }
     }
 
-    /// <summary>Carrega todos os <c>*.json</c> de um diretório, ordenados por nome, ignorando os inválidos.</summary>
+    /// <summary>Loads every <c>*.json</c> in a directory, ordered by name, skipping invalid ones.</summary>
     public static IReadOnlyList<GoldenCase> LoadDirectory(string directory)
     {
         if (!Directory.Exists(directory))

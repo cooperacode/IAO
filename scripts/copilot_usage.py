@@ -1,33 +1,35 @@
 #!/usr/bin/env python3
-"""Extrai uso de tokens do GitHub Copilot Chat (VS Code) a partir do
-armazenamento local em ~/Library/Application Support/Code/User/workspaceStorage/.
+"""Extracts GitHub Copilot Chat (VS Code) token usage from the local
+storage under ~/Library/Application Support/Code/User/workspaceStorage/.
 
-Diferente de claude_usage.py e codex_usage.py, o Copilot NAO tem uma unica
-fonte local confiavel e sempre presente de tokens por sessao. Existem duas
-camadas, em ordem de confiabilidade, e este script cai da mais confiavel
-para a menos confiavel por sessao (nunca mistura as duas na mesma sessao):
+Unlike claude_usage.py and codex_usage.py, Copilot does NOT have a single
+reliable, always-present local source of per-session token counts. There
+are two layers, in order of reliability, and this script falls back from
+the most reliable to the least reliable per session (it never mixes the
+two within the same session):
 
-1. debug-log (GitHub.copilot-chat/debug-logs/<sessionId>/main.jsonl) -- so
-   existe se o usuario tiver ligado manualmente a config nao documentada
-   `github.copilot.chat.agentDebugLog.fileLogging.enabled` em settings.json.
-   Eventos `llm_request` trazem inputTokens/outputTokens/cachedTokens e o id
-   exato do modelo por chamada.
-2. chatSessions (chatSessions/<sessionId>.jsonl ou .json) -- sempre existe,
-   mas so tem promptTokens/completionTokens quando a versao da extensao que
-   gravou a sessao passou a incluir esses campos. O formato .jsonl e um log
-   incremental (snapshot + patches, ver reduce_chat_session_jsonl); o
-   formato .json antigo e um objeto unico sem tokens.
-3. sem-tokens -- sessao aparece so com contagem de requests/timestamps.
+1. debug-log (GitHub.copilot-chat/debug-logs/<sessionId>/main.jsonl) --
+   only exists if the user has manually turned on the undocumented setting
+   `github.copilot.chat.agentDebugLog.fileLogging.enabled` in settings.json.
+   `llm_request` events carry inputTokens/outputTokens/cachedTokens and the
+   exact model id for each call.
+2. chatSessions (chatSessions/<sessionId>.jsonl or .json) -- always exists,
+   but only has promptTokens/completionTokens once the extension version
+   that wrote the session started including those fields. The .jsonl
+   format is an incremental log (snapshot + patches, see
+   reduce_chat_session_jsonl); the older .json format is a single object
+   with no tokens.
+3. no-tokens -- the session shows up with only a request/timestamp count.
 
-Nao ha estimativa de custo em dolar: o Copilot fatura por "premium request"
-com multiplicador por modelo, nao por token, entao converter tokens em $
-daria um numero que nao bate com a fatura real. Quando disponivel, o
-multiplicador/creditos aparecem crus na coluna "Premium".
+There is no dollar cost estimate: Copilot bills by "premium request" with
+a per-model multiplier, not by token, so converting tokens into $ would
+produce a number that doesn't match the real invoice. When available, the
+raw multiplier/credits show up in the "Premium" column.
 
-Fora do escopo: Copilot CLI standalone (~/.copilot/session-state/*.jsonl) --
-so VS Code Copilot Chat.
+Out of scope: the standalone Copilot CLI (~/.copilot/session-state/*.jsonl)
+-- this covers VS Code Copilot Chat only.
 
-Uso:
+Usage:
     scripts/copilot_usage.py
     scripts/copilot_usage.py --by-session
     scripts/copilot_usage.py --session <uuid> --json
@@ -49,8 +51,8 @@ from urllib.parse import unquote, urlparse
 
 SOURCE_DEBUG_LOG = "debug-log"
 SOURCE_CHAT_SESSIONS = "chatSessions"
-SOURCE_NONE = "sem-tokens"
-UNKNOWN_MODEL = "<desconhecido>"
+SOURCE_NONE = "no-tokens"
+UNKNOWN_MODEL = "<unknown>"
 
 
 @dataclass
@@ -115,7 +117,7 @@ class SessionUsage:
 
 
 # ---------------------------------------------------------------------------
-# Descoberta de workspaces / filtro por repo
+# Workspace discovery / repo filtering
 # ---------------------------------------------------------------------------
 
 
@@ -196,7 +198,7 @@ def find_chat_session_path(workspace_dir: Path, session_id: str) -> Path | None:
 
 
 # ---------------------------------------------------------------------------
-# Camada 1: debug-logs/<sessionId>/main.jsonl (+ child logs, ex.: geracao de titulo)
+# Layer 1: debug-logs/<sessionId>/main.jsonl (+ child logs, e.g. title generation)
 # ---------------------------------------------------------------------------
 
 
@@ -217,7 +219,7 @@ def _parse_debug_log_file(
     try:
         lines = path.read_text().splitlines()
     except OSError as exc:
-        warnings.append(f"nao foi possivel ler {path}: {exc}")
+        warnings.append(f"could not read {path}: {exc}")
         return events, child_refs
 
     for line in lines:
@@ -299,7 +301,7 @@ def walk_debug_log_session(
 
 
 # ---------------------------------------------------------------------------
-# Camada 2: chatSessions/<sessionId>.jsonl (log incremental) ou .json (antigo)
+# Layer 2: chatSessions/<sessionId>.jsonl (incremental log) or .json (legacy)
 # ---------------------------------------------------------------------------
 
 
@@ -331,14 +333,14 @@ def _apply_splice(state: dict, path: list, index: int | None, items: list) -> No
 
 
 def reduce_chat_session_jsonl(path: Path, warnings: list[str]) -> dict:
-    """Reconstroi o documento da sessao a partir da sequencia de operacoes:
-    kind 0 = snapshot inicial (substitui tudo), kind 1 = set (parent[k[-1]] = v),
-    kind 2 = splice num array (target[i:i] = v, ou append se `i` ausente)."""
+    """Reconstructs the session document from the operation sequence:
+    kind 0 = initial snapshot (replaces everything), kind 1 = set (parent[k[-1]] = v),
+    kind 2 = array splice (target[i:i] = v, or append if `i` is absent)."""
     state: dict = {}
     try:
         lines = path.read_text().splitlines()
     except OSError as exc:
-        warnings.append(f"nao foi possivel ler {path}: {exc}")
+        warnings.append(f"could not read {path}: {exc}")
         return state
 
     for lineno, line in enumerate(lines, start=1):
@@ -348,7 +350,7 @@ def reduce_chat_session_jsonl(path: Path, warnings: list[str]) -> dict:
         try:
             op = json.loads(line)
         except json.JSONDecodeError:
-            warnings.append(f"linha invalida em {path.name}:{lineno}")
+            warnings.append(f"invalid line at {path.name}:{lineno}")
             continue
 
         kind = op.get("kind")
@@ -363,10 +365,10 @@ def reduce_chat_session_jsonl(path: Path, warnings: list[str]) -> dict:
             elif kind == 2:
                 _apply_splice(state, k, op.get("i"), op.get("v") or [])
             else:
-                warnings.append(f"kind desconhecido {kind} em {path.name}:{lineno}")
+                warnings.append(f"unknown kind {kind} at {path.name}:{lineno}")
         except (KeyError, IndexError, TypeError) as exc:
             warnings.append(
-                f"falha ao aplicar op kind={kind} em {path.name}:{lineno}: {exc}"
+                f"failed to apply op kind={kind} at {path.name}:{lineno}: {exc}"
             )
 
     return state
@@ -377,7 +379,7 @@ def load_chat_session_state(path: Path, warnings: list[str]) -> dict:
         try:
             data = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            warnings.append(f"nao foi possivel ler {path}: {exc}")
+            warnings.append(f"could not read {path}: {exc}")
             return {}
         return data if isinstance(data, dict) else {}
     return reduce_chat_session_jsonl(path, warnings)
@@ -388,8 +390,8 @@ _MULTIPLIER_RE = re.compile(r"^([\d.]+)x$", re.IGNORECASE)
 
 
 def parse_premium_details(details: str | None) -> tuple[str | None, float | None]:
-    """Ex.: 'GPT-4.1 • 0x' -> ('GPT-4.1', 0.0). 'Claude Opus • 3.5 credits'
-    -> ('Claude Opus', None) -- creditos fracionarios nao viram multiplicador."""
+    """E.g.: 'GPT-4.1 • 0x' -> ('GPT-4.1', 0.0). 'Claude Opus • 3.5 credits'
+    -> ('Claude Opus', None) -- fractional credits don't turn into a multiplier."""
     if not details:
         return None, None
     match = _PREMIUM_DETAILS_RE.match(details.strip())
@@ -404,9 +406,9 @@ def parse_premium_details(details: str | None) -> tuple[str | None, float | None
 
 
 def _request_token_counts(req: dict) -> tuple[float | None, float | None]:
-    """Os tokens aparecem em dois lugares dependendo da versao da extensao que
-    gravou a sessao: direto em requests[i].promptTokens/completionTokens, ou
-    aninhados em requests[i].result.metadata.promptTokens/outputTokens."""
+    """Tokens show up in one of two places depending on the extension version
+    that wrote the session: directly at requests[i].promptTokens/completionTokens,
+    or nested at requests[i].result.metadata.promptTokens/outputTokens."""
     prompt = req.get("promptTokens")
     completion = req.get("completionTokens")
     if isinstance(prompt, (int, float)) and isinstance(completion, (int, float)):
@@ -478,7 +480,7 @@ def chat_session_events(
 
 
 # ---------------------------------------------------------------------------
-# Unificacao por sessao: debug-log > chatSessions > sem-tokens
+# Per-session unification: debug-log > chatSessions > no-tokens
 # ---------------------------------------------------------------------------
 
 
@@ -572,9 +574,9 @@ def iter_usage_events(
     until: str | None = None,
     warnings: list[str] | None = None,
 ):
-    """Gera eventos crus: (session_id, agent_label, model, usage, timestamp, source,
-    premium_details). Reaproveitavel por outras ferramentas, no mesmo espirito do
-    iter_usage_events de claude_usage.py/codex_usage.py."""
+    """Yields raw events: (session_id, agent_label, model, usage, timestamp, source,
+    premium_details). Reusable by other tools, in the same spirit as the
+    iter_usage_events in claude_usage.py/codex_usage.py."""
     sessions, collected_warnings = collect_sessions(
         vscode_user_dir, repo, session_filter, since, until
     )
@@ -595,7 +597,7 @@ def iter_usage_events(
 
 
 # ---------------------------------------------------------------------------
-# Agregacao e apresentacao
+# Aggregation and rendering
 # ---------------------------------------------------------------------------
 
 
@@ -648,8 +650,8 @@ def render_model_table(sessions: list[SessionUsage]) -> None:
                 ", ".join(sorted(sources[model])),
             ]
         )
-    print_table(rows, ["Model", "Input", "Output", "Cached", "Total", "Fonte"])
-    print(f"\nTotal geral: {grand.total_tokens:,} tokens (sem estimativa de custo)")
+    print_table(rows, ["Model", "Input", "Output", "Cached", "Total", "Source"])
+    print(f"\nGrand total: {grand.total_tokens:,} tokens (no cost estimate)")
 
 
 def render_session_table(sessions: list[SessionUsage]) -> None:
@@ -672,11 +674,11 @@ def render_session_table(sessions: list[SessionUsage]) -> None:
         )
     print_table(
         rows,
-        ["Session", "Primeira", "Ultima", "Modelo(s)", "Requests", "Total", "Premium", "Fonte"],
+        ["Session", "First", "Last", "Model(s)", "Requests", "Total", "Premium", "Source"],
     )
 
     counts = per_source_counts(sessions)
-    print("\nSessoes por fonte:")
+    print("\nSessions by source:")
     for source in (SOURCE_DEBUG_LOG, SOURCE_CHAT_SESSIONS, SOURCE_NONE):
         if counts.get(source):
             print(f"  {source}: {counts[source]}")
@@ -716,7 +718,7 @@ def render_json(sessions: list[SessionUsage], warnings: list[str]) -> None:
             for session in sessions
         },
         "by_source": dict(per_source_counts(sessions)),
-        "cost_note": "Copilot fatura por premium request com multiplicador, nao por token -- sem estimativa de custo em dolar.",
+        "cost_note": "Copilot bills by premium request with a multiplier, not by token -- no dollar cost estimate.",
         "warnings": warnings,
     }
     print(json.dumps(output, indent=2, ensure_ascii=False))
@@ -730,29 +732,29 @@ def main() -> None:
         "--vscode-user-dir",
         type=Path,
         default=None,
-        help="Override do diretorio User do VS Code (default: ~/Library/Application Support/Code/User)",
+        help="Override the VS Code User directory (default: ~/Library/Application Support/Code/User)",
     )
     parser.add_argument(
         "--repo",
         type=Path,
         default=None,
-        help="Filtra sessoes cujo workspace esta neste repo (default: repo atual)",
+        help="Filter sessions whose workspace is inside this repo (default: current repo)",
     )
     parser.add_argument(
-        "--all-repos", action="store_true", help="Nao filtra por repo/workspace"
+        "--all-repos", action="store_true", help="Don't filter by repo/workspace"
     )
-    parser.add_argument("--session", default=None, help="Filtra por session id")
-    parser.add_argument("--since", default=None, help="Data minima ISO ou YYYY-MM-DD")
-    parser.add_argument("--until", default=None, help="Data maxima ISO ou YYYY-MM-DD")
+    parser.add_argument("--session", default=None, help="Filter by session id")
+    parser.add_argument("--since", default=None, help="Minimum date, ISO or YYYY-MM-DD")
+    parser.add_argument("--until", default=None, help="Maximum date, ISO or YYYY-MM-DD")
     parser.add_argument(
-        "--by-session", action="store_true", help="Mostra tabela por sessao"
+        "--by-session", action="store_true", help="Show a per-session table"
     )
-    parser.add_argument("--json", action="store_true", help="Saida em JSON")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 
     user_dir = args.vscode_user_dir or default_vscode_user_dir()
     if not user_dir.is_dir():
-        print(f"Diretorio User do VS Code nao encontrado: {user_dir}", file=sys.stderr)
+        print(f"VS Code User directory not found: {user_dir}", file=sys.stderr)
         sys.exit(1)
 
     repo = None if args.all_repos else _resolve(args.repo or repo_root())
@@ -765,7 +767,7 @@ def main() -> None:
     )
 
     for warning in warnings:
-        print(f"Aviso: {warning}", file=sys.stderr)
+        print(f"Warning: {warning}", file=sys.stderr)
 
     if args.json:
         render_json(sessions, warnings)

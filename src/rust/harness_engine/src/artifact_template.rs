@@ -1,13 +1,13 @@
-//! Template de saída de um artefato: `skills/<name>/ARTIFACT.md` com placeholders
-//! `{{chave}}` substituídos por valores do `state_store`. A forma markdown do artefato
-//! mora junto da skill que o produz — fora do código, editável sem recompilar.
-//! Substituição pura de strings: determinística, zero token.
+//! Output template for an artifact: `skills/<name>/ARTIFACT.md` with `{{key}}`
+//! placeholders replaced by values from `state_store`. The artifact's markdown shape
+//! lives alongside the skill that produces it — outside the code, editable without a
+//! recompile. Pure string substitution: deterministic, zero token cost.
 
 use std::collections::HashMap;
 
 use crate::path_resolver;
 
-/// Lê o template da skill; `None` se a skill não define um (o caller decide o fallback).
+/// Reads the skill's template; `None` if the skill doesn't define one (the caller decides the fallback).
 pub fn load(skill_name: &str) -> Option<String> {
     let rel_path = format!("skills/{skill_name}/ARTIFACT.md");
     let path = path_resolver::resolve(&rel_path);
@@ -18,14 +18,14 @@ pub fn load(skill_name: &str) -> Option<String> {
     match std::fs::read_to_string(path) {
         Ok(content) => Some(content),
         Err(e) => {
-            eprintln!("[ArtifactTemplate] falha ao ler template de {skill_name}: {e}");
+            eprintln!("[ArtifactTemplate] failed to read template for {skill_name}: {e}");
             None
         }
     }
 }
 
-/// Substitui cada `{{chave}}` pelo valor correspondente. Placeholders sem valor
-/// permanecem no texto — sinal visível de dado faltante, não erro silencioso.
+/// Replaces each `{{key}}` with its corresponding value. Placeholders with no value
+/// remain in the text — a visible sign of missing data, not a silent error.
 pub fn render(template: &str, values: &HashMap<String, String>) -> String {
     let mut result = template.to_string();
     for (key, value) in values {
@@ -65,15 +65,15 @@ mod tests {
     #[test]
     fn render_substitui_placeholders_e_mantem_os_desconhecidos() {
         let values = HashMap::from([
-            ("titulo".to_string(), "Riscos".to_string()),
-            ("corpo".to_string(), "lista".to_string()),
+            ("title".to_string(), "Risks".to_string()),
+            ("body".to_string(), "list".to_string()),
         ]);
 
-        let result = render("# {{titulo}}\n\n{{corpo}}\n\n{{sem_valor}}", &values);
+        let result = render("# {{title}}\n\n{{body}}\n\n{{no_value}}", &values);
 
-        assert!(result.contains("# Riscos"));
-        assert!(result.contains("lista"));
-        assert!(result.contains("{{sem_valor}}")); // dado faltante fica visível, não some
+        assert!(result.contains("# Risks"));
+        assert!(result.contains("list"));
+        assert!(result.contains("{{no_value}}")); // missing data stays visible, doesn't vanish
     }
 
     #[test]
@@ -81,7 +81,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        assert!(load("skill-sem-artifact").is_none());
+        assert!(load("skill-without-artifact").is_none());
     }
 
     #[test]
@@ -89,9 +89,9 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        std::fs::create_dir_all("skills/minha-skill").unwrap();
-        std::fs::write("skills/minha-skill/ARTIFACT.md", "# {{titulo}}").unwrap();
+        std::fs::create_dir_all("skills/my-skill").unwrap();
+        std::fs::write("skills/my-skill/ARTIFACT.md", "# {{title}}").unwrap();
 
-        assert_eq!(load("minha-skill").unwrap(), "# {{titulo}}");
+        assert_eq!(load("my-skill").unwrap(), "# {{title}}");
     }
 }

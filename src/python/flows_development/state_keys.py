@@ -1,6 +1,6 @@
-"""Chaves do `state_store.data` usadas por `tasks.py` e `prompts.py` — módulo próprio (em
-vez de definidas num dos dois) para não criar import circular entre eles (`tasks.py` já
-importa `prompts`)."""
+"""Keys of `state_store.data` used by `tasks.py` and `prompts.py` — its own module
+(instead of being defined in either one) so as not to create a circular import between
+them (`tasks.py` already imports `prompts`)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ CURRENT_FEATURE_SUMMARY = "current_feature_summary"
 CURRENT_FEATURE_VERIFY = "current_feature_verify"
 FEATURE_STEPS = "feature_steps"
 
-# Não é uma chave do state_store — é o nome do artefato do brief no artifact_store
-# (.harness/brief.md). Vive aqui pelo mesmo motivo das chaves acima: tasks.py e prompts.py
-# precisam do mesmo valor, sem criar import circular entre eles.
+# Not a state_store key — it's the brief artifact's name in artifact_store
+# (.harness/brief.md). Lives here for the same reason as the keys above: tasks.py and
+# prompts.py need the same value, without creating a circular import between them.
 BRIEF_ARTIFACT_NAME = "brief"

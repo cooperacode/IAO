@@ -1,4 +1,4 @@
-//! Monta o bloco de instrução (input/response/skills) entregue ao modelo.
+//! Assembles the instruction block (input/response/skills) delivered to the model.
 
 use std::collections::HashMap;
 
@@ -14,9 +14,9 @@ pub fn skills(names: &[&str]) -> HashMap<String, String> {
 }
 
 pub fn format(input: &str, output: &Envelope, skills: Option<&HashMap<String, String>>) -> String {
-    // Reinjeta o contexto do driver (capturado no `start`, ver `task_registry`/
-    // `state_store`) em toda saída — ponto único, para que nenhuma task precise
-    // repassá-lo manualmente.
+    // Reinjects the driver context (captured on `start`, see `task_registry`/
+    // `state_store`) into every output — a single point, so no task needs to pass it
+    // along manually.
     let enriched = if output.context.is_none() {
         Envelope {
             context: state_store::get_context(),
@@ -54,8 +54,8 @@ fn read_skills(skills: Option<&HashMap<String, String>>) -> String {
         return String::new();
     };
 
-    // Ordenado por determinismo: `HashMap` não garante ordem de iteração estável entre
-    // execuções (ao contrário do `dict` do Python).
+    // Sorted for determinism: `HashMap` doesn't guarantee stable iteration order across
+    // runs (unlike Python's `dict`).
     let mut ids: Vec<&String> = skills.keys().collect();
     ids.sort();
 
@@ -138,7 +138,7 @@ mod tests {
         )]));
         let output = Envelope::new(envelope_type::COMMAND, "plan", vec![]);
 
-        let result = format("faça algo", &output, None);
+        let result = format("do something", &output, None);
 
         assert!(result.contains(r#""context":{"driver":"claude code"}"#));
     }
@@ -150,7 +150,7 @@ mod tests {
 
         let output = Envelope::new(envelope_type::COMMAND, "plan", vec![]);
 
-        let result = format("faça algo", &output, None);
+        let result = format("do something", &output, None);
 
         assert!(!result.contains("context"));
     }
@@ -167,12 +167,12 @@ mod tests {
         let mut output = Envelope::new(envelope_type::COMMAND, "plan", vec![]);
         output.context = Some(HashMap::from([(
             "driver".to_string(),
-            "explicito".to_string(),
+            "explicit".to_string(),
         )]));
 
-        let result = format("faça algo", &output, None);
+        let result = format("do something", &output, None);
 
-        assert!(result.contains("explicito"));
+        assert!(result.contains("explicit"));
         assert!(!result.contains("claude code"));
     }
 }

@@ -3,9 +3,10 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O override de <c>maxSteps</c> por invocação: um flow long-running (ex.: Development) levanta
-/// o teto global só para o seu processo, sem tocar o <c>harness.json</c> compartilhado (o
-/// Refinement segue com os 12 passos). Sem override, vale o teto do config.
+/// The per-invocation <c>maxSteps</c> override: a long-running flow (e.g. Development)
+/// raises the global ceiling only for its own process, without touching the shared
+/// <c>harness.json</c> (Refinement keeps its 12 steps). With no override, the config's
+/// ceiling applies.
 /// </summary>
 public class MaxStepsOverrideTests : IDisposable
 {
@@ -33,7 +34,7 @@ public class MaxStepsOverrideTests : IDisposable
         for (var i = 0; i < TaskRegistry.MaxSteps + 1; i++)
             last = Ping(null);
 
-        Assert.Equal("stop", last); // o passo MaxSteps+1 é cortado pela guarda global
+        Assert.Equal("stop", last); // step MaxSteps+1 is cut off by the global guard
     }
 
     [Fact]
@@ -43,6 +44,6 @@ public class MaxStepsOverrideTests : IDisposable
         for (var i = 0; i < TaskRegistry.MaxSteps + 5; i++)
             last = Ping(TaskRegistry.MaxSteps + 20);
 
-        Assert.NotEqual("stop", last); // o override deu a folga que o global não daria
+        Assert.NotEqual("stop", last); // the override gave the slack the global ceiling wouldn't
     }
 }

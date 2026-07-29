@@ -1,11 +1,11 @@
-//! Carrega os casos do golden set do disco.
+//! Loads golden set cases from disk.
 
 use serde::{Deserialize, Serialize};
 
-/// Um caso do golden set: o esperado contra o qual a evidência gravada é medida.
-/// `expect_pass = false` marca um caso NEGATIVO INTENCIONAL — um run que DEVE reprovar
-/// nas métricas (ex.: trajetória perfeita mas conteúdo faltante), usado para provar que
-/// os evaluators pegam a falha. O padrão é `true`.
+/// A golden set case: the expectation the recorded evidence is measured against.
+/// `expect_pass = false` marks an INTENTIONAL NEGATIVE case — a run that MUST fail on the
+/// metrics (e.g. a perfect trajectory but missing content), used to prove the evaluators
+/// catch the failure. The default is `true`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GoldenCase {
     #[serde(default)]
@@ -31,13 +31,13 @@ pub fn load(path: &str) -> Option<GoldenCase> {
     {
         Ok(case) => Some(case),
         Err(e) => {
-            eprintln!("[GoldenCaseStore] falha ao carregar {path}: {e}");
+            eprintln!("[GoldenCaseStore] failed to load {path}: {e}");
             None
         }
     }
 }
 
-/// Carrega todos os `*.json` de um diretório, ordenados por nome, ignorando os inválidos.
+/// Loads all `*.json` files from a directory, sorted by name, skipping invalid ones.
 pub fn load_directory(directory: &str) -> Vec<GoldenCase> {
     let dir = std::path::Path::new(directory);
     if !dir.is_dir() {
@@ -73,7 +73,7 @@ mod tests {
         let path = dir.path().join("case.json");
         std::fs::write(
             &path,
-            r#"{"id":"c1","description":"desc","expectedTrajectory":["start","plan"],"requiredKeys":["descricao"],"expectPass":false}"#,
+            r#"{"id":"c1","description":"desc","expectedTrajectory":["start","plan"],"requiredKeys":["description"],"expectPass":false}"#,
         )
         .unwrap();
 
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn load_arquivo_inexistente_retorna_none_sem_lancar() {
         let dir = temp_dir();
-        let path = dir.path().join("nao-existe.json");
+        let path = dir.path().join("does-not-exist.json");
 
         assert!(load(path.to_str().unwrap()).is_none());
     }
@@ -111,7 +111,7 @@ mod tests {
         let dir = temp_dir();
         std::fs::write(dir.path().join("b.json"), r#"{"id":"b"}"#).unwrap();
         std::fs::write(dir.path().join("a.json"), r#"{"id":"a"}"#).unwrap();
-        std::fs::write(dir.path().join("c.json"), "isso não é json").unwrap();
+        std::fs::write(dir.path().join("c.json"), "this is not json").unwrap();
 
         let cases = load_directory(dir.path().to_str().unwrap());
 
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn load_directory_pasta_inexistente_retorna_vazio() {
         let dir = temp_dir();
-        let missing = dir.path().join("nao-existe");
+        let missing = dir.path().join("does-not-exist");
 
         assert!(load_directory(missing.to_str().unwrap()).is_empty());
     }

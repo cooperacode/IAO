@@ -3,20 +3,20 @@ using System.Text.Json;
 namespace Harness.Engine;
 
 /// <summary>
-/// Persiste <c>verify_cmd</c>/<c>target_dir</c> (capturados uma vez pelo <c>plan</c>) em
-/// <c>.harness/run_config.json</c> — fora de <c>state.json</c> de propósito. O
-/// <see cref="TaskRegistry"/> reseta <c>state.json</c> incondicionalmente a cada <c>start</c>,
-/// antes de qualquer código de domínio rodar; um run retomado (ver
-/// <c>Flows.Development.DevelopmentTasks.Start</c>) ainda precisa desses dois valores para
-/// <c>smoke</c>/<c>verify</c> funcionarem, então eles têm que sobreviver a esse reset.
+/// Persists <c>verify_cmd</c>/<c>target_dir</c> (captured once by <c>plan</c>) to
+/// <c>.harness/run_config.json</c> — kept out of <c>state.json</c> on purpose.
+/// <see cref="TaskRegistry"/> unconditionally resets <c>state.json</c> on every <c>start</c>,
+/// before any domain code runs; a resumed run (see
+/// <c>Flows.Development.DevelopmentTasks.Start</c>) still needs these two values for
+/// <c>smoke</c>/<c>verify</c> to work, so they have to survive that reset.
 /// </summary>
 public static class RunConfigStore
 {
     private const string Dir = ".harness";
     private const string FilePath = ".harness/run_config.json";
 
-    /// <summary>Grava a configuração do run — mesmo ciclo de vida da feature_list.json (escrita
-    /// pelo <c>plan</c>, apagada só quando <c>start</c> decide que não há run para retomar).</summary>
+    /// <summary>Writes the run config — same lifecycle as feature_list.json (written
+    /// by <c>plan</c>, erased only when <c>start</c> decides there's no run to resume).</summary>
     public static void Write(RunConfig config)
     {
         try
@@ -26,11 +26,11 @@ public static class RunConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[RunConfigStore] falha ao gravar: {ex.Message}");
+            Console.Error.WriteLine($"[RunConfigStore] failed to write: {ex.Message}");
         }
     }
 
-    /// <summary>Lê a configuração persistida, ou os defaults se nada foi gravado ainda.</summary>
+    /// <summary>Reads the persisted config, or the defaults if nothing has been written yet.</summary>
     public static RunConfig Load()
     {
         try
@@ -45,13 +45,13 @@ public static class RunConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[RunConfigStore] falha ao carregar: {ex.Message}");
+            Console.Error.WriteLine($"[RunConfigStore] failed to load: {ex.Message}");
         }
 
         return new RunConfig();
     }
 
-    /// <summary>Apaga num run genuinamente novo — em par com FeatureStore.Reset().</summary>
+    /// <summary>Erases on a genuinely new run — paired with FeatureStore.Reset().</summary>
     public static void Reset()
     {
         try
@@ -61,18 +61,18 @@ public static class RunConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[RunConfigStore] falha ao limpar: {ex.Message}");
+            Console.Error.WriteLine($"[RunConfigStore] failed to clear: {ex.Message}");
         }
     }
 }
 
 /// <summary>
-/// Comando de verificação, diretório-alvo e identidade do run (RFC §6.4), todos capturados
-/// uma vez pelo <c>plan</c>. <see cref="RunId"/> é gerado só num run genuinamente novo — o
-/// mesmo momento em que <see cref="RunConfigStore.Write"/> é chamado após
-/// <see cref="RunConfigStore.Reset"/> — e sobrevive a toda retomada porque este arquivo não é
-/// tocado quando <c>start</c> decide que há trabalho pendente (ver comentário da classe).
-/// Terceiro parâmetro posicional com default <c>""</c> para não quebrar os
-/// <c>new RunConfig(verifyCmd, targetDir)</c> já espalhados pelos testes.
+/// Verify command, target directory, and run identity (RFC §6.4), all captured once by
+/// <c>plan</c>. <see cref="RunId"/> is generated only on a genuinely new run — the same
+/// moment <see cref="RunConfigStore.Write"/> is called after
+/// <see cref="RunConfigStore.Reset"/> — and survives every resume because this file isn't
+/// touched when <c>start</c> decides there's pending work (see the class comment). Third
+/// positional parameter defaults to <c>""</c> so it doesn't break the
+/// <c>new RunConfig(verifyCmd, targetDir)</c> calls already spread across the tests.
 /// </summary>
 public record RunConfig(string VerifyCmd = "", string TargetDir = ".", string RunId = "");

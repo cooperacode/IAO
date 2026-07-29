@@ -1,10 +1,10 @@
-"""A lista de features do flow de desenvolvimento, persistida em
-`.harness/feature_list.json` — o "persistent artifact" que atravessa os hard resets de
-contexto: cada sessão (uma feature) lê e escreve aqui, sem depender do histórico da
-conversa. Todas nascem com `Feature.passes = False`; o flow vira uma por vez até não
-sobrar nenhuma pendente.
+"""The development flow's feature list, persisted to `.harness/feature_list.json` — the
+"persistent artifact" that survives hard context resets: each session (one feature) reads
+and writes here, without depending on conversation history. All features are born with
+`Feature.passes = False`; the flow turns one at a time until none remain pending.
 
-Mesma tolerância dos demais stores: ausente ou ilegível → lista vazia, nunca derruba o run.
+Same tolerance as the other stores: absent or unreadable → empty list, never brings the
+run down.
 """
 
 from __future__ import annotations
@@ -20,22 +20,22 @@ from harness_engine.atomic_io import write_text_atomic
 _DIR = ".harness"
 _FILE_PATH = ".harness/feature_list.json"
 
-# Teto de caracteres de Feature.description — cota defensiva contra um driver verboso: a
-# descrição é reinjetada no prompt de implement a cada feature, então sem teto ela infla
-# silenciosamente o contexto de toda sessão futura.
+# Ceiling on Feature.description chars — a defensive quota against a verbose driver: the
+# description is reinjected into the implement prompt for every feature, so without a
+# ceiling it silently inflates every future session's context.
 DESCRIPTION_MAX_CHARS = 700
 
 
 @dataclass(frozen=True)
 class Feature:
-    """Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já
-    passa, de quais outras (por id) depende, uma descrição livre (até DESCRIPTION_MAX_CHARS
-    caracteres, reinjetada no prompt de implement) e códigos de referência explícitos do
-    brief (ex.: "RF-003"; vazio quando o brief não cita nenhum).
+    """One feature of the development backlog: priority (lower = higher), whether it
+    already passes, which other ids it depends on, a free-form description (up to
+    DESCRIPTION_MAX_CHARS chars, reinjected into the implement prompt), and explicit
+    reference codes from the brief (e.g. "RF-003"; empty when the brief cites none).
 
-    `depends_on`/`references` são ANULÁVEIS de propósito: um `feature_list.json` gravado
-    por uma versão anterior (sem essas chaves) continua carregando sem lançar — `deps`/
-    `refs` normalizam para quem consome.
+    `depends_on`/`references` are NULLABLE on purpose: a `feature_list.json` written by an
+    earlier version (without these keys) still loads without raising — `deps`/`refs`
+    normalize it for consumers.
     """
 
     id: int
@@ -83,32 +83,33 @@ class Feature:
 
 
 def write(features: list[Feature]) -> None:
-    """Sobrescreve a lista inteira — usada pelo `plan` (session 0) e por mark_passed."""
+    """Overwrites the whole list — used by `plan` (session 0) and mark_passed."""
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         payload = {"items": [f.to_dict() for f in features]}
         write_text_atomic(_FILE_PATH, json.dumps(payload, indent=2))
     except Exception as ex:
-        print(f"[FeatureStore] falha ao gravar: {ex}", file=sys.stderr)
+        print(f"[FeatureStore] failed to write: {ex}", file=sys.stderr)
 
 
 def parse(features_json: str) -> list[Feature]:
-    """Interpreta o array cru de features que o driver devolve no `plan`
-    (`[{"id":1,"title":"...","priority":1}, ...]`). Força `passes = False` (toda feature
-    nasce pendente) e reindexa ids ausentes/duplicados pela ordem. Lista vazia se o JSON
-    não interpretar — o caller re-emite o pedido (loop corretivo), não derruba o run.
+    """Interprets the raw feature array the driver returns from `plan`
+    (`[{"id":1,"title":"...","priority":1}, ...]`). Forces `passes = False` (every feature
+    is born pending) and reindexes missing/duplicate ids by order. Empty list if the JSON
+    doesn't parse — the caller re-issues the request (corrective loop), it doesn't bring
+    the run down.
     """
     try:
         parsed = json.loads(features_json)
         if not isinstance(parsed, list) or len(parsed) == 0:
             return []
 
-        # Reindex primeiro: depends_on só faz sentido referenciando ids já finais, não os
-        # brutos (possivelmente ausentes/duplicados) que vieram do driver.
+        # Reindex first: depends_on only makes sense referencing final ids, not the raw
+        # (possibly missing/duplicate) ones that came from the driver.
         reindexed: list[Feature] = []
         for i, raw in enumerate(parsed):
             if not isinstance(raw, dict):
-                raise TypeError("cada feature deve ser um objeto JSON")
+                raise TypeError("each feature must be a JSON object")
             candidate = Feature.from_dict(raw)
             fid = candidate.id if candidate.id > 0 else i + 1
             reindexed.append(replace(
@@ -122,36 +123,36 @@ def parse(features_json: str) -> list[Feature]:
 
         error = _dependency_graph_error(reindexed)
         if error is not None:
-            print(f"[FeatureStore] grafo de dependências inválido: {error}", file=sys.stderr)
+            print(f"[FeatureStore] invalid dependency graph: {error}", file=sys.stderr)
             return []
 
         return reindexed
     except Exception as ex:
-        print(f"[FeatureStore] falha ao interpretar features: {ex}", file=sys.stderr)
+        print(f"[FeatureStore] failed to parse features: {ex}", file=sys.stderr)
         return []
 
 
 def _truncate_description(description: str) -> str:
-    """Corta em DESCRIPTION_MAX_CHARS caracteres — nunca lança, nunca rejeita a feature
-    inteira por causa disso, só encurta."""
+    """Cuts at DESCRIPTION_MAX_CHARS chars — never raises, never rejects the whole
+    feature over this, only shortens it."""
     return description[:DESCRIPTION_MAX_CHARS]
 
 
 def _dependency_graph_error(features: list[Feature]) -> str | None:
-    """`None` se o grafo de `deps` é válido (todo id existe, sem ciclo); senão, uma
-    descrição do problema. Kahn (ordenação topológica): sobra nó fora do conjunto
-    resolvido ⇒ ciclo. Checa dangling ref primeiro — senão uma dependência fantasma seria
-    contada como eternamente não-resolvida e reportada como "ciclo" quando na verdade é id
-    inválido.
+    """`None` if the `deps` graph is valid (every id exists, no cycle); otherwise a
+    description of the problem. Kahn's algorithm (topological sort): a node left outside
+    the resolved set means a cycle. Dangling refs are checked first — otherwise a phantom
+    dependency would be counted as eternally unresolved and reported as a "cycle" when
+    it's actually an invalid id.
     """
     valid_ids = {f.id for f in features}
 
     dangling = [f"{f.id}->{dep}" for f in features for dep in f.deps if dep not in valid_ids]
     if dangling:
-        return f"dependsOn referencia id(s) inexistente(s): {', '.join(dangling)}"
+        return f"dependsOn references nonexistent id(s): {', '.join(dangling)}"
 
-    # GroupBy tolerante (ids duplicados não são deduplicados pelo reindex): primeiro id
-    # visto define o indegree, mesma escolha do lado .NET.
+    # Tolerant group-by (duplicate ids aren't deduplicated by the reindex): the first id
+    # seen sets the indegree, the same choice made on the .NET side.
     indegree: dict[int, int] = {}
     for f in features:
         if f.id not in indegree:
@@ -179,7 +180,7 @@ def _dependency_graph_error(features: list[Feature]) -> str | None:
         return None
 
     cyclic = [str(fid) for fid in indegree if fid not in resolved]
-    return f"dependência cíclica entre as features: {', '.join(cyclic)}"
+    return f"cyclic dependency among features: {', '.join(cyclic)}"
 
 
 def load() -> list[Feature]:
@@ -194,16 +195,16 @@ def load() -> list[Feature]:
             return []
         return [Feature.from_dict(item) for item in items]
     except Exception as ex:
-        print(f"[FeatureStore] falha ao carregar: {ex}", file=sys.stderr)
+        print(f"[FeatureStore] failed to load: {ex}", file=sys.stderr)
         return []
 
 
 def next_pending() -> Feature | None:
-    """A próxima feature a implementar: a de maior prioridade (menor `priority`) entre as
-    PRONTAS (todo id em `deps` já com `passes == True`); desempate por `id`. `None` quando
-    não há pendência pronta — pode significar fim de fato (nenhuma pendência) ou
-    dependências bloqueadas. "Ready set" de Kahn recalculado a cada chamada sobre a lista
-    carregada — sem estrutura de grafo persistida.
+    """The next feature to implement: the highest priority (lowest `priority`) among the
+    READY ones (every id in `deps` already has `passes == True`); ties broken by `id`.
+    `None` when there's no ready pending item — this can mean actual completion (nothing
+    pending) or blocked dependencies. Kahn's "ready set" recomputed on every call over the
+    loaded list — no persisted graph structure.
     """
     features = load()
     passed = {f.id for f in features if f.passes}
@@ -217,7 +218,7 @@ def next_pending() -> Feature | None:
 
 
 def mark_passed(id_: int) -> None:
-    """Marca a feature como concluída e regrava a lista. No-op se o id não existe."""
+    """Marks the feature as complete and rewrites the list. No-op if the id doesn't exist."""
     features = load()
     if not any(f.id == id_ for f in features):
         return
@@ -226,19 +227,19 @@ def mark_passed(id_: int) -> None:
 
 
 def pending_count() -> int:
-    """Quantas features ainda faltam (`passes == False`)."""
+    """How many features are still pending (`passes == False`)."""
     return sum(1 for f in load() if not f.passes)
 
 
 def all_passing() -> bool:
-    """Há features e todas passaram — condição de término do loop."""
+    """There are features and all of them passed — the loop's termination condition."""
     features = load()
     return len(features) > 0 and all(f.passes for f in features)
 
 
 def reset() -> None:
-    """Apaga a lista do run anterior — o flow PRODUTOR reseta no seu `start`."""
+    """Deletes the previous run's list — the PRODUCER flow resets it on its `start`."""
     try:
         Path(_FILE_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[FeatureStore] falha ao limpar: {ex}", file=sys.stderr)
+        print(f"[FeatureStore] failed to clear: {ex}", file=sys.stderr)

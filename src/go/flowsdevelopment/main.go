@@ -27,14 +27,14 @@ func main() {
 	// driver fixes and resends). `pick` has no validator — it doesn't carry a driver
 	// artifact (the selection is the harness's).
 	validators := map[string]engine.Validator{
-		"plan":      engine.NotEmpty("o array JSON de features [{id,title,priority}]"),
-		"bearings":  engine.NotEmpty("o resumo curto da orientação (pwd, progress, git log)"),
-		"smoke":     engine.NotEmpty("o resultado compacto do smoke test (init.sh + caminho do log)"),
-		"implement": engine.NotEmpty("o resumo curto do que foi implementado"),
+		"plan":      engine.NotEmpty("the JSON array of features [{id,title,priority}]"),
+		"bearings":  engine.NotEmpty("the short bearings summary (pwd, progress, git log)"),
+		"smoke":     engine.NotEmpty("the compact smoke test result (init.sh + log path)"),
+		"implement": engine.NotEmpty("the short summary of what was implemented"),
 		"verify": engine.Matches(`^(PASS\b|FAIL\b)`,
-			"o veredito compacto do self-verify começando com PASS ou FAIL: motivo"),
+			"the compact self-verify verdict starting with PASS or FAIL: reason"),
 		"handoff": engine.Matches(`^([0-9a-f]{6,40}\b|NO_GIT:\s+\S.*)$`,
-			"o hash do commit ou NO_GIT: motivo quando nao houver repositorio Git"),
+			"the commit hash, or NO_GIT: reason when there is no Git repository"),
 	}
 
 	// Own snapshots: if this flow shares .harness/ with other flows (same workspace), it

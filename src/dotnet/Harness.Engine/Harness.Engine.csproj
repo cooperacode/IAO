@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Harness.Engine</RootNamespace>
-    <!-- Liga os analisadores que apontam código incompatível com Native AOT/trimming. -->
+    <!-- Enables the analyzers that flag code incompatible with Native AOT/trimming. -->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 

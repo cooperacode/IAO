@@ -19,7 +19,7 @@ func LoadArtifactTemplate(skillName string) (string, bool) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactTemplate] falha ao ler template de %s: %s\n", skillName, err)
+		fmt.Fprintf(os.Stderr, "[ArtifactTemplate] failed to read template from %s: %s\n", skillName, err)
 		return "", false
 	}
 	return string(data), true

@@ -3,8 +3,8 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O store é o que permite manter o envelope mínimo (economia de tokens): o estado
-/// acumulado fica em arquivo entre invocações, não na janela de contexto.
+/// The store is what keeps the envelope minimal (token savings): the accumulated state
+/// lives in a file between invocations, not in the context window.
 /// </summary>
 public class StateStoreTests : IDisposable
 {
@@ -14,24 +14,24 @@ public class StateStoreTests : IDisposable
     [Fact]
     public void SetEGet_PersistemEntreChamadas()
     {
-        StateStore.Set("descricao", "Login com Google");
+        StateStore.Set("description", "Login with Google");
 
-        Assert.Equal("Login com Google", StateStore.Get("descricao"));
+        Assert.Equal("Login with Google", StateStore.Get("description"));
     }
 
     [Fact]
     public void Get_ChaveInexistente_RetornaNull()
     {
-        Assert.Null(StateStore.Get("nao-existe"));
+        Assert.Null(StateStore.Get("does-not-exist"));
     }
 
     [Fact]
     public void Set_SobrescreveAChaveExistente()
     {
-        StateStore.Set("tipo", "Bug");
-        StateStore.Set("tipo", "Épico");
+        StateStore.Set("type", "Bug");
+        StateStore.Set("type", "Epic");
 
-        Assert.Equal("Épico", StateStore.Get("tipo"));
+        Assert.Equal("Epic", StateStore.Get("type"));
     }
 
     [Fact]
@@ -46,22 +46,22 @@ public class StateStoreTests : IDisposable
     [Fact]
     public void Increment_PreservaOsDadosAcumulados()
     {
-        StateStore.Set("descricao", "x");
+        StateStore.Set("description", "x");
         StateStore.Increment();
 
-        Assert.Equal("x", StateStore.Get("descricao"));
+        Assert.Equal("x", StateStore.Get("description"));
     }
 
     [Fact]
     public void Reset_LimpaContadorEDados()
     {
-        StateStore.Set("descricao", "x");
+        StateStore.Set("description", "x");
         StateStore.Increment();
 
         StateStore.Reset();
 
         Assert.Equal(0, StateStore.Load().Step);
-        Assert.Null(StateStore.Get("descricao"));
+        Assert.Null(StateStore.Get("description"));
     }
 
     [Fact]

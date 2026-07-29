@@ -1,14 +1,15 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Template de saída de um artefato: <c>skills/&lt;name&gt;/ARTIFACT.md</c> com placeholders
-/// <c>{{chave}}</c> substituídos por valores do <see cref="StateStore"/>. A forma markdown
-/// do artefato mora junto da skill que o produz — fora do C#, editável sem recompilar.
-/// Substituição pura de strings: determinística, zero token e AOT-safe.
+/// Output template for an artifact: <c>skills/&lt;name&gt;/ARTIFACT.md</c> with
+/// <c>{{key}}</c> placeholders replaced by values from <see cref="StateStore"/>. The
+/// artifact's markdown shape lives alongside the skill that produces it — outside C#,
+/// editable without recompiling. Pure string substitution: deterministic, zero token, and
+/// AOT-safe.
 /// </summary>
 public static class ArtifactTemplate
 {
-    /// <summary>Lê o template da skill; <c>null</c> se a skill não define um (o caller decide o fallback).</summary>
+    /// <summary>Reads the skill's template; <c>null</c> if the skill doesn't define one (the caller decides the fallback).</summary>
     public static string? Load(string skillName)
     {
         try
@@ -18,14 +19,14 @@ public static class ArtifactTemplate
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ArtifactTemplate] falha ao ler template de {skillName}: {ex.Message}");
+            Console.Error.WriteLine($"[ArtifactTemplate] failed to read {skillName}'s template: {ex.Message}");
             return null;
         }
     }
 
     /// <summary>
-    /// Substitui cada <c>{{chave}}</c> pelo valor correspondente. Placeholders sem valor
-    /// permanecem no texto — sinal visível de dado faltante, não erro silencioso.
+    /// Replaces each <c>{{key}}</c> with its corresponding value. Placeholders with no
+    /// value remain in the text — a visible sign of missing data, not a silent error.
     /// </summary>
     public static string Render(string template, IReadOnlyDictionary<string, string> values)
     {

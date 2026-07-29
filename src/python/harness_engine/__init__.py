@@ -1,1 +1,1 @@
-"""Motor reutilizável e domain-agnostic do harness — porta Python de Harness.Engine (.NET)."""
+"""Reusable, domain-agnostic engine for the harness — Python port of Harness.Engine (.NET)."""

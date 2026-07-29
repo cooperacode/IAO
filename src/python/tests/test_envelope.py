@@ -1,4 +1,4 @@
-"""Contrato de dados: o parse precisa tolerar o que modelos realmente devolvem."""
+"""Data contract: parsing needs to tolerate what models actually return."""
 
 import pytest
 
@@ -25,7 +25,7 @@ def test_parse_com_cerca_markdown_tolera():
 
 
 def test_parse_com_texto_ao_redor_extrai_o_objeto():
-    raw = 'Claro! Aqui está: {"type":"text","value":"start","args":[]} — espero ter ajudado.'
+    raw = 'Sure! Here it is: {"type":"text","value":"start","args":[]} — hope that helps.'
 
     envelope = Envelope.parse(raw)
 
@@ -52,9 +52,9 @@ def test_parse_ignora_args_vazios_ou_em_branco():
     [
         "",
         "   ",
-        '{ "type": "text", "value": ',  # JSON truncado
-        "isso não é json",
-        "[1,2,3]",  # não é objeto
+        '{ "type": "text", "value": ',  # truncated JSON
+        "this is not json",
+        "[1,2,3]",  # not an object
     ],
 )
 def test_parse_entrada_invalida_retorna_none(raw):
@@ -62,7 +62,7 @@ def test_parse_entrada_invalida_retorna_none(raw):
 
 
 def test_to_json_faz_roundtrip():
-    original = Envelope(EnvelopeType.COMMAND, "finalize", ("Épico",))
+    original = Envelope(EnvelopeType.COMMAND, "finalize", ("Epic",))
 
     roundtrip = Envelope.parse(original.to_json())
 
@@ -93,6 +93,6 @@ def test_to_json_com_context_faz_roundtrip():
 
 
 def test_to_json_sem_context_nao_emite_o_campo():
-    envelope = Envelope(EnvelopeType.COMMAND, "finalize", ("Épico",))
+    envelope = Envelope(EnvelopeType.COMMAND, "finalize", ("Epic",))
 
     assert "context" not in envelope.to_json()

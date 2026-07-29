@@ -2,7 +2,7 @@ using Harness.Engine;
 
 namespace Harness.Engine.Tests;
 
-/// <summary>Contrato de dados: o parse precisa tolerar o que modelos realmente devolvem.</summary>
+/// <summary>Data contract: parsing needs to tolerate what models actually return.</summary>
 public class EnvelopeTests
 {
     [Fact]
@@ -35,7 +35,7 @@ public class EnvelopeTests
     [Fact]
     public void Parse_ComTextoAoRedor_ExtraiOObjeto()
     {
-        var raw = """Claro! Aqui está: {"type":"text","value":"start","args":[]} — espero ter ajudado.""";
+        var raw = """Sure! Here it is: {"type":"text","value":"start","args":[]} — hope that helps.""";
 
         var envelope = Envelope.Parse(raw);
 
@@ -64,9 +64,9 @@ public class EnvelopeTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("{ \"type\": \"text\", \"value\": ")]   // JSON truncado
-    [InlineData("isso não é json")]
-    [InlineData("[1,2,3]")]                             // não é objeto
+    [InlineData("{ \"type\": \"text\", \"value\": ")]   // truncated JSON
+    [InlineData("this is not json")]
+    [InlineData("[1,2,3]")]                             // not an object
     public void Parse_EntradaInvalida_RetornaNull(string raw)
     {
         Assert.Null(Envelope.Parse(raw));
@@ -75,7 +75,7 @@ public class EnvelopeTests
     [Fact]
     public void ToJson_FazRoundtrip()
     {
-        var original = new Envelope(EnvelopeType.Command, "finalize", ["Épico"]);
+        var original = new Envelope(EnvelopeType.Command, "finalize", ["Epic"]);
 
         var roundtrip = Envelope.Parse(original.ToJson());
 
@@ -118,7 +118,7 @@ public class EnvelopeTests
     [Fact]
     public void ToJson_SemContext_NaoEmiteOCampo()
     {
-        var envelope = new Envelope(EnvelopeType.Command, "finalize", ["Épico"]);
+        var envelope = new Envelope(EnvelopeType.Command, "finalize", ["Epic"]);
 
         Assert.DoesNotContain("context", envelope.ToJson());
     }

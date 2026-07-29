@@ -1,6 +1,6 @@
-//! Resolve caminhos relativos ao diretório de trabalho (raiz do repo, de onde o driver
-//! invoca o harness), com fallback para o diretório do binário. Compartilhado por quem
-//! injeta arquivos no prompt (skills, docs).
+//! Resolves paths relative to the working directory (repo root, from where the driver
+//! invokes the harness), falling back to the binary's directory. Shared by anything that
+//! injects files into the prompt (skills, docs).
 
 use std::path::PathBuf;
 
@@ -15,12 +15,12 @@ pub fn resolve(path: &str) -> String {
         if from_cwd.exists() {
             let canonical = from_cwd.canonicalize().unwrap_or_else(|_| from_cwd.clone());
             let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
-            // Compara caminhos JÁ canonicalizados: um symlink dentro do CWD pode apontar
-            // para fora dele, e `canonicalize()` segue o link sem avisar. Se o resultado
-            // real escapou da base, trata como não encontrado e cai no fallback do
-            // binário — containment completo contra uma raiz de política assinada
-            // (capability broker) é trabalho de fase futura (RFC §6.3); isto é só a
-            // rejeição mínima de escape por symlink.
+            // Compares paths that are ALREADY canonicalized: a symlink inside the CWD can
+            // point outside of it, and `canonicalize()` follows the link without warning.
+            // If the real result escaped the base, treat it as not found and fall back to
+            // the binary — full containment against a signed policy root (capability
+            // broker) is future-phase work (RFC §6.3); this is just the minimal rejection
+            // of a symlink escape.
             if canonical.starts_with(&canonical_cwd) {
                 return canonical.to_string_lossy().to_string();
             }
@@ -76,10 +76,10 @@ mod tests {
         let previous = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
 
-        // Não existindo em lugar nenhum, cai no fallback relativo ao binário — nunca
-        // panica, e não fica preso ao cwd do teste, que é justamente o caso em que nada
-        // existe lá.
-        let resolved = resolve("um-arquivo-que-nao-existe.md");
+        // Not existing anywhere, it falls back to the path relative to the binary — never
+        // panics, and doesn't get stuck on the test's cwd, which is exactly the case where
+        // nothing exists there.
+        let resolved = resolve("a-file-that-does-not-exist.md");
 
         std::env::set_current_dir(previous).unwrap();
 
@@ -89,7 +89,7 @@ mod tests {
             .unwrap()
             .canonicalize()
             .unwrap();
-        let expected = exe_dir.join("um-arquivo-que-nao-existe.md");
+        let expected = exe_dir.join("a-file-that-does-not-exist.md");
         assert_eq!(resolved, expected.to_string_lossy());
     }
 
@@ -99,8 +99,8 @@ mod tests {
         let _guard = lock_cwd();
 
         let outside = tempfile::tempdir().unwrap();
-        let secret = outside.path().join("secreto.txt");
-        std::fs::write(&secret, "segredo").unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, "secret").unwrap();
         let secret_canonical = secret.canonicalize().unwrap();
 
         let cwd_dir = tempfile::tempdir().unwrap();
@@ -112,8 +112,8 @@ mod tests {
 
         std::env::set_current_dir(previous).unwrap();
 
-        // O link existe e aponta para fora do CWD — não deve ser devolvido como o caminho
-        // real que ele resolve (isso vazaria o escape); cai no fallback do binário.
+        // The link exists and points outside the CWD — it must not be returned as the
+        // real path it resolves to (that would leak the escape); falls back to the binary.
         assert_ne!(resolved, secret_canonical.to_string_lossy());
     }
 }

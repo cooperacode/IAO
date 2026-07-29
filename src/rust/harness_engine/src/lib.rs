@@ -31,10 +31,10 @@ pub use run_config_store::RunConfig;
 pub use task_registry::Action;
 pub use trace::TraceEntry;
 
-// `current_dir` (e no futuro env vars usadas por outros módulos) são globais ao processo:
-// testes de módulos diferentes que os mutam precisam compartilhar UM único lock, senão
-// corrida entre `cargo test` threads = flakiness (equivalente ao
-// `DisableTestParallelization` do lado .NET).
+// `current_dir` (and, in the future, env vars used by other modules) are process-global:
+// tests from different modules that mutate them need to share a SINGLE lock, otherwise a
+// race between `cargo test` threads = flakiness (equivalent to the .NET side's
+// `DisableTestParallelization`).
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::sync::{Mutex, MutexGuard};

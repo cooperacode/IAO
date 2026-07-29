@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Escafoldo pelo dev-initializer: verifica uma feature do port Rust do harness.
-# No começo roda a suíte completa (cargo test --workspace); pode ganhar filtro por feature
-# mais adiante. Idempotente. Imprime PASS/FAIL e sai 0/não-zero de acordo.
+# Scaffolded by dev-initializer: verifies a feature of the harness's Rust port.
+# For now runs the full suite (cargo test --workspace); may get a per-feature filter
+# later. Idempotent. Prints PASS/FAIL and exits 0/non-zero accordingly.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
@@ -16,9 +16,9 @@ fi
 ./init.sh
 
 if cargo test --workspace; then
-  echo "PASS: feature ${FEATURE_ID} verificada"
+  echo "PASS: feature ${FEATURE_ID} verified"
   exit 0
 else
-  echo "FAIL: cargo test --workspace falhou para feature ${FEATURE_ID}"
+  echo "FAIL: cargo test --workspace failed for feature ${FEATURE_ID}"
   exit 1
 fi

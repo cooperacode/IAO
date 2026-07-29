@@ -1,23 +1,23 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Estado persistido entre invocações: contador de passos + dados acumulados do domínio.
-/// Tipo de topo (não aninhado) para ser servível pelo source generator do System.Text.Json,
-/// requisito do Native AOT.
+/// State persisted across invocations: step counter + accumulated domain data.
+/// Top-level type (not nested) so it's servable by System.Text.Json's source generator, a
+/// Native AOT requirement.
 /// </summary>
 public record HarnessState(int Step, Dictionary<string, string> Data)
 {
-    // Custo acumulado do run, insumo do teto de custo (ver TaskRegistry). Propriedades
-    // init (não posicionais) para não quebrar os `new HarnessState(0, new())` existentes;
-    // fora do Data para não poluir a checagem de completude da avaliação.
+    // Run's accumulated cost, input for the cost ceiling (see TaskRegistry). init
+    // properties (non-positional) so they don't break the existing `new HarnessState(0, new())`
+    // calls; kept out of Data so it doesn't pollute the evaluation's completeness check.
 
-    /// <summary>Chars de instrução emitidos até aqui — o proxy de custo (soma dos <c>InstructionChars</c>).</summary>
+    /// <summary>Instruction chars emitted so far — the cost proxy (sum of <c>InstructionChars</c>).</summary>
     public int CostChars { get; init; }
 
     /// <summary>
-    /// Contexto do driver (ex.: <c>{"driver":"claude code"}</c>) capturado no envelope
-    /// <c>start</c> — sobrevive entre invocações para que <see cref="PromptFormatter"/>
-    /// possa reinjetá-lo em toda saída sem que cada task o repasse manualmente.
+    /// Driver context (e.g. <c>{"driver":"claude code"}</c>) captured in the <c>start</c>
+    /// envelope — survives across invocations so <see cref="PromptFormatter"/> can
+    /// reinject it into every output without each task passing it along manually.
     /// </summary>
     public Dictionary<string, string>? Context { get; init; }
 }

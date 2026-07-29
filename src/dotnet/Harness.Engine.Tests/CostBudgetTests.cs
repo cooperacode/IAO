@@ -1,9 +1,9 @@
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Teto de custo (Fase 2): o acumulado de chars de instrução emitida — a única medida que
-/// a engine atesta sozinha — corta o run quando excede o teto. Desligado (0) por padrão —
-/// só o teto de passos vale.
+/// Cost ceiling (Phase 2): the accumulated emitted-instruction chars — the only measure
+/// the engine can attest on its own — cuts off the run when it exceeds the ceiling. Off
+/// (0) by default — only the step ceiling applies.
 /// </summary>
 public class CostBudgetTests : IDisposable
 {
@@ -12,7 +12,7 @@ public class CostBudgetTests : IDisposable
     private static readonly Dictionary<string, Func<Envelope?, string>> Tasks = new()
     {
         ["start"] = _ => "PROMPT_START",
-        ["classify"] = _ => "PROMPT_CLASSIFY_0123456789", // 25 chars por turno
+        ["classify"] = _ => "PROMPT_CLASSIFY_0123456789", // 25 chars per turn
     };
 
     public CostBudgetTests() => Clean();
@@ -38,15 +38,15 @@ public class CostBudgetTests : IDisposable
     {
         Configure("""{"maxInstructionChars":30}""");
 
-        // 1º turno: acumulado 0 → passa; emite 25 chars.
+        // 1st turn: accumulated 0 → passes; emits 25 chars.
         var first = TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
         Assert.NotEqual("stop", first);
 
-        // 2º turno: acumulado 25 → passa; emite mais 25 (total 50).
+        // 2nd turn: accumulated 25 → passes; emits 25 more (total 50).
         var second = TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
         Assert.NotEqual("stop", second);
 
-        // 3º turno: acumulado 50 > 30 → corte por orçamento.
+        // 3rd turn: accumulated 50 > 30 → cut off by budget.
         var third = TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
         Assert.Equal("stop", third);
 
@@ -56,7 +56,7 @@ public class CostBudgetTests : IDisposable
     [Fact]
     public void Dispatch_SemTetoConfigurado_NaoCortaPorCusto()
     {
-        // Default: maxInstructionChars=0 → só o teto de passos governa.
+        // Default: maxInstructionChars=0 → only the step ceiling governs.
         for (var i = 0; i < 5; i++)
         {
             var result = TaskRegistry.Dispatch(
@@ -73,11 +73,11 @@ public class CostBudgetTests : IDisposable
         TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
         TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
 
-        // Novo workflow: reset zera CostChars junto com o Step.
+        // New workflow: reset zeros out CostChars along with Step.
         var result = TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks);
 
         Assert.NotEqual("stop", result);
-        // O reset zera o acumulado, restando apenas a instrução emitida pelo próprio start.
+        // The reset zeros the accumulator, leaving only the instruction emitted by start itself.
         Assert.Equal("PROMPT_START".Length, StateStore.Load().CostChars);
     }
 }

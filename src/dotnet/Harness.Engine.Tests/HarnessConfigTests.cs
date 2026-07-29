@@ -1,8 +1,9 @@
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Config externa (`harness.json`): ausente ou inválida NUNCA derruba o run — cai nos
-/// defaults; parcial preenche só o que veio (zero = desligado apenas nos tetos de custo).
+/// External config (`harness.json`): missing or invalid NEVER brings down the run — falls
+/// back to defaults; partial only fills in what came in (zero = disabled, only for the
+/// cost ceilings).
 /// </summary>
 public class HarnessConfigTests : IDisposable
 {
@@ -26,8 +27,8 @@ public class HarnessConfigTests : IDisposable
 
         Assert.Equal(HarnessConfig.Default, config);
         Assert.Equal(12, config.MaxSteps);
-        Assert.Equal(0, config.MaxInstructionChars); // teto de custo desligado por padrão
-        Assert.Equal(0, config.TimeoutMs);           // guarda de tempo desligada por padrão
+        Assert.Equal(0, config.MaxInstructionChars); // cost ceiling disabled by default
+        Assert.Equal(0, config.TimeoutMs);           // time guard disabled by default
     }
 
     [Fact]
@@ -37,7 +38,7 @@ public class HarnessConfigTests : IDisposable
 
         Assert.Equal(30000, HarnessConfig.Load().TimeoutMs);
 
-        // Valor negativo é normalizado para 0 (desligado), como o teto de custo.
+        // A negative value is normalized to 0 (disabled), like the cost ceiling.
         File.WriteAllText(ConfigPath, """{"timeoutMs":-5}""");
         Assert.Equal(0, HarnessConfig.Load().TimeoutMs);
     }
@@ -72,7 +73,7 @@ public class HarnessConfigTests : IDisposable
     [Fact]
     public void Load_ArquivoInvalido_CaiNosDefaultsSemLancar()
     {
-        File.WriteAllText(ConfigPath, "{ isso não é json ");
+        File.WriteAllText(ConfigPath, "{ this is not json ");
 
         var config = HarnessConfig.Load();
 
@@ -82,8 +83,8 @@ public class HarnessConfigTests : IDisposable
     [Fact]
     public void Load_TimeoutAcimaDoTeto_ClampaNoMaximoPermitido()
     {
-        // harness.json vive no working directory do agente supervisionado: mesmo que ele
-        // edite o arquivo para se auto-conceder um timeout enorme, o teto duro prevalece.
+        // harness.json lives in the supervised agent's working directory: even if it
+        // edits the file to grant itself a huge timeout, the hard ceiling prevails.
         File.WriteAllText(ConfigPath, """{"timeoutMs":99999999}""");
 
         Assert.Equal(5 * 60_000, HarnessConfig.Load().TimeoutMs);
@@ -110,7 +111,7 @@ public class HarnessConfigTests : IDisposable
     public void Load_EnvVarInvalida_EIgnorada()
     {
         File.WriteAllText(ConfigPath, """{"timeoutMs":1000}""");
-        Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", "não é número");
+        Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", "not a number");
 
         Assert.Equal(1000, HarnessConfig.Load().TimeoutMs);
     }

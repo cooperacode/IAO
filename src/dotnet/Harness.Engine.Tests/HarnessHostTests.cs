@@ -3,9 +3,9 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O <see cref="HarnessHost"/> congela a evidência (trajetória + estado) ao concluir um
-/// flow. A regressão que importa: a avaliação — que também termina em <c>stop</c> — NÃO
-/// pode sobrescrever a evidência do refinamento, senão a reavaliação lê o trace errado.
+/// <see cref="HarnessHost"/> freezes the evidence (trajectory + state) when a flow
+/// completes. The regression that matters: evaluation — which also ends in <c>stop</c> —
+/// must NOT overwrite refinement's evidence, or a re-evaluation reads the wrong trace.
 /// </summary>
 public class HarnessHostTests : IDisposable
 {
@@ -33,34 +33,34 @@ public class HarnessHostTests : IDisposable
     [Fact]
     public void Run_AoConcluir_CongelaTrajetoriaEEstadoNoCaminhoDoFlow()
     {
-        StateStore.Set("descricao", "x");
+        StateStore.Set("description", "x");
 
         HarnessHost.Run(["""{"type":"command","value":"finalize"}"""], FinalizeTask);
 
         Assert.True(File.Exists(Trace.LastRunPath));
         Assert.True(File.Exists(StateStore.LastRunStatePath));
-        Assert.Equal("x", StateStore.LoadFrom(StateStore.LastRunStatePath).Data.GetValueOrDefault("descricao"));
+        Assert.Equal("x", StateStore.LoadFrom(StateStore.LastRunStatePath).Data.GetValueOrDefault("description"));
     }
 
     [Fact]
     public void Run_Avaliacao_NaoSobrescreveAEvidenciaDoRefinamento()
     {
-        // 1) Refinamento conclui → last-run.* guarda a evidência do refinamento.
-        StateStore.Set("descricao", "refino");
+        // 1) Refinement completes → last-run.* keeps refinement's evidence.
+        StateStore.Set("description", "refinement");
         HarnessHost.Run(["""{"type":"command","value":"finalize"}"""], FinalizeTask);
-        var refinoTrace = File.ReadAllText(Trace.LastRunPath);
+        var refinementTrace = File.ReadAllText(Trace.LastRunPath);
 
-        // 2) Avaliação conclui usando os SEUS caminhos (last-evaluation.*).
+        // 2) Evaluation completes using ITS OWN paths (last-evaluation.*).
         HarnessHost.Run(
             ["""{"type":"text","value":"start"}"""],
             new Dictionary<string, Func<Envelope?, string>> { ["start"] = _ => "stop" },
             Trace.LastEvaluationPath,
             StateStore.LastEvaluationStatePath);
 
-        // A avaliação gravou a própria evidência...
+        // Evaluation wrote its own evidence...
         Assert.True(File.Exists(Trace.LastEvaluationPath));
-        // ...e NÃO tocou na do refinamento.
-        Assert.Equal(refinoTrace, File.ReadAllText(Trace.LastRunPath));
-        Assert.Equal("refino", StateStore.LoadFrom(StateStore.LastRunStatePath).Data.GetValueOrDefault("descricao"));
+        // ...and did NOT touch refinement's.
+        Assert.Equal(refinementTrace, File.ReadAllText(Trace.LastRunPath));
+        Assert.Equal("refinement", StateStore.LoadFrom(StateStore.LastRunStatePath).Data.GetValueOrDefault("description"));
     }
 }

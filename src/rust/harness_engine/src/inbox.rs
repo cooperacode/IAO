@@ -1,41 +1,41 @@
-//! Canal de entrada por arquivo — alternativa ao argv para o envelope do turno.
+//! File-based input channel — an alternative to argv for the turn's envelope.
 //!
-//! O transporte por argumento single-quoted (`./run-development-rs.sh '<JSON>'`) tem uma
-//! falha estrutural: se o driver-LLM esquece a aspa de fechamento, o shell entra em modo
-//! de continuação e trava ANTES do binário rodar — nenhuma validação da engine pode
-//! pegá-lo. A inbox tira o payload da sintaxe de aspas do shell: o agente escreve o JSON
-//! aqui com sua ferramenta de escrita de arquivo (não passa por shell) e roda o script SEM
-//! argumentos, um comando bare que não tem como ficar não-terminado.
+//! The single-quoted argument transport (`./run-development-rs.sh '<JSON>'`) has a
+//! structural flaw: if the LLM driver forgets the closing quote, the shell enters
+//! continuation mode and hangs BEFORE the binary even runs — no engine validation can
+//! catch it. The inbox takes the payload out of the shell's quoting syntax: the agent
+//! writes the JSON here with its file-write tool (never touching a shell) and runs the
+//! script with NO arguments, a bare command that has no way to be left unterminated.
 
 const DIR: &str = ".harness";
 pub const PATH: &str = ".harness/inbox.json";
 
-// Rastro do último envelope consumido — evita reprocessar um JSON velho se o script
-// rodar duas vezes sem reescrita, e serve de diagnóstico.
+// Trail of the last consumed envelope — avoids reprocessing a stale JSON if the script
+// runs twice without a rewrite, and doubles as a diagnostic.
 pub const CONSUMED_PATH: &str = ".harness/inbox.consumed.json";
 
-/// Conteúdo bruto da inbox, ou `""` se ela não existir. O parse/sanitização fica no `Envelope`.
+/// Raw inbox content, or `""` if it doesn't exist. Parsing/sanitization lives in `Envelope`.
 pub fn read() -> String {
     let p = std::path::Path::new(PATH);
     if p.exists() {
         match std::fs::read_to_string(p) {
             Ok(content) => return content,
-            Err(e) => eprintln!("[Inbox] falha ao ler {PATH}: {e}"),
+            Err(e) => eprintln!("[Inbox] failed to read {PATH}: {e}"),
         }
     }
     String::new()
 }
 
-/// Move a inbox consumida para `CONSUMED_PATH` após um parse bem-sucedido.
+/// Moves the consumed inbox to `CONSUMED_PATH` after a successful parse.
 pub fn consume() {
     let p = std::path::Path::new(PATH);
     if p.exists() {
         if let Err(e) = std::fs::create_dir_all(DIR) {
-            eprintln!("[Inbox] falha ao consumir {PATH}: {e}");
+            eprintln!("[Inbox] failed to consume {PATH}: {e}");
             return;
         }
         if let Err(e) = std::fs::rename(p, CONSUMED_PATH) {
-            eprintln!("[Inbox] falha ao consumir {PATH}: {e}");
+            eprintln!("[Inbox] failed to consume {PATH}: {e}");
         }
     }
 }

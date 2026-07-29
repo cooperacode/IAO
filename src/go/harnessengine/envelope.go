@@ -70,7 +70,7 @@ func ParseEnvelope(value string) *Envelope {
 
 func tryParseEnvelope(value string) (*Envelope, error) {
 	if strings.TrimSpace(value) == "" {
-		return nil, fmt.Errorf("O envelope JSON não pode ser nulo ou vazio.")
+		return nil, fmt.Errorf("The JSON envelope cannot be null or empty.")
 	}
 
 	sanitized := sanitizeEnvelope(value)

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Wrapper de invocação estável do flow de desenvolvimento long-running.
+# Stable invocation wrapper for the long-running development flow.
 # start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 #
-# Sem artefato publicado, builda a DLL sob demanda na primeira chamada (dotnet build).
-# Para pacote distribuído sem runtime .NET, publique Native AOT antes:
+# With no published artifact, builds the DLL on demand on the first call (dotnet build).
+# For a package distributed without the .NET runtime, publish Native AOT beforehand:
 #   dotnet publish src/dotnet/Flows.Development/Flows.Development.csproj -c Release -r <RID>
 #
 # RIDs: osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64
@@ -13,16 +13,16 @@ PROJECT="$DIR/src/dotnet/Flows.Development/Flows.Development.csproj"
 BASE="$DIR/src/dotnet/Flows.Development/bin/Release/net10.0"
 DLL="$BASE/Flows.Development.dll"
 
-# 1) binário nativo (qualquer RID publicado)
+# 1) native binary (any published RID)
 for native in "$BASE"/*/publish/Flows.Development; do
   if [[ -x "$native" && ! -d "$native" ]]; then
     exec "$native" "$@"
   fi
 done
 
-# 2) DLL via host dotnet — builda sob demanda se ainda não existir
+# 2) DLL via the dotnet host — builds on demand if it doesn't exist yet
 if [[ ! -f "$DLL" ]]; then
-  echo "[harness] nenhum artefato encontrado — buildando ($PROJECT)…" >&2
+  echo "[harness] no artifact found — building ($PROJECT)…" >&2
   dotnet build "$PROJECT" -c Release
 fi
 

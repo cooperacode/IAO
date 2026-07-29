@@ -1,7 +1,7 @@
-"""Transporte por inbox: com argv vazio, o dispatch lê o envelope de
-`.harness/inbox.json` — o canal que elimina o hang de aspas do shell (o driver escreve um
-arquivo em vez de montar um argumento single-quoted). Argv continua tendo precedência
-(retrocompatível)."""
+"""Inbox transport: with empty argv, dispatch reads the envelope from
+`.harness/inbox.json` — the channel that eliminates the shell-quoting hang (the driver
+writes a file instead of assembling a single-quoted argument). Argv still takes
+precedence (backward compatible)."""
 
 from pathlib import Path
 
@@ -27,13 +27,13 @@ def test_dispatch_sem_argumento_le_envelope_da_inbox():
 
 
 def test_dispatch_da_inbox_preserva_os_args():
-    # O caso que travava o shell: payload com aspas simples e quebras de linha. Via
-    # arquivo, chega íntegro sem escaping frágil.
-    _write_inbox('{ "type": "command", "value": "classify", "args": ["exportar \'PDF\'\\ne \'CSV\'"] }')
+    # The case that used to hang the shell: a payload with single quotes and line
+    # breaks. Via file, it arrives intact without fragile escaping.
+    _write_inbox('{ "type": "command", "value": "classify", "args": ["export \'PDF\'\\nand \'CSV\'"] }')
 
     result = task_registry.dispatch([], TASKS)
 
-    assert result == "PROMPT_CLASSIFY:exportar 'PDF'\ne 'CSV'"
+    assert result == "PROMPT_CLASSIFY:export 'PDF'\nand 'CSV'"
 
 
 def test_dispatch_da_inbox_consome_o_arquivo_apos_parse():
@@ -41,8 +41,8 @@ def test_dispatch_da_inbox_consome_o_arquivo_apos_parse():
 
     task_registry.dispatch([], TASKS)
 
-    assert not Path(inbox.PATH).exists(), "a inbox deve ser movida após um parse bem-sucedido"
-    assert Path(inbox.CONSUMED_PATH).exists(), "o envelope consumido deve ficar como rastro"
+    assert not Path(inbox.PATH).exists(), "the inbox should be moved after a successful parse"
+    assert Path(inbox.CONSUMED_PATH).exists(), "the consumed envelope should remain as a trail"
 
 
 def test_dispatch_inbox_invalida_retorna_erro_e_nao_consome():
@@ -50,16 +50,16 @@ def test_dispatch_inbox_invalida_retorna_erro_e_nao_consome():
 
     result = task_registry.dispatch([], TASKS)
 
-    assert result.startswith("ERRO")
-    # JSON quebrado permanece disponível para inspeção — não some silenciosamente.
-    assert Path(inbox.PATH).exists(), "uma inbox que não parseia não deve ser consumida"
+    assert result.startswith("HARNESS PROTOCOL ERROR")
+    # Broken JSON remains available for inspection — it doesn't silently disappear.
+    assert Path(inbox.PATH).exists(), "an inbox that fails to parse must not be consumed"
 
 
 def test_dispatch_argv_tem_precedencia_sobre_inbox():
-    # Argv presente → transporte clássico; a inbox é ignorada e permanece intacta.
-    _write_inbox('{ "type": "command", "value": "classify", "args": ["da-inbox"] }')
+    # Argv present → classic transport; the inbox is ignored and stays intact.
+    _write_inbox('{ "type": "command", "value": "classify", "args": ["from-inbox"] }')
 
     result = task_registry.dispatch(['{"type":"text","value":"start"}'], TASKS)
 
     assert result == "PROMPT_START"
-    assert Path(inbox.PATH).exists(), "com argv, a inbox não deve ser tocada"
+    assert Path(inbox.PATH).exists(), "with argv, the inbox must not be touched"

@@ -1,4 +1,4 @@
-"""Monta o bloco de instrução (input/response/skills) entregue ao modelo."""
+"""Assembles the instruction block (input/response/skills) delivered to the model."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ def skills(*names: str) -> dict[str, str]:
 
 
 def format(input_text: str, output: Envelope, skills_map: dict[str, str] | None = None) -> str:
-    # Reinjeta o contexto do driver (capturado no `start`, ver task_registry/state_store)
-    # em toda saída — ponto único, para que nenhuma task precise repassá-lo manualmente.
+    # Reinjects the driver context (captured on `start`, see task_registry/state_store)
+    # into every output — a single point, so no task needs to pass it along manually.
     enriched = output if output.context is not None else replace(output, context=state_store.get_context())
 
     return (

@@ -1,11 +1,11 @@
-//! Persiste cada artefato do flow no seu próprio arquivo (`.harness/<nome>.md`) e mantém
-//! um manifesto (`.harness/artifacts.json`) com a ordem de gravação. O manifesto é o
-//! contrato entre produtor e consumidor: a avaliação lê os artefatos por ele, sem
-//! depender de um relatório combinado.
+//! Persists each flow artifact in its own file (`.harness/<name>.md`) and keeps a
+//! manifest (`.harness/artifacts.json`) with the write order. The manifest is the
+//! contract between producer and consumer: the evaluation reads artifacts through it,
+//! without depending on a combined report.
 //!
-//! Só o flow PRODUTOR reseta o manifesto (no seu `start`) — o consumidor (avaliação) não
-//! toca nele, pela mesma razão dos snapshots de `trace`/`state_store`: o start do
-//! avaliador não pode apagar a evidência que ele mesmo vai ler.
+//! Only the PRODUCER flow resets the manifest (on its `start`) — the consumer
+//! (evaluation) doesn't touch it, for the same reason as the `trace`/`state_store`
+//! snapshots: the evaluator's start must not erase the evidence it's about to read.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,35 +18,34 @@ struct ArtifactManifest {
     files: Vec<String>,
 }
 
-/// Apaga os artefatos do run anterior e o manifesto — chamado pelo flow produtor no start.
+/// Deletes the previous run's artifacts and the manifest — called by the producer flow on start.
 pub fn reset() {
     for file in files() {
         let p = std::path::Path::new(&file);
         if p.exists() {
             if let Err(e) = std::fs::remove_file(p) {
-                eprintln!("[ArtifactStore] falha ao limpar: {e}");
+                eprintln!("[ArtifactStore] failed to clear: {e}");
             }
         }
     }
     let manifest = std::path::Path::new(MANIFEST_PATH);
     if manifest.exists() {
         if let Err(e) = std::fs::remove_file(manifest) {
-            eprintln!("[ArtifactStore] falha ao limpar: {e}");
+            eprintln!("[ArtifactStore] failed to clear: {e}");
         }
     }
 }
 
-/// Grava `.harness/<nome>.md` e registra o caminho no manifesto (uma vez, em ordem de
-/// chegada).
+/// Writes `.harness/<name>.md` and registers the path in the manifest (once, in arrival order).
 pub fn write(name: &str, content: &str) -> String {
     let path = format!("{DIR}/{name}.md");
 
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[ArtifactStore] falha ao gravar {name}: {e}");
+        eprintln!("[ArtifactStore] failed to write {name}: {e}");
         return path;
     }
     if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(&path), content) {
-        eprintln!("[ArtifactStore] falha ao gravar {name}: {e}");
+        eprintln!("[ArtifactStore] failed to write {name}: {e}");
         return path;
     }
 
@@ -59,7 +58,7 @@ pub fn write(name: &str, content: &str) -> String {
     path
 }
 
-/// Lê um único artefato por nome (ex.: para reinjeção em prompts). "" se ausente/ilegível.
+/// Reads a single artifact by name (e.g. for reinjection into prompts). "" if missing/unreadable.
 pub fn read(name: &str) -> String {
     let path = format!("{DIR}/{name}.md");
     let p = std::path::Path::new(&path);
@@ -67,14 +66,14 @@ pub fn read(name: &str) -> String {
     if p.exists() {
         match std::fs::read_to_string(p) {
             Ok(content) => return content,
-            Err(e) => eprintln!("[ArtifactStore] falha ao ler {name}: {e}"),
+            Err(e) => eprintln!("[ArtifactStore] failed to read {name}: {e}"),
         }
     }
 
     String::new()
 }
 
-/// Caminhos registrados no manifesto, na ordem em que foram gravados.
+/// Paths registered in the manifest, in the order they were written.
 pub fn files() -> Vec<String> {
     let p = std::path::Path::new(MANIFEST_PATH);
     if p.exists() {
@@ -86,18 +85,18 @@ pub fn files() -> Vec<String> {
 
         match loaded {
             Ok(manifest) => return manifest.files,
-            Err(e) => eprintln!("[ArtifactStore] falha ao carregar manifesto: {e}"),
+            Err(e) => eprintln!("[ArtifactStore] failed to load manifest: {e}"),
         }
     }
     Vec::new()
 }
 
-/// Há artefatos gravados e presentes no disco?
+/// Are there artifacts registered and present on disk?
 pub fn has_artifacts() -> bool {
     files().iter().any(|f| std::path::Path::new(f).exists())
 }
 
-/// Concatena os artefatos na ordem do manifesto — o insumo do juiz-LLM.
+/// Concatenates the artifacts in manifest order — the input to the LLM judge.
 pub fn read_all() -> String {
     let mut parts = String::new();
 
@@ -109,7 +108,7 @@ pub fn read_all() -> String {
                     parts.push_str(content.trim_end());
                     parts.push('\n');
                 }
-                Err(e) => eprintln!("[ArtifactStore] falha ao ler {file}: {e}"),
+                Err(e) => eprintln!("[ArtifactStore] failed to read {file}: {e}"),
             }
         }
     }
@@ -119,7 +118,7 @@ pub fn read_all() -> String {
 
 fn save_manifest(file_list: &[String]) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[ArtifactStore] falha ao carregar manifesto: {e}");
+        eprintln!("[ArtifactStore] failed to load manifest: {e}");
         return;
     }
     let manifest = ArtifactManifest {
@@ -130,10 +129,10 @@ fn save_manifest(file_list: &[String]) {
             if let Err(e) =
                 crate::atomic_io::write_atomic(std::path::Path::new(MANIFEST_PATH), &json)
             {
-                eprintln!("[ArtifactStore] falha ao carregar manifesto: {e}");
+                eprintln!("[ArtifactStore] failed to load manifest: {e}");
             }
         }
-        Err(e) => eprintln!("[ArtifactStore] falha ao carregar manifesto: {e}"),
+        Err(e) => eprintln!("[ArtifactStore] failed to load manifest: {e}"),
     }
 }
 
@@ -170,7 +169,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        let path = write("historias", "# Histórias\n\n1. a");
+        let path = write("stories", "# Stories\n\n1. a");
 
         assert!(std::path::Path::new(&path).exists());
         assert_eq!(files(), vec![path]);
@@ -181,8 +180,8 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        write("historias", "v1");
-        let path = write("historias", "v2");
+        write("stories", "v1");
+        let path = write("stories", "v2");
 
         assert_eq!(files().len(), 1);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "v2");
@@ -194,11 +193,11 @@ mod tests {
         let _iso = Isolated::new();
 
         write("item", "# Item");
-        write("historias", "# Histórias");
+        write("stories", "# Stories");
 
         let all = read_all();
 
-        assert!(all.find("# Item") < all.find("# Histórias"));
+        assert!(all.find("# Item") < all.find("# Stories"));
     }
 
     #[test]
@@ -206,9 +205,9 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        write("brief", "# Brief\n\nConstrua X.");
+        write("brief", "# Brief\n\nBuild X.");
 
-        assert_eq!(read("brief"), "# Brief\n\nConstrua X.");
+        assert_eq!(read("brief"), "# Brief\n\nBuild X.");
     }
 
     #[test]
@@ -216,7 +215,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        assert_eq!(read("nunca-gravado"), "");
+        assert_eq!(read("never-written"), "");
     }
 
     #[test]
@@ -224,7 +223,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        let path = write("historias", "x");
+        let path = write("stories", "x");
 
         reset();
 

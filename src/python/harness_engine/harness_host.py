@@ -1,5 +1,5 @@
-"""Ponto de entrada reutilizável de um flow. Um novo domínio só precisa definir suas
-tasks e chamar `run` — toda a orquestração (dispatch, guardas, transporte) fica aqui.
+"""Reusable entry point for a flow. A new domain only needs to define its tasks and call
+`run` — all the orchestration (dispatch, guards, transport) lives here.
 """
 
 from __future__ import annotations
@@ -21,13 +21,13 @@ def run(
 ) -> int:
     result = task_registry.dispatch(args, tasks, validators, max_steps, should_reset_on_start)
 
-    # Run concluído: congela trajetória E estado final como evidência para a avaliação
-    # posterior, antes que um próximo flow resete o trace e o state vivos. Cada flow
-    # publica no SEU caminho, para que a avaliação não sobrescreva o que ela mesma consome.
+    # Run finished: freezes the trajectory AND final state as evidence for later
+    # evaluation, before a next flow resets the live trace and state. Each flow publishes
+    # to ITS OWN path, so evaluation doesn't overwrite what it itself consumes.
     if result == "stop":
         trace.snapshot(trace_snapshot_path)
         state_store.snapshot(state_snapshot_path)
 
-    # Único ponto que escreve no stdout — o canal de transporte do harness.
+    # The single place that writes to stdout — the harness transport channel.
     print(result)
     return 0

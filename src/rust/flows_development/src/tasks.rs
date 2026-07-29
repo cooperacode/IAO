@@ -1,14 +1,13 @@
-//! Flow de desenvolvimento long-running (padrão "Effective harnesses for long-running
-//! agents", Anthropic). Um inicializador (session 0) expande o brief numa lista
-//! priorizada de features; depois um loop de sessões de contexto fresco implementa UMA
-//! feature por vez:
+//! Long-running development flow ("Effective harnesses for long-running agents" pattern,
+//! Anthropic). An initializer (session 0) expands the brief into a prioritized feature
+//! list; then a loop of fresh-context sessions implements ONE feature at a time:
 //!
 //!   start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 //!
-//! O estado que atravessa os hard resets vive em artefatos persistentes: o
-//! `feature_store` (feature_list.json, do harness) e o progress.txt + git (do
-//! diretório-alvo). Cada task só faz efeitos e decide o PRÓXIMO comando (o envelope de
-//! saída) — a orquestração (dispatch, guardas globais, transporte) fica em
+//! The state that survives the hard resets lives in persistent artifacts: the
+//! `feature_store` (feature_list.json, the harness's) and progress.txt + git (the target
+//! directory's). Each task only performs effects and decides the NEXT command (the output
+//! envelope) — orchestration (dispatch, global guards, transport) lives in
 //! `harness_engine`.
 
 use harness_engine::Envelope;
@@ -19,29 +18,29 @@ use harness_engine::{
 
 use crate::{handoff, prompts, verify};
 
-// Guardas locais deste flow (o teto global do harness.json, 12, é curto demais p/ um
-// loop). Poucas features + teto de passos POR feature: barra o loop implement↔verify que
-// nunca fecha.
+// Local guards for this flow (harness.json's global ceiling, 12, is too short for a
+// loop). Few features + a per-feature step ceiling: bars the implement↔verify loop that
+// never closes.
 pub const MAX_FEATURES: usize = 10;
 pub const STEPS_PER_FEATURE: i32 = 8;
 
-// Teto de passos efetivo passado ao harness_host (override do global): folga p/ o pior
-// caso de MAX_FEATURES features gastando STEPS_PER_FEATURE cada, mais o start/plan e as
-// fronteiras.
+// Effective step ceiling passed to harness_host (override of the global one): slack for
+// the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus
+// start/plan and the boundaries.
 pub const STEP_BUDGET: i32 = MAX_FEATURES as i32 * STEPS_PER_FEATURE + 8;
 
-// Chaves do state_store::Data usadas por este módulo e por prompts.rs/handoff.rs — const
-// em vez de string literal repetida, para que um typo em qualquer um dos arquivos vire
-// erro de compilação em vez de uma chave nunca lida.
+// state_store::Data keys used by this module and by prompts.rs/handoff.rs — a const
+// instead of a repeated string literal, so a typo in any of these files becomes a
+// compile error instead of a key that's never read.
 pub const CURRENT_FEATURE_ID_KEY: &str = "current_feature_id";
 pub const CURRENT_FEATURE_TITLE_KEY: &str = "current_feature_title";
 pub const CURRENT_FEATURE_SUMMARY_KEY: &str = "current_feature_summary";
 pub const CURRENT_FEATURE_VERIFY_KEY: &str = "current_feature_verify";
 pub const FEATURE_STEPS_KEY: &str = "feature_steps";
 
-// Nome do artefato do brief no artifact_store (.harness/brief.md) — persistido em start()
-// para poder ser reinjetado em bearings/implement (prompts.rs), já que o conteúdo lido de
-// docs/ antes só existia como variável local do turno do inicializador.
+// Name of the brief artifact in artifact_store (.harness/brief.md) — persisted in start()
+// so it can be reinjected into bearings/implement (prompts.rs), since the content read
+// from docs/ used to exist only as a local variable of the initializer's turn.
 pub const BRIEF_ARTIFACT_NAME: &str = "brief";
 
 fn state(key: &str) -> String {
@@ -53,36 +52,37 @@ fn docs_folder() -> String {
 }
 
 pub fn start() -> String {
-    // Uma sessão anterior (talvez de outro driver — os tokens acabaram numa IDE e outra
-    // assume) pode ter morrido no meio de uma feature. Reiniciar jogaria fora trabalho em
-    // andamento; retomar é seguro e determinístico: bearings é reentrante por construção
-    // (só rearma a guarda por feature) e o próximo pick() reseleciona a mesma feature,
-    // ainda pendente — sem precisar saber exatamente onde a sessão anterior parou.
+    // A previous session (maybe from another driver — tokens ran out in one IDE and
+    // another takes over) may have died mid-feature. Restarting would throw away work in
+    // progress; resuming is safe and deterministic: bearings is reentrant by construction
+    // (it only rearms the per-feature guard) and the next pick() reselects the same
+    // feature, still pending — without needing to know exactly where the previous
+    // session stopped.
     if feature_store::pending_count() > 0 {
         eprintln!(
-            "[dev] run em andamento detectado (feature pendente); retomando via bearings em vez de resetar."
+            "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting."
         );
         return prompts::bearings_prompt();
     }
 
-    // Flow PRODUTOR da feature_list: novo run apaga a do run anterior.
+    // Flow that PRODUCES feature_list: a new run erases the previous run's.
     feature_store::reset();
     run_config_store::reset();
-    // Sem isto, um run novo no modo interativo (sem docs/) herdaria silenciosamente o
-    // brief.md de um run anterior — o modo interativo nunca chama artifact_store::write,
-    // então só este reset garante que nenhum brief de um tópico antigo sobrevive.
+    // Without this, a new run in interactive mode (no docs/) would silently inherit the
+    // brief.md from a previous run — interactive mode never calls artifact_store::write,
+    // so only this reset guarantees no brief from an old topic survives.
     artifact_store::reset();
 
-    // Brief (o que construir) vem de docs/ ou, sem docs, do modo interativo.
+    // Brief (what to build) comes from docs/ or, without docs, from interactive mode.
     let folder = docs_folder();
     if !docs_reader::has_docs(&folder) {
         return prompts::initializer_interactive();
     }
 
     let (content, files) = docs_reader::read(&folder);
-    // Persistido para ser reinjetado em bearings/implement (prompts.rs) — antes desta
-    // feature, "content" era só uma variável local deste turno, descartada assim que o
-    // inicializador terminava.
+    // Persisted so it can be reinjected into bearings/implement (prompts.rs) — before
+    // this feature, "content" was only a local variable of this turn, discarded as soon
+    // as the initializer finished.
     artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
     state_store::set("origem", "docs");
     prompts::initializer_prompt(&content, &files)
@@ -91,19 +91,19 @@ pub fn start() -> String {
 pub fn plan(envelope: Option<&Envelope>) -> String {
     let features = feature_store::parse(&arg(envelope));
     if features.is_empty() {
-        return prompts::plan_retry_prompt(); // não interpretou → re-pede (loop corretivo)
+        return prompts::plan_retry_prompt(); // couldn't parse → re-request (corrective loop)
     }
 
-    // Teto de features: fica com as de maior prioridade (menor número).
+    // Feature ceiling: keeps the highest-priority ones (lowest number).
     let mut sorted = features;
     sorted.sort_by_key(|f| (f.priority, f.id));
     let mut capped: Vec<_> = sorted.into_iter().take(MAX_FEATURES).collect();
 
-    // Higieniza depends_on: uma feature sobrevivente pode depender de um id cortado
-    // acima, o que a bloquearia para sempre (nunca "pronta") sem que o driver tenha como
-    // saber — quem cortou foi o harness, não ele. Cortar nós de um grafo já acíclico
-    // (validado em feature_store::parse) não pode criar ciclo, então só a limpeza de
-    // dangling é necessária.
+    // Sanitize depends_on: a surviving feature may depend on an id cut above, which would
+    // block it forever (never "ready") with no way for the driver to know — the harness
+    // did the cutting, not it. Cutting nodes from an already-acyclic graph (validated in
+    // feature_store::parse) can't create a cycle, so only cleaning up dangling references
+    // is needed.
     let capped_ids: std::collections::HashSet<i32> = capped.iter().map(|f| f.id).collect();
     for f in &mut capped {
         f.depends_on.retain(|d| capped_ids.contains(d));
@@ -111,11 +111,12 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 
     feature_store::write(&capped);
 
-    // Comando de verificação, diretório-alvo e identidade do run: reidratados a cada passo
-    // de smoke/verify. Fora de state.json de propósito - ver run_config_store. run_id nasce
-    // aqui (mesmo instante em que start() decidiu que este é um run novo, não retomado) e
-    // sobrevive a toda sessão seguinte sem precisar aparecer no Envelope trocado com o
-    // modelo (RFC §6.4 — identidade do run é concern do control plane, não do contrato).
+    // Verify command, target directory, and run identity: rehydrated on every
+    // smoke/verify step. Kept out of state.json on purpose — see run_config_store. run_id
+    // is born here (the same instant start() decided this is a new run, not a resumed
+    // one) and survives every subsequent session without needing to appear in the
+    // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
+    // concern, not part of the contract).
     run_config_store::write(&RunConfig {
         verify_cmd: arg_at(envelope, 1, "dotnet test"),
         target_dir: arg_at(envelope, 2, "."),
@@ -126,14 +127,14 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 }
 
 pub fn bearings(_envelope: Option<&Envelope>) -> String {
-    // Nova sessão (uma feature): zera o contador da guarda por feature.
+    // New session (one feature): resets the per-feature guard counter.
     state_store::set(FEATURE_STEPS_KEY, "1");
     prompts::smoke_prompt()
 }
 
 pub fn smoke(_envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
-        stop("guarda por feature")
+        stop("per-feature guard")
     } else {
         prompts::pick_prompt()
     }
@@ -141,30 +142,31 @@ pub fn smoke(_envelope: Option<&Envelope>) -> String {
 
 pub fn pick(_envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
-        return stop("guarda por feature");
+        return stop("per-feature guard");
     }
 
-    // Seleção DETERMINÍSTICA: maior prioridade entre as prontas (dependências
-    // satisfeitas). O harness escolhe, não o LLM.
+    // DETERMINISTIC selection: highest priority among the ready ones (dependencies
+    // satisfied). The harness chooses, not the LLM.
     let next = match feature_store::next_pending() {
         Some(f) => f,
         None => {
-            // pending_count() == 0 é o caso normal (handoff já teria fechado antes).
-            // Pendência > 0 só é alcançável por um feature_list.json editado à mão fora
-            // do grafo validado no plan (write/mark_passed não revalidam) — não finge
-            // sucesso nesse caso.
+            // pending_count() == 0 is the normal case (handoff would already have closed
+            // it before). A pending count > 0 is only reachable via a feature_list.json
+            // hand-edited outside the graph validated in plan (write/mark_passed don't
+            // revalidate) — doesn't fake success in that case.
             return if feature_store::pending_count() == 0 {
                 done()
             } else {
-                stop("dependências bloqueadas — nenhuma feature pendente está pronta")
+                stop("blocked dependencies — no pending feature is ready")
             };
         }
     };
 
     state_store::set(CURRENT_FEATURE_ID_KEY, &next.id.to_string());
     state_store::set(CURRENT_FEATURE_TITLE_KEY, &next.title);
-    // Etiqueta o trace com a feature corrente (ver trace::TraceEntry::label) — sem isso,
-    // cada linha do trace.jsonl só tem o step global, sem dizer a qual feature ele pertence.
+    // Tags the trace with the current feature (see trace::TraceEntry::label) — without
+    // this, every trace.jsonl line only has the global step, without saying which
+    // feature it belongs to.
     state_store::set(
         state_store::TRACE_LABEL_KEY,
         &format!("feature:{}", next.id),
@@ -174,7 +176,7 @@ pub fn pick(_envelope: Option<&Envelope>) -> String {
 
 pub fn implement(envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
-        return stop("guarda por feature");
+        return stop("per-feature guard");
     }
 
     let summary = arg(envelope).trim().to_string();
@@ -184,8 +186,8 @@ pub fn implement(envelope: Option<&Envelope>) -> String {
 
     let feature_id: Option<i32> = state(CURRENT_FEATURE_ID_KEY).parse().ok();
     if let Some(feature_id) = feature_id {
-        // target_dir inválido (raiz, home, instalação do harness) -> mesmo caminho de
-        // "não tentou verificação automática" que target_dir sem verify-feature.sh.
+        // Invalid target_dir (root, home, harness install) -> same "automatic
+        // verification not attempted" path as a target_dir with no verify-feature.sh.
         if let Ok(target_dir) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
             let auto = verify::try_automated_verify(feature_id, &target_dir);
             if auto.attempted {
@@ -204,12 +206,13 @@ pub fn implement(envelope: Option<&Envelope>) -> String {
 
 pub fn verify(envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
-        return stop("guarda por feature");
+        return stop("per-feature guard");
     }
 
-    // FALHOU → volta a implementar a MESMA feature (loop de correção, limitado pela
-    // guarda). PASSOU → o harness faz o handoff determinístico (progress + git) sem
-    // gastar um turno do modelo; se falhar, cai no prompt legado de reparo manual.
+    // FAILED → back to implementing the SAME feature (correction loop, bounded by the
+    // guard). PASSED → the harness does the deterministic handoff (progress + git)
+    // without spending a model turn; if it fails, falls back to the legacy manual-repair
+    // prompt.
     let result = arg(envelope).trim().to_string();
     let upper = result.to_uppercase();
     if upper.starts_with("FAIL") {
@@ -233,7 +236,7 @@ pub fn handoff_task(envelope: Option<&Envelope>) -> String {
         feature_store::mark_passed(id);
     }
 
-    // Alguma feature ainda pendente? Sim → próxima sessão (bearings). Não → fim.
+    // Any feature still pending? Yes → next session (bearings). No → done.
     if feature_store::all_passing() {
         done()
     } else {
@@ -241,16 +244,16 @@ pub fn handoff_task(envelope: Option<&Envelope>) -> String {
     }
 }
 
-// --- guardas e término -------------------------------------------------
+// --- guards and termination -------------------------------------------------
 
-/// Incrementa o contador da sessão e sinaliza estouro do teto por feature.
+/// Increments the session counter and signals a per-feature ceiling overrun.
 fn over_feature_budget() -> bool {
     let steps: i32 = state(FEATURE_STEPS_KEY).parse().unwrap_or(0) + 1;
     state_store::set(FEATURE_STEPS_KEY, &steps.to_string());
 
     if steps > STEPS_PER_FEATURE {
         eprintln!(
-            "[dev] feature '{}' excedeu {STEPS_PER_FEATURE} passos; encerrando.",
+            "[dev] feature '{}' exceeded {STEPS_PER_FEATURE} steps; stopping.",
             state(CURRENT_FEATURE_TITLE_KEY)
         );
         return true;
@@ -258,14 +261,14 @@ fn over_feature_budget() -> bool {
     false
 }
 
-pub(crate) fn stop(motivo: &str) -> String {
-    eprintln!("[dev] encerrado por {motivo}. feature_list em .harness/feature_list.json");
+pub(crate) fn stop(reason: &str) -> String {
+    eprintln!("[dev] stopped due to {reason}. feature_list in .harness/feature_list.json");
     "stop".to_string()
 }
 
 pub(crate) fn done() -> String {
     eprintln!(
-        "[dev] todas as {} features passam; concluído. Estado em .harness/feature_list.json",
+        "[dev] all {} features pass; done. State in .harness/feature_list.json",
         feature_store::load().len()
     );
     "stop".to_string()
@@ -295,9 +298,9 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    // `current_dir` é global ao processo — serializa os testes deste crate que o mudam
-    // (mesmo padrão do `test_support::lock_cwd` do harness_engine, mas local: crates
-    // diferentes rodam em binários de teste — logo processos — diferentes).
+    // `current_dir` is global to the process — serializes this crate's tests that change
+    // it (same pattern as harness_engine's `test_support::lock_cwd`, but local: different
+    // crates run in different test binaries — hence different processes).
     static CWD_GUARD: Mutex<()> = Mutex::new(());
 
     struct Isolated {
@@ -345,8 +348,8 @@ mod tests {
         )))
     }
 
-    /// Leva o flow até deixar uma feature escolhida e implementada (pronta p/ verify),
-    /// sem `verify-feature.sh` no target (cai no self-verify manual).
+    /// Advances the flow until a feature is chosen and implemented (ready for verify),
+    /// with no `verify-feature.sh` in the target (falls back to manual self-verify).
     fn advance_to_verify() {
         plan_default();
         bearings(Some(&cmd("bearings", vec!["orientado"])));
@@ -391,11 +394,11 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        advance_to_verify(); // sessão "morre" antes do verify
+        advance_to_verify(); // session "dies" before verify
 
         let result = start();
 
-        assert!(result.contains("NOVA SESSÃO"));
+        assert!(result.contains("NEW SESSION"));
         assert_eq!(feature_store::load().len(), 2);
         assert_eq!(feature_store::pending_count(), 2);
         assert_eq!(run_config_store::load().verify_cmd, "dotnet test");
@@ -407,17 +410,17 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        advance_to_verify(); // sessão "morre" antes do verify
-        let run_id_antes_do_start = run_config_store::load().run_id;
-        assert!(!run_id_antes_do_start.is_empty());
+        advance_to_verify(); // session "dies" before verify
+        let run_id_before_start = run_config_store::load().run_id;
+        assert!(!run_id_before_start.is_empty());
 
         start();
 
-        // Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
-        assert_eq!(run_config_store::load().run_id, run_id_antes_do_start);
+        // Resuming doesn't generate a new run - run identity has to survive "start".
+        assert_eq!(run_config_store::load().run_id, run_id_before_start);
     }
 
-    // --- brief: persistência em start() e reinjeção em bearings/implement -------------
+    // --- brief: persistence in start() and reinjection in bearings/implement -------------
 
     fn given_docs_brief(content: &str) {
         std::fs::create_dir_all("docs").unwrap();
@@ -428,12 +431,12 @@ mod tests {
     fn start_com_docs_populados_persiste_o_brief_no_artifact_store() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        given_docs_brief("# Brief\n\nConstrua um app de tarefas.");
+        given_docs_brief("# Brief\n\nBuild a task-management app.");
 
         start();
 
-        // docs_reader::read antepõe um cabeçalho "## <arquivo>" — contains, não igualdade.
-        assert!(artifact_store::read("brief").contains("Construa um app de tarefas."));
+        // docs_reader::read prepends a "## <file>" heading — contains, not equality.
+        assert!(artifact_store::read("brief").contains("Build a task-management app."));
     }
 
     #[test]
@@ -441,7 +444,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        start(); // sem docs/ → initializer_interactive()
+        start(); // no docs/ → initializer_interactive()
 
         assert_eq!(artifact_store::read("brief"), "");
     }
@@ -450,9 +453,10 @@ mod tests {
     fn start_novo_run_sem_docs_apaga_brief_do_run_anterior() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        // Um segundo run com o MESMO docs/ já se autocorrigiria via overwrite (não prova nada
-        // sobre o reset()); o caso que só artifact_store::reset() resolve é docs→interativo:
-        // o modo interativo nunca chama write, então sem o reset() o brief antigo vazaria.
+        // A second run with the SAME docs/ would already self-correct via overwrite (it
+        // doesn't prove anything about reset()); the case only artifact_store::reset()
+        // solves is docs→interactive: interactive mode never calls write, so without
+        // reset() the old brief would leak through.
         given_docs_brief("brief do topico A");
         start();
         plan_default();
@@ -497,7 +501,7 @@ mod tests {
     fn bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        // Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
+        // No docs/: interactive mode, no persisted brief — the block disappears, not empty.
         let bearings_result = plan_default();
         bearings(Some(&cmd("bearings", vec!["ok"])));
         smoke(Some(&cmd("smoke", vec!["ok"])));
@@ -517,14 +521,14 @@ mod tests {
         smoke(Some(&cmd("smoke", vec!["ok"])));
         pick(Some(&cmd("pick", vec![]))); // escolhe "B" (prioridade 1), sem description/references
         implement(Some(&cmd("implement", vec!["feito"])));
-        verify(Some(&cmd("verify", vec!["PASS"]))); // completa "B", avança automaticamente
+        verify(Some(&cmd("verify", vec!["PASS"]))); // completes "B", auto-advances
         bearings(Some(&cmd("bearings", vec!["ok"])));
         smoke(Some(&cmd("smoke", vec!["ok"])));
 
         let result = pick(Some(&cmd("pick", vec![]))); // agora escolhe "A"
 
-        assert!(result.contains("Descrição: faz X"));
-        assert!(result.contains("Referências do brief: RF-003"));
+        assert!(result.contains("Description: faz X"));
+        assert!(result.contains("Brief references: RF-003"));
     }
 
     #[test]
@@ -537,8 +541,8 @@ mod tests {
 
         let result = pick(Some(&cmd("pick", vec![])));
 
-        assert!(!result.contains("Descrição:"));
-        assert!(!result.contains("Referências do brief:"));
+        assert!(!result.contains("Description:"));
+        assert!(!result.contains("Brief references:"));
     }
 
     #[test]
@@ -551,7 +555,7 @@ mod tests {
         assert_eq!(feature_store::load().len(), 2);
         assert_eq!(run_config_store::load().verify_cmd, "npm test");
         assert_eq!(run_config_store::load().target_dir, "web");
-        assert!(result.contains("NOVA SESSÃO"));
+        assert!(result.contains("NEW SESSION"));
         assert!(result.contains(r#""value":"bearings"#));
     }
 
@@ -573,12 +577,12 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        let result = plan(Some(&cmd("plan", vec!["não é json", "dotnet test", "."])));
+        let result = plan(Some(&cmd("plan", vec!["not json", "dotnet test", "."])));
 
         assert!(feature_store::load().is_empty());
         assert_eq!(run_config_store::load(), RunConfig::default());
         assert!(result.contains(r#""value":"plan"#));
-        assert!(!result.contains("NOVA SESSÃO"));
+        assert!(!result.contains("NEW SESSION"));
     }
 
     #[test]
@@ -591,7 +595,7 @@ mod tests {
 
         assert!(feature_store::load().is_empty());
         assert!(result.contains(r#""value":"plan"#));
-        assert!(!result.contains("NOVA SESSÃO"));
+        assert!(!result.contains("NEW SESSION"));
     }
 
     #[test]
@@ -600,7 +604,7 @@ mod tests {
         let _iso = Isolated::new();
 
         // id 1 (prioridade 1, a melhor) sobrevive ao corte; depende do id 2, cuja
-        // prioridade (1000) é a pior de todas — garantidamente cortado pelo corte em
+        // priority (1000) is the worst of all — guaranteed to be cut by the cutoff at
         // MAX_FEATURES. Os "extras" preenchem as vagas restantes.
         let extras: String = (3..3 + MAX_FEATURES - 1)
             .map(|i| format!(r#"{{"id":{i},"title":"extra{i}","priority":{i}}}"#))
@@ -645,7 +649,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        let json = r#"[{"id":1,"title":"fundação","priority":2},{"id":2,"title":"depende","priority":1,"dependsOn":[1]}]"#;
+        let json = r#"[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"depende","priority":1,"dependsOn":[1]}]"#;
         plan(Some(&cmd("plan", vec![json, "dotnet test", "."])));
         bearings(Some(&cmd("bearings", vec!["ok"])));
         smoke(Some(&cmd("smoke", vec!["ok"])));
@@ -663,7 +667,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        plan_default(); // popula run_config; a lista será sobrescrita a seguir
+        plan_default(); // populates run_config; the list will be overwritten next
         feature_store::write(&[
             Feature {
                 id: 1,
@@ -702,7 +706,7 @@ mod tests {
 
         let result = verify(Some(&cmd("verify", vec!["FAIL: testes vermelhos"])));
 
-        assert!(result.contains("FALHOU"));
+        assert!(result.contains("FAILED"));
         assert!(result.contains(r#""value":"implement"#));
     }
 
@@ -715,7 +719,7 @@ mod tests {
 
         let result = verify(Some(&cmd("verify", vec!["PASS"])));
 
-        assert!(result.contains("NOVA SESSÃO"));
+        assert!(result.contains("NEW SESSION"));
         assert!(!result.contains(r#""value":"handoff"#));
         assert_eq!(feature_store::pending_count(), 1);
         assert!(
@@ -736,7 +740,7 @@ mod tests {
 
         assert!(result.contains(r#""value":"verify"#));
         assert!(!result.contains(r#""value":"handoff"#));
-        assert!(result.contains("não começou"));
+        assert!(result.contains("did not start"));
     }
 
     #[test]
@@ -755,7 +759,7 @@ mod tests {
 
         let result = implement(Some(&cmd("implement", vec!["implementei"])));
 
-        assert!(result.contains("NOVA SESSÃO"));
+        assert!(result.contains("NEW SESSION"));
         assert!(!result.contains(r#""value":"verify"#));
         assert_eq!(feature_store::pending_count(), 1);
         let progress = std::fs::read_to_string("src/app/progress.txt").unwrap();
@@ -780,7 +784,7 @@ mod tests {
 
         let result = implement(Some(&cmd("implement", vec!["implementei"])));
 
-        assert!(result.contains("FALHOU"));
+        assert!(result.contains("FAILED"));
         assert!(result.contains("feature 2 quebrou"));
         assert!(result.contains(".harness/logs/verify-feature-2.log"));
         assert!(!result.contains("LINHA DETALHADA QUE FICA SO NO LOG"));
@@ -811,7 +815,7 @@ mod tests {
 
         let result = handoff_task(Some(&cmd("handoff", vec!["abc123"])));
 
-        assert!(result.contains("NOVA SESSÃO"));
+        assert!(result.contains("NEW SESSION"));
         assert_eq!(feature_store::pending_count(), 1);
     }
 
@@ -824,7 +828,7 @@ mod tests {
         bearings(Some(&cmd("bearings", vec!["ok"]))); // zera para 1
         state_store::set(FEATURE_STEPS_KEY, &STEPS_PER_FEATURE.to_string()); // no limite
 
-        let result = smoke(Some(&cmd("smoke", vec!["ok"]))); // próximo bump ultrapassa
+        let result = smoke(Some(&cmd("smoke", vec!["ok"]))); // next bump goes over
 
         assert_eq!(result, "stop");
     }

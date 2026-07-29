@@ -1,10 +1,10 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Avaliação em lote sobre um golden set — é o <c>Task Registry (#2)</c> virando registry
-/// de avaliação de verdade: em vez de datasets MMLU/HumanEval, casos de refinamento com a
-/// trajetória e as chaves esperadas. Puramente determinístico (0 tokens): compara a
-/// evidência gravada de cada run contra a expectativa do caso e agrega a taxa de acerto.
+/// Batch evaluation over a golden set — <c>Task Registry (#2)</c> turned into a true
+/// evaluation registry: instead of MMLU/HumanEval datasets, refinement cases with the
+/// expected trajectory and keys. Purely deterministic (0 tokens): compares each run's
+/// recorded evidence against the case's expectation and aggregates the pass rate.
 /// </summary>
 public static class BatchEvaluator
 {
@@ -23,18 +23,19 @@ public static class BatchEvaluator
 }
 
 /// <summary>
-/// Um caso do golden set: o esperado contra o qual a evidência gravada é medida.
-/// <see cref="ExpectPass"/> = <c>false</c> marca um caso <b>negativo intencional</b> — um run
-/// que DEVE reprovar nas métricas (ex.: trajetória perfeita mas conteúdo faltante), usado
-/// para provar que os evaluators pegam a falha. O padrão é <c>true</c>.
+/// A golden-set case: the expectation the recorded evidence is measured against.
+/// <see cref="ExpectPass"/> = <c>false</c> marks an <b>intentional negative</b> case — a
+/// run that MUST fail the metrics (e.g. a perfect trajectory but missing content), used
+/// to prove the evaluators catch the failure. The default is <c>true</c>.
 /// </summary>
 public record GoldenCase(
     string Id, string Description, string[] ExpectedTrajectory, string[] RequiredKeys, bool ExpectPass = true);
 
 /// <summary>
-/// Notas determinísticas de um caso. <see cref="Passed"/> exige acerto pleno nas métricas;
-/// <see cref="Ok"/> é o veredito da suíte — o caso se comportou como o golden set esperava
-/// (um caso negativo intencional é <see cref="Ok"/> justamente quando <see cref="Passed"/> é falso).
+/// A case's deterministic scores. <see cref="Passed"/> requires a full match on the
+/// metrics; <see cref="Ok"/> is the suite's verdict — whether the case behaved as the
+/// golden set expected (an intentional negative case is <see cref="Ok"/> precisely when
+/// <see cref="Passed"/> is false).
 /// </summary>
 public record CaseResult(string Id, IReadOnlyList<Score> Scores, bool ExpectedPass = true)
 {
@@ -42,7 +43,7 @@ public record CaseResult(string Id, IReadOnlyList<Score> Scores, bool ExpectedPa
     public bool Ok => Passed == ExpectedPass;
 }
 
-/// <summary>Agregado do lote: fração de casos que se comportaram como esperado (pronto para CI).</summary>
+/// <summary>Batch aggregate: fraction of cases that behaved as expected (CI-ready).</summary>
 public record BatchResult(IReadOnlyList<CaseResult> Cases)
 {
     public int Total => Cases.Count;

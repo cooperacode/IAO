@@ -3,13 +3,13 @@ using System.Diagnostics;
 namespace Harness.Engine;
 
 /// <summary>
-/// Runner pequeno e shell-safe para comandos Git. A engine fornece o mecanismo; flows decidem
-/// quais comandos rodar e como interpretar o resultado.
+/// Small, shell-safe runner for Git commands. The engine provides the mechanism; flows
+/// decide which commands to run and how to interpret the result.
 /// </summary>
 public static class GitCommand
 {
-    // Diretório vazio e estável usado como core.hooksPath — neutraliza qualquer hook local ou
-    // global do repo-alvo (RFC §6.11). Criado uma vez, idempotente; nunca recebe scripts.
+    // Stable, empty directory used as core.hooksPath — neutralizes any local or global
+    // hook from the target repo (RFC §6.11). Created once, idempotent; never receives scripts.
     private static readonly string NoHooksDir = EnsureNoHooksDir();
 
     private static string EnsureNoHooksDir()
@@ -28,10 +28,10 @@ public static class GitCommand
         process.StartInfo.RedirectStandardError = true;
         process.StartInfo.UseShellExecute = false;
 
-        // Isolamento de Git (RFC §6.11): à frente dos args do chamador, sempre. Neutraliza
-        // hooks (core.hooksPath para um diretório vazio), credential helper (evita prompt ou
-        // vazamento de credencial armazenada) e pager (core.pager=cat evita travar num
-        // subprocesso interativo esperando stdin que nunca chega).
+        // Git isolation (RFC §6.11): always ahead of the caller's args. Neutralizes hooks
+        // (core.hooksPath to an empty directory), the credential helper (avoids a prompt or
+        // a stored-credential leak), and the pager (core.pager=cat avoids hanging in an
+        // interactive subprocess waiting for stdin that never arrives).
         process.StartInfo.ArgumentList.Add("-c");
         process.StartInfo.ArgumentList.Add($"core.hooksPath={NoHooksDir}");
         process.StartInfo.ArgumentList.Add("-c");

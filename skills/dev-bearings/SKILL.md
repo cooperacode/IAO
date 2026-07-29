@@ -1,30 +1,32 @@
 ---
 name: dev-bearings
-description: "orientar-se no início de uma sessão de contexto fresco"
+description: "get your bearings at the start of a fresh-context session"
 ---
 
 # SKILL: get bearings
 
-Você começa uma sessão **fresca**, sem memória das anteriores. Antes de tocar em código,
-reconstrua o contexto a partir dos artefatos persistentes — só eles são confiáveis. Se o prompt
-trouxer um bloco `<brief>`, é o brief original do projeto, persistido pelo harness — releia-o
-para não perder de vista motivação, restrições ou requisitos que nunca viraram uma feature
-própria; ele não substitui `progress.txt`/`git log` para saber onde o trabalho parou.
+You start a **fresh** session, with no memory of previous ones. Before touching any code,
+rebuild context from the persistent artifacts — only they can be trusted. If the prompt
+includes a `<brief>` block, that's the project's original brief, persisted by the harness —
+reread it so you don't lose sight of motivation, constraints, or requirements that never became
+their own feature; it doesn't replace `progress.txt`/`git log` for knowing where the work left
+off.
 
-- `pwd` e liste só o topo do diretório-alvo para saber onde está.
-- Leia só o fim do `progress.txt` (ex.: `tail -n 20 progress.txt`): cada linha traz um
-  timestamp UTC entre colchetes — é o separador leve entre sessões. Use-o para identificar
-  rapidamente a entrada mais recente sem despejar o histórico inteiro no contexto.
-- Rode `git log --oneline -10`: o histórico recente confirma o que os commits registraram.
-- Não abra logs completos por padrão. Se precisar investigar um log em `.harness/logs/`, leia
-  primeiro só um trecho pequeno (`tail -n 80`, busca por erro, arquivo específico).
+- `pwd` and list only the top of the target directory to know where you are.
+- Read only the tail of `progress.txt` (e.g. `tail -n 20 progress.txt`): each line carries a
+  UTC timestamp in brackets — it's the lightweight separator between sessions. Use it to
+  quickly spot the most recent entry without dumping the whole history into context.
+- Run `git log --oneline -10`: the recent history confirms what the commits recorded.
+- Don't open full logs by default. If you need to investigate a log under `.harness/logs/`,
+  read only a small excerpt first (`tail -n 80`, search for the error, a specific file).
 
-Se `progress.txt` ainda não existir (primeira feature do harness rodando neste diretório —
-comum em app brownfield que nunca foi tocado pelo harness antes), crie-o agora com uma linha
-inicial de contexto, e não confie no `git log -15` geral do projeto para se orientar: num
-repositório grande e preexistente, os commits recentes podem ser de outra equipe/período e não
-dizer nada sobre a mudança em curso. Nesse caso, oriente-se pelo `<brief>` (quando presente) e
-pelo estado real do código relevante à feature atual, não pelo histórico do projeto inteiro.
+If `progress.txt` doesn't exist yet (the harness's first feature running in this directory —
+common for a brownfield app the harness has never touched before), create it now with an
+initial context line, and don't rely on the project's general `git log -15` to get your
+bearings: in a large, pre-existing repository, recent commits may belong to another
+team/period and say nothing about the change underway. In that case, get your bearings from
+the `<brief>` (when present) and the actual state of the code relevant to the current feature,
+not the whole project's history.
 
-Não confie em suposições sobre o estado — verifique. Resuma em `$NOTE`, em 2–4 linhas, o que
-você encontrou e onde o trabalho parou. Não cole logs, diffs ou listagens longas no `$NOTE`.
+Don't trust assumptions about the state — verify it. Summarize in `$NOTE`, in 2-4 lines, what
+you found and where the work left off. Don't paste logs, diffs, or long listings into `$NOTE`.

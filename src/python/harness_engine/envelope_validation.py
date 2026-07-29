@@ -1,9 +1,10 @@
-"""Predicados determinísticos e baratos para validar se o valor devolvido pelo driver
-atende à expectativa da task — ANTES de persisti-lo e seguir o flow. Falhou → task_registry
-devolve um erro corretivo tipado e o driver reenvia (loop corretivo, não término mudo).
+"""Deterministic, cheap predicates to validate whether the value the driver returned
+meets the task's expectation — BEFORE persisting it and advancing the flow. Failed →
+task_registry returns a typed corrective error and the driver resends (corrective loop,
+not silent termination).
 
-Validação semântica profunda continua sendo trabalho do juiz-LLM na avaliação; aqui mora
-só o que é checável em código, com zero token.
+Deep semantic validation is still the LLM judge's job during evaluation; only what is
+checkable in code, at zero token cost, lives here.
 """
 
 from __future__ import annotations
@@ -32,20 +33,20 @@ class ValidationResult:
 
 
 def not_empty(expectation: str) -> Validator:
-    """O primeiro arg existe e não é vazio/whitespace."""
+    """The first arg exists and is not empty/whitespace."""
 
     def validator(envelope: Envelope) -> ValidationResult:
         return (
             ValidationResult.passed()
             if _first_arg(envelope)
-            else ValidationResult.fail(f"O argumento esperado veio vazio. Esperado: {expectation}.")
+            else ValidationResult.fail(f"The expected argument was empty. Expected: {expectation}.")
         )
 
     return validator
 
 
 def min_lines(count: int, expectation: str) -> Validator:
-    """O primeiro arg tem ao menos `count` linhas não vazias (contando `\\n` literais)."""
+    """The first arg has at least `count` non-empty lines (counting literal `\\n` too)."""
 
     def validator(envelope: Envelope) -> ValidationResult:
         lines = _lines(_first_arg(envelope))
@@ -53,8 +54,8 @@ def min_lines(count: int, expectation: str) -> Validator:
             ValidationResult.passed()
             if lines >= count
             else ValidationResult.fail(
-                f"O argumento tem {lines} linha(s) úteis, mas a task espera ao menos {count}. "
-                f"Esperado: {expectation}."
+                f"The argument has {lines} non-empty line(s), but the task expects at least {count}. "
+                f"Expected: {expectation}."
             )
         )
 
@@ -62,33 +63,33 @@ def min_lines(count: int, expectation: str) -> Validator:
 
 
 def contains_number(expectation: str) -> Validator:
-    """O primeiro arg contém ao menos um número."""
+    """The first arg contains at least one number."""
 
     def validator(envelope: Envelope) -> ValidationResult:
         return (
             ValidationResult.passed()
             if re.search(r"\d", _first_arg(envelope))
-            else ValidationResult.fail(f"O argumento não contém nenhum número. Esperado: {expectation}.")
+            else ValidationResult.fail(f"The argument does not contain any number. Expected: {expectation}.")
         )
 
     return validator
 
 
 def matches(pattern: str, expectation: str) -> Validator:
-    """O primeiro arg casa com o padrão (case-insensitive)."""
+    """The first arg matches the pattern (case-insensitive)."""
 
     def validator(envelope: Envelope) -> ValidationResult:
         return (
             ValidationResult.passed()
             if re.search(pattern, _first_arg(envelope), re.IGNORECASE)
-            else ValidationResult.fail(f"O argumento não atende ao formato esperado. Esperado: {expectation}.")
+            else ValidationResult.fail(f"The argument does not match the expected format. Expected: {expectation}.")
         )
 
     return validator
 
 
 def all_of(*validators: Validator) -> Validator:
-    """Composição: todos os predicados precisam passar; o primeiro que falhar dá a razão."""
+    """Composition: every predicate must pass; the first one that fails supplies the reason."""
 
     def validator(envelope: Envelope) -> ValidationResult:
         for v in validators:
@@ -104,8 +105,8 @@ def _first_arg(envelope: Envelope) -> str:
     return envelope.args[0].strip() if envelope.args else ""
 
 
-# Artefatos trafegam como string JSON de uma linha com \n literais (ver o aviso "Compact"
-# dos flows) — conta tanto quebras reais quanto escapadas.
+# Artifacts travel as a single-line JSON string with literal \n (see the "Compact" warning
+# in the flows) — counts both real and escaped line breaks.
 def _lines(value: str) -> int:
     parts = re.split(r"\n|\\n", value)
     return sum(1 for part in parts if part.strip())

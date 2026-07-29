@@ -1,9 +1,9 @@
-"""Lê um conjunto de documentos (`*.md` e `*.txt`) de uma pasta para injetar no prompt.
-É a entrada alternativa ao input interativo: o flow lê o material já existente (specs,
-notas, transcrições) e o modelo sintetiza um brief a partir dele.
+"""Reads a set of documents (`*.md` and `*.txt`) from a folder to inject into the prompt.
+It is the alternative input to the interactive one: the flow reads material that already
+exists (specs, notes, transcripts) and the model synthesizes a brief from it.
 
-Análogo a como prompt_formatter injeta skills — a leitura é determinística (feita em
-código), só a síntese fica com o modelo.
+Analogous to how prompt_formatter injects skills — the reading is deterministic (done in
+code), only the synthesis is left to the model.
 """
 
 from __future__ import annotations
@@ -17,20 +17,20 @@ _EXTENSIONS = {".md", ".txt"}
 
 
 def _max_chars() -> int:
-    # Teto de caracteres: injetar docs gigantes queima tokens de forma silenciosa. Ao
-    # exceder, trunca e avisa no stderr. Valor vem do harness.json (ou do default).
+    # Char ceiling: injecting giant docs silently burns tokens. When exceeded, truncates
+    # and warns on stderr. Value comes from harness.json (or the default).
     return harness_config.current().docs_max_chars
 
 
 def has_docs(folder: str) -> bool:
-    """Existe a pasta e há ao menos um arquivo `*.md`/`*.txt`?"""
+    """Does the folder exist and does it have at least one `*.md`/`*.txt` file?"""
     directory = Path(path_resolver.resolve(folder))
     return directory.is_dir() and len(_files(directory)) > 0
 
 
 def read(folder: str) -> tuple[str, list[str]]:
-    """Concatena os documentos em ordem alfabética, cada um sob um cabeçalho
-    `## <nome-do-arquivo>`, e devolve também a lista de nomes (para citar as fontes)."""
+    """Concatenates the documents in alphabetical order, each under a
+    `## <file-name>` heading, and also returns the list of names (to cite the sources)."""
     directory = Path(path_resolver.resolve(folder))
     if not directory.is_dir():
         return "", []
@@ -45,7 +45,7 @@ def read(folder: str) -> tuple[str, list[str]]:
         try:
             text = path.read_text()
         except Exception as ex:
-            print(f"[DocsReader] falha ao ler {path.name}: {ex}", file=sys.stderr)
+            print(f"[DocsReader] failed to read {path.name}: {ex}", file=sys.stderr)
             continue
 
         names.append(path.name)
@@ -54,10 +54,10 @@ def read(folder: str) -> tuple[str, list[str]]:
         total_len += len(chunk.encode("utf-8"))
 
         if total_len > max_chars:
-            print(f"[DocsReader] conteúdo excedeu {max_chars} bytes (UTF-8); truncando em {path.name}.", file=sys.stderr)
-            # Corta em bytes, não em codepoints (Apêndice B item 1 do RFC): decode com
-            # errors="ignore" descarta automaticamente qualquer sequência multibyte
-            # cortada ao meio na borda do limite.
+            print(f"[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {path.name}.", file=sys.stderr)
+            # Cuts at bytes, not codepoints (RFC Appendix B item 1): decoding with
+            # errors="ignore" automatically discards any multibyte sequence cut in half
+            # at the limit's edge.
             truncated_bytes = "".join(parts).encode("utf-8")[:max_chars]
             content = truncated_bytes.decode("utf-8", errors="ignore")
             return content.rstrip(), names

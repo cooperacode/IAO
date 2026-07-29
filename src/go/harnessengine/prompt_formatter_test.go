@@ -25,7 +25,7 @@ func TestFormat_PersistedContext_ReinjectedIntoOutputEnvelope(t *testing.T) {
 	SetContext(map[string]string{"driver": "claude code"})
 	output := NewEnvelope(EnvelopeType.Command, "plan", nil)
 
-	result := Format("faça algo", output, nil)
+	result := Format("do something", output, nil)
 
 	if !strings.Contains(result, `"context":{"driver":"claude code"}`) {
 		t.Fatalf("unexpected result: %s", result)
@@ -37,7 +37,7 @@ func TestFormat_NoPersistedContext_OmitsField(t *testing.T) {
 
 	output := NewEnvelope(EnvelopeType.Command, "plan", nil)
 
-	result := Format("faça algo", output, nil)
+	result := Format("do something", output, nil)
 
 	if strings.Contains(result, "context") {
 		t.Fatalf("unexpected context in result: %s", result)
@@ -49,11 +49,11 @@ func TestFormat_ContextAlreadySetByTask_IsNotOverwritten(t *testing.T) {
 
 	SetContext(map[string]string{"driver": "claude code"})
 	output := NewEnvelope(EnvelopeType.Command, "plan", nil)
-	output.Context = map[string]string{"driver": "explicito"}
+	output.Context = map[string]string{"driver": "explicit"}
 
-	result := Format("faça algo", output, nil)
+	result := Format("do something", output, nil)
 
-	if !strings.Contains(result, "explicito") || strings.Contains(result, "claude code") {
+	if !strings.Contains(result, "explicit") || strings.Contains(result, "claude code") {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }

@@ -1,4 +1,4 @@
-"""Estado persistido entre invocações: contador de passos + dados acumulados do domínio."""
+"""State persisted between invocations: step counter + accumulated domain data."""
 
 from __future__ import annotations
 
@@ -10,12 +10,12 @@ class HarnessState:
     step: int
     data: dict[str, str] = field(default_factory=dict)
 
-    # Custo acumulado do run, insumo do teto de custo (ver task_registry).
+    # Accumulated cost of the run, input to the cost ceiling (see task_registry).
     cost_chars: int = 0
 
-    # Contexto do driver (ex.: {"driver": "claude code"}) capturado no envelope `start` —
-    # sobrevive entre invocações para que prompt_formatter possa reinjetá-lo em toda saída
-    # sem que cada task o repasse manualmente.
+    # Driver context (e.g. {"driver": "claude code"}) captured in the `start` envelope —
+    # survives between invocations so prompt_formatter can reinject it into every output
+    # without each task having to pass it along manually.
     context: dict[str, str] | None = None
 
     def to_dict(self) -> dict[str, object]:

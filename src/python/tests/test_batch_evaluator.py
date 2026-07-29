@@ -1,5 +1,5 @@
-"""O lote é o task registry como registry de avaliação: agrega os evaluators
-determinísticos sobre um golden set. Puro — testado sem disco nem LLM."""
+"""The batch is the task registry as an evaluation registry: aggregates the
+deterministic evaluators over a golden set. Pure — tested without disk or an LLM."""
 
 from harness_engine import batch_evaluator
 from harness_engine.golden_case_store import GoldenCase
@@ -7,7 +7,7 @@ from harness_engine.harness_state import HarnessState
 from harness_engine.trace import TraceEntry, TraceOutcome
 
 HAPPY_PATH = ["start", "classify", "split", "acceptance", "estimate", "risks", "ready_check", "finalize"]
-KEYS = ["descricao", "tipo", "veredito"]
+KEYS = ["description", "type", "verdict"]
 
 
 def _trace_of(commands: list[str]) -> list[TraceEntry]:
@@ -28,7 +28,7 @@ def _state_with(*filled_keys: str) -> HarnessState:
 
 
 def test_evaluate_run_perfeito_passa_todas_as_metricas():
-    golden = GoldenCase("ok", "caso bom", tuple(HAPPY_PATH), tuple(KEYS))
+    golden = GoldenCase("ok", "good case", tuple(HAPPY_PATH), tuple(KEYS))
 
     result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with(*KEYS))
 
@@ -39,7 +39,7 @@ def test_evaluate_run_perfeito_passa_todas_as_metricas():
 
 
 def test_evaluate_trajetoria_incompleta_reprova():
-    golden = GoldenCase("ruim", "pulou passos", tuple(HAPPY_PATH), tuple(KEYS))
+    golden = GoldenCase("ruim", "skipped steps", tuple(HAPPY_PATH), tuple(KEYS))
 
     result = batch_evaluator.evaluate(golden, _trace_of(["start", "classify", "finalize"]), _state_with(*KEYS))
 
@@ -48,21 +48,21 @@ def test_evaluate_trajetoria_incompleta_reprova():
 
 
 def test_evaluate_estado_incompleto_reprova():
-    golden = GoldenCase("faltou", "sem veredito", tuple(HAPPY_PATH), tuple(KEYS))
+    golden = GoldenCase("faltou", "no verdict", tuple(HAPPY_PATH), tuple(KEYS))
 
-    result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with("descricao", "tipo"))
+    result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with("description", "type"))
 
     assert not result.passed
     assert any(s.metric == "completeness" and not s.passed for s in result.scores)
 
 
 def test_evaluate_all_agrega_taxa_de_acerto():
-    bom = GoldenCase("bom", "", tuple(HAPPY_PATH), tuple(KEYS))
-    ruim = GoldenCase("ruim", "", tuple(HAPPY_PATH), tuple(KEYS))
+    good = GoldenCase("bom", "", tuple(HAPPY_PATH), tuple(KEYS))
+    bad = GoldenCase("ruim", "", tuple(HAPPY_PATH), tuple(KEYS))
 
     batch = batch_evaluator.evaluate_all([
-        (bom, _trace_of(HAPPY_PATH), _state_with(*KEYS)),
-        (ruim, _trace_of(["start", "classify"]), _state_with(*KEYS)),
+        (good, _trace_of(HAPPY_PATH), _state_with(*KEYS)),
+        (bad, _trace_of(["start", "classify"]), _state_with(*KEYS)),
     ])
 
     assert batch.total == 2
@@ -75,31 +75,31 @@ def test_evaluate_all_lote_vazio_pass_rate_zero():
 
 
 def test_evaluate_caso_negativo_intencional_que_reprova_nas_metricas_conta_como_ok():
-    golden = GoldenCase("negativo", "trajetória ok, conteúdo faltando", tuple(HAPPY_PATH), tuple(KEYS), expect_pass=False)
+    golden = GoldenCase("negativo", "trajectory ok, missing content", tuple(HAPPY_PATH), tuple(KEYS), expect_pass=False)
 
-    result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with("descricao", "tipo"))  # faltou veredito
+    result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with("description", "type"))  # missing verdict
 
-    assert not result.passed  # reprova nas métricas...
-    assert result.ok  # ...que é exatamente o comportamento esperado
+    assert not result.passed  # fails the metrics...
+    assert result.ok  # ...which is exactly the expected behavior
 
 
 def test_evaluate_caso_negativo_que_deixa_de_reprovar_conta_como_falha():
-    golden = GoldenCase("negativo", "deveria reprovar", tuple(HAPPY_PATH), tuple(KEYS), expect_pass=False)
+    golden = GoldenCase("negativo", "should fail", tuple(HAPPY_PATH), tuple(KEYS), expect_pass=False)
 
-    result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with(*KEYS))  # agora passa em tudo
+    result = batch_evaluator.evaluate(golden, _trace_of(HAPPY_PATH), _state_with(*KEYS))  # now passes everything
 
     assert result.passed
-    assert not result.ok  # esperava-se reprovação e não houve → o caso deixou de exercer o que deveria
+    assert not result.ok  # a failure was expected and didn't happen → the case stopped exercising what it should
 
 
 def test_evaluate_all_caso_negativo_que_reprova_mantem_a_suite_verde():
-    bom = GoldenCase("bom", "", tuple(HAPPY_PATH), tuple(KEYS))
+    good = GoldenCase("bom", "", tuple(HAPPY_PATH), tuple(KEYS))
     neg = GoldenCase("neg", "", tuple(HAPPY_PATH), tuple(KEYS), expect_pass=False)
 
     batch = batch_evaluator.evaluate_all([
-        (bom, _trace_of(HAPPY_PATH), _state_with(*KEYS)),
-        (neg, _trace_of(HAPPY_PATH), _state_with("descricao", "tipo")),
+        (good, _trace_of(HAPPY_PATH), _state_with(*KEYS)),
+        (neg, _trace_of(HAPPY_PATH), _state_with("description", "type")),
     ])
 
-    assert batch.passed_count == 2  # ambos se comportaram como esperado
+    assert batch.passed_count == 2  # both behaved as expected
     assert batch.pass_rate == 1.0

@@ -32,11 +32,11 @@ func featureContextBlock(feature engine.Feature) string {
 		return ""
 	}
 
-	references := "nenhuma"
+	references := "none"
 	if len(feature.References) > 0 {
 		references = strings.Join(feature.References, ", ")
 	}
-	return fmt.Sprintf("Descrição: %s\nReferências do brief: %s\n\n", feature.Description, references)
+	return fmt.Sprintf("Description: %s\nBrief references: %s\n\n", feature.Description, references)
 }
 
 // briefBlock reinjects the persisted brief (ArtifactStore, briefArtifactName) at the two
@@ -59,20 +59,20 @@ func briefBlock() string {
 // --- session 0: initializer -----------------------------------------
 
 func InitializerPrompt(content string, files []string) string {
-	input := fmt.Sprintf(`Você é o INICIALIZADOR (session 0). A partir do brief abaixo:
-1. Garanta um repositório Git no diretório-alvo (rode `+"`git init`"+` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
-2. Escafolde o ambiente do projeto-alvo: crie um `+"`init.sh`"+` idempotente que instala dependências e sobe/builda o app, um `+"`verify-feature.sh <id>`"+` idempotente que verifica uma feature, e a estrutura mínima de pastas.
-3. Expanda o brief numa lista PRIORIZADA de features pequenas e verificáveis, cada uma implementável e testável isoladamente. Numere a prioridade (1 = mais alta). Se uma feature só faz sentido depois de outra(s) (ex.: precisa de um schema que outra feature cria), registre os ids delas em `+"`dependsOn`"+` — array vazio quando não houver dependência. O harness respeita essa ordem além da prioridade. Preencha também, para cada feature: `+"`description`"+`, uma descrição objetiva do que ela faz (até %d caracteres); e `+"`references`"+`, os códigos explícitos citados no brief que se relacionam a ela (ex.: "RF-003", "JIRA-142", uma seção nomeada) — array vazio se o brief não citar nenhum código explícito para essa feature (não invente um).
+	input := fmt.Sprintf(`You are the INITIALIZER (session 0). From the brief below:
+1. Ensure there is a Git repository in the target directory (run `+"`git init`"+` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
+2. Scaffold the target project's environment: create an idempotent `+"`init.sh`"+` that installs dependencies and brings up/builds the app, an idempotent `+"`verify-feature.sh <id>`"+` that verifies a feature, and the minimal folder structure.
+3. Expand the brief into a PRIORITIZED list of small, verifiable features, each independently implementable and testable. Number the priority (1 = highest). If a feature only makes sense after another one (e.g. it needs a schema another feature creates), record their ids in `+"`dependsOn`"+` — empty array when there is no dependency. The harness honors this order in addition to priority. Also fill in, for each feature: `+"`description`"+`, an objective description of what it does (up to %d characters); and `+"`references`"+`, the explicit codes cited in the brief that relate to it (e.g. "RF-003", "JIRA-142", a named section) — empty array if the brief cites no explicit code for that feature (do not invent one).
 
-<brief fontes="%s">
+<brief sources="%s">
 %s
 </brief>
 
-Guarde em '%s' um ARRAY JSON: %s
-(só o array, sem passes — toda feature nasce pendente). Guarde o comando de
-verificação em '%s' (ex.: `+"`dotnet test`"+`, `+"`npm test`"+`) e o diretório-alvo
-em '%s'. O `+"`verify-feature.sh`"+` pode rodar a suite completa no começo:
-`+"`./init.sh`"+`, depois `+"`$VERIFY_CMD`"+`, imprimir `+"`PASS: feature <id> ...`"+` e sair 0.`,
+Store a JSON ARRAY in '%s': %s
+(just the array, no passes — every feature is born pending). Store the verify
+command in '%s' (e.g. `+"`dotnet test`"+`, `+"`npm test`"+`) and the target directory
+in '%s'. `+"`verify-feature.sh`"+` may run the full suite at the start:
+`+"`./init.sh`"+`, then `+"`$VERIFY_CMD`"+`, print `+"`PASS: feature <id> ...`"+` and exit 0.`,
 		engine.DescriptionMaxChars, strings.Join(files, ", "), content, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
@@ -81,16 +81,16 @@ em '%s'. O `+"`verify-feature.sh`"+` pode rodar a suite completa no começo:
 }
 
 func InitializerInteractive() string {
-	input := fmt.Sprintf(`Você é o INICIALIZADOR (session 0). Use a #tool:askQuestions e pergunte ao usuário:
-(a) o que construir (objetivo do app), (b) o diretório-alvo e (c) o comando de
-verificação (ex.: `+"`dotnet test`"+`, `+"`npm test`"+`). Depois:
-1. Garanta um repositório Git no diretório-alvo (rode `+"`git init`"+` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
-2. Escafolde o ambiente: crie um `+"`init.sh`"+` idempotente e um `+"`verify-feature.sh <id>`"+` idempotente no diretório-alvo.
-3. Expanda o objetivo numa lista PRIORIZADA de features pequenas e verificáveis. Se uma depender de outra, registre os ids em `+"`dependsOn`"+` (array vazio quando não houver). Preencha também `+"`description`"+` (até %d caracteres) e `+"`references`"+` (códigos explícitos citados pelo usuário para essa feature; array vazio se não houver nenhum).
+	input := fmt.Sprintf(`You are the INITIALIZER (session 0). Use the #tool:askQuestions and ask the user:
+(a) what to build (the app's goal), (b) the target directory, and (c) the verify
+command (e.g. `+"`dotnet test`"+`, `+"`npm test`"+`). Then:
+1. Ensure there is a Git repository in the target directory (run `+"`git init`"+` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
+2. Scaffold the environment: create an idempotent `+"`init.sh`"+` and an idempotent `+"`verify-feature.sh <id>`"+` in the target directory.
+3. Expand the goal into a PRIORITIZED list of small, verifiable features. If one depends on another, record their ids in `+"`dependsOn`"+` (empty array when there is none). Also fill in `+"`description`"+` (up to %d characters) and `+"`references`"+` (explicit codes cited by the user for that feature; empty array if there are none).
 
-Guarde em '%s' um ARRAY JSON %s,
-o comando em '%s' e o diretório em '%s'. O `+"`verify-feature.sh`"+` pode rodar a suite completa no começo:
-`+"`./init.sh`"+`, depois `+"`$VERIFY_CMD`"+`, imprimir `+"`PASS: feature <id> ...`"+` e sair 0.`,
+Store a JSON ARRAY in '%s' %s,
+the command in '%s' and the directory in '%s'. `+"`verify-feature.sh`"+` may run the full suite at the start:
+`+"`./init.sh`"+`, then `+"`$VERIFY_CMD`"+`, print `+"`PASS: feature <id> ...`"+` and exit 0.`,
 		engine.DescriptionMaxChars, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
@@ -99,9 +99,9 @@ o comando em '%s' e o diretório em '%s'. O `+"`verify-feature.sh`"+` pode rodar
 }
 
 func PlanRetryPrompt() string {
-	input := fmt.Sprintf(`Não consegui interpretar a lista de features. Reenvie em '%s' um ARRAY JSON
-válido, exatamente no formato %s — só o array, sem texto ao redor.
-Repita o comando '%s' e '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
+	input := fmt.Sprintf(`Could not parse the feature list. Resend in '%s' a valid JSON
+ARRAY, in exactly the format %s — just the array, no surrounding text.
+Repeat the command '%s' and '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "plan", []string{tokenFeatures, tokenVerifyCmd, tokenTargetDir}),
@@ -111,15 +111,15 @@ Repita o comando '%s' e '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd, to
 // --- per-feature loop (one fresh-context session) ------------------
 
 func BearingsPrompt() string {
-	input := fmt.Sprintf(`=== NOVA SESSÃO (contexto limpo) ===
-Você é um agente de codificação começando uma sessão FRESCA. Não assuma nada da
-sessão anterior — todo o estado está nos artefatos persistentes.
+	input := fmt.Sprintf(`=== NEW SESSION (clean context) ===
+You are a coding agent starting a FRESH session. Do not assume anything from the
+previous session — all state lives in the persistent artifacts.
 %s
-Oriente-se com saída curta: rode `+"`pwd`"+`, leia só o fim do `+"`progress.txt`"+` e o
-`+"`git log --oneline`"+` recente para entender o que já foi feito. Não cole logs
-longos; se precisar preservar detalhe, salve em `+"`.harness/logs/`"+`.
+Get your bearings with short output: run `+"`pwd`"+`, read only the tail of `+"`progress.txt`"+` and the
+recent `+"`git log --oneline`"+` to understand what has already been done. Do not paste long
+logs; if you need to preserve detail, save it in `+"`.harness/logs/`"+`.
 
-Resuma o que encontrou em '%s' em 2-4 linhas.`, briefBlock(), tokenNote)
+Summarize what you found in '%s' in 2-4 lines.`, briefBlock(), tokenNote)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "bearings", []string{tokenNote}),
@@ -127,10 +127,10 @@ Resuma o que encontrou em '%s' em 2-4 linhas.`, briefBlock(), tokenNote)
 }
 
 func SmokePrompt() string {
-	input := fmt.Sprintf("Smoke test: rode `./init.sh` no diretório-alvo (%s) e confirme\n"+
-		"que o baseline sobe/builda sem erro antes de mexer em qualquer feature. Salve a\n"+
-		"saída completa em `.harness/logs/smoke.log` e relate em '%s' só `ok` ou o\n"+
-		"erro principal e o caminho do log.", engine.LoadRunConfig().TargetDir, tokenSmoke)
+	input := fmt.Sprintf("Smoke test: run `./init.sh` in the target directory (%s) and confirm\n"+
+		"the baseline comes up/builds without error before touching any feature. Save the\n"+
+		"full output to `.harness/logs/smoke.log` and report in '%s' just `ok` or the\n"+
+		"main error and the log path.", engine.LoadRunConfig().TargetDir, tokenSmoke)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{tokenSmoke}),
@@ -138,8 +138,8 @@ func SmokePrompt() string {
 }
 
 func PickPrompt() string {
-	input := "Baseline confirmado. Envie o comando `pick` para receber a próxima feature a\n" +
-		"implementar (a de maior prioridade ainda pendente — o harness escolhe)."
+	input := "Baseline confirmed. Send the `pick` command to receive the next feature to\n" +
+		"implement (the highest-priority one still pending — the harness chooses)."
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "pick", []string{}),
@@ -147,10 +147,10 @@ func PickPrompt() string {
 }
 
 func ImplementPrompt(feature engine.Feature) string {
-	input := fmt.Sprintf("Implemente EXCLUSIVAMENTE esta feature, de forma incremental e mínima — nada além\n"+
-		"dela:\n%s\nFeature #%d (prioridade %d): %s\n%sTrabalhe no diretório-alvo (%s). Se rodar comandos com\n"+
-		"saída longa, salve em `.harness/logs/` e não cole logs no resumo. Ao terminar,\n"+
-		"resuma o que implementou em '%s' em uma frase curta.",
+	input := fmt.Sprintf("Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n"+
+		"it:\n%s\nFeature #%d (priority %d): %s\n%sWork in the target directory (%s). If you run commands with\n"+
+		"long output, save it to `.harness/logs/` and do not paste logs into the summary. When done,\n"+
+		"summarize what you implemented in '%s' in one short sentence.",
 		briefBlock(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
 		engine.LoadRunConfig().TargetDir, tokenSummary)
 
@@ -161,11 +161,11 @@ func ImplementPrompt(feature engine.Feature) string {
 
 func VerifyPrompt() string {
 	config := engine.LoadRunConfig()
-	input := fmt.Sprintf("O harness não encontrou `verify-feature.sh` no diretório-alvo, então faça o\n"+
-		"self-verify manual da feature #%s\n(%s) como um usuário faria: rode\n"+
-		"`%s` no diretório-alvo (%s) e\nconfirme o comportamento ponta a ponta. Salve a saída completa em\n"+
-		"`.harness/logs/verify-%s.log`.\n\nResponda em '%s' começando com `PASS` ou `FAIL: <motivo>`, incluindo só o\n"+
-		"erro principal e o caminho do log.",
+	input := fmt.Sprintf("The harness did not find `verify-feature.sh` in the target directory, so do a\n"+
+		"manual self-verify of feature #%s\n(%s) the way a user would: run\n"+
+		"`%s` in the target directory (%s) and\nconfirm the behavior end to end. Save the full output to\n"+
+		"`.harness/logs/verify-%s.log`.\n\nRespond in '%s' starting with `PASS` or `FAIL: <reason>`, including only the\n"+
+		"main error and the log path.",
 		state(currentFeatureIdKey), state(currentFeatureTitleKey), config.VerifyCmd, config.TargetDir,
 		state(currentFeatureIdKey), tokenResult)
 
@@ -176,9 +176,9 @@ func VerifyPrompt() string {
 
 func VerifyRetryPrompt() string {
 	config := engine.LoadRunConfig()
-	input := fmt.Sprintf("O veredito do self-verify não começou com `PASS` nem `FAIL`. Reexecute, se\n"+
-		"necessário, `%s` no diretório-alvo (%s)\nsalvando a saída completa em `.harness/logs/verify-%s.log`.\n"+
-		"Responda em '%s' começando exatamente com `PASS` ou `FAIL: <motivo>`,\nsem colar logs longos.",
+	input := fmt.Sprintf("The self-verify verdict did not start with `PASS` or `FAIL`. Re-run, if\n"+
+		"needed, `%s` in the target directory (%s)\nsaving the full output to `.harness/logs/verify-%s.log`.\n"+
+		"Respond in '%s' starting exactly with `PASS` or `FAIL: <reason>`,\nwithout pasting long logs.",
 		config.VerifyCmd, config.TargetDir, state(currentFeatureIdKey), tokenResult)
 
 	return engine.Format(input,
@@ -189,11 +189,11 @@ func VerifyRetryPrompt() string {
 func FixPrompt(verifyFailure string) string {
 	failure := ""
 	if strings.TrimSpace(verifyFailure) != "" {
-		failure = fmt.Sprintf("Falha observada: %s\n\n", verifyFailure)
+		failure = fmt.Sprintf("Failure observed: %s\n\n", verifyFailure)
 	}
 
-	input := fmt.Sprintf("A verificação FALHOU na feature #%s\n(%s). %sCorrija a implementação (ainda SÓ esta feature).\n"+
-		"Se consultar logs, leia só o trecho relevante. Resuma o ajuste em '%s' —\nem seguida verificamos de novo.",
+	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s). %sFix the implementation (still ONLY this feature).\n"+
+		"If you check logs, read only the relevant excerpt. Summarize the fix in '%s' —\nwe'll verify again next.",
 		state(currentFeatureIdKey), state(currentFeatureTitleKey), failure, tokenSummary)
 
 	return engine.Format(input,
@@ -204,13 +204,13 @@ func FixPrompt(verifyFailure string) string {
 func HandoffPrompt(automaticFailure string) string {
 	failure := ""
 	if strings.TrimSpace(automaticFailure) != "" {
-		failure = fmt.Sprintf("O handoff automatico falhou: %s\n\n", automaticFailure)
+		failure = fmt.Sprintf("Automatic handoff failed: %s\n\n", automaticFailure)
 	}
 
-	input := fmt.Sprintf("%sDeixe o estado LIMPO para a próxima sessão:\n"+
-		"1. `git commit` com mensagem descritiva referenciando a feature #%s. Se o diretório-alvo não estiver em um repositório Git, registre isso explicitamente como `NO_GIT: <motivo>`.\n"+
-		"2. Anexe uma linha ao `progress.txt`: feature concluída, o que foi feito e como verificar.\n\n"+
-		"Confirme com o hash do commit ou `NO_GIT: <motivo>` em '%s'.",
+	input := fmt.Sprintf("%sLeave the state CLEAN for the next session:\n"+
+		"1. `git commit` with a descriptive message referencing feature #%s. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.\n"+
+		"2. Append a line to `progress.txt`: feature completed, what was done, and how to verify.\n\n"+
+		"Confirm with the commit hash or `NO_GIT: <reason>` in '%s'.",
 		failure, state(currentFeatureIdKey), tokenCommit)
 
 	return engine.Format(input,
@@ -219,8 +219,8 @@ func HandoffPrompt(automaticFailure string) string {
 }
 
 func HandoffRetryPrompt() string {
-	input := fmt.Sprintf("A confirmação do handoff veio vazia. Atualize `progress.txt` no diretório-alvo\n"+
-		"(%s) e responda em '%s' com o hash do commit ou\n`NO_GIT: <motivo>` quando não houver repositório Git.",
+	input := fmt.Sprintf("The handoff confirmation came back empty. Update `progress.txt` in the target directory\n"+
+		"(%s) and respond in '%s' with the commit hash or\n`NO_GIT: <reason>` when there is no Git repository.",
 		engine.LoadRunConfig().TargetDir, tokenCommit)
 
 	return engine.Format(input,

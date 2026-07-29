@@ -3,10 +3,10 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Transporte por inbox: com argv vazio, o dispatch lê o envelope de
-/// <c>.harness/inbox.json</c> — o canal que elimina o hang de aspas do shell (o driver
-/// escreve um arquivo em vez de montar um argumento single-quoted). Argv continua tendo
-/// precedência (retrocompatível).
+/// Inbox transport: with empty argv, dispatch reads the envelope from
+/// <c>.harness/inbox.json</c> — the channel that eliminates the shell-quoting hang (the
+/// driver writes a file instead of assembling a single-quoted argument). Argv still takes
+/// precedence (backward compatible).
 /// </summary>
 public class InboxTests : IDisposable
 {
@@ -53,13 +53,13 @@ public class InboxTests : IDisposable
     [Fact]
     public void Dispatch_DaInbox_PreservaOsArgs()
     {
-        // O caso que travava o shell: payload com aspas simples e quebras de linha. Via
-        // arquivo, chega íntegro sem escaping frágil.
-        WriteInbox("""{ "type": "command", "value": "classify", "args": ["exportar 'PDF'\ne 'CSV'"] }""");
+        // The case that used to hang the shell: a payload with single quotes and line
+        // breaks. Via file, it arrives intact without fragile escaping.
+        WriteInbox("""{ "type": "command", "value": "classify", "args": ["export 'PDF'\nand 'CSV'"] }""");
 
         var result = TaskRegistry.Dispatch([], Tasks);
 
-        Assert.Equal("PROMPT_CLASSIFY:exportar 'PDF'\ne 'CSV'", result);
+        Assert.Equal("PROMPT_CLASSIFY:export 'PDF'\nand 'CSV'", result);
     }
 
     [Fact]
@@ -69,8 +69,8 @@ public class InboxTests : IDisposable
 
         TaskRegistry.Dispatch([], Tasks);
 
-        Assert.False(File.Exists(Inbox.Path), "a inbox deve ser movida após um parse bem-sucedido");
-        Assert.True(File.Exists(Inbox.ConsumedPath), "o envelope consumido deve ficar como rastro");
+        Assert.False(File.Exists(Inbox.Path), "the inbox should be moved after a successful parse");
+        Assert.True(File.Exists(Inbox.ConsumedPath), "the consumed envelope should remain as a trail");
     }
 
     [Fact]
@@ -80,20 +80,20 @@ public class InboxTests : IDisposable
 
         var result = TaskRegistry.Dispatch([], Tasks);
 
-        Assert.StartsWith("ERRO", result);
-        // JSON quebrado permanece disponível para inspeção — não some silenciosamente.
-        Assert.True(File.Exists(Inbox.Path), "uma inbox que não parseia não deve ser consumida");
+        Assert.StartsWith("HARNESS PROTOCOL ERROR", result);
+        // Broken JSON remains available for inspection — it doesn't silently disappear.
+        Assert.True(File.Exists(Inbox.Path), "an inbox that fails to parse must not be consumed");
     }
 
     [Fact]
     public void Dispatch_ArgvTemPrecedenciaSobreInbox()
     {
-        // Argv presente → transporte clássico; a inbox é ignorada e permanece intacta.
-        WriteInbox("""{ "type": "command", "value": "classify", "args": ["da-inbox"] }""");
+        // Argv present → classic transport; the inbox is ignored and stays intact.
+        WriteInbox("""{ "type": "command", "value": "classify", "args": ["from-inbox"] }""");
 
         var result = TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks);
 
         Assert.Equal("PROMPT_START", result);
-        Assert.True(File.Exists(Inbox.Path), "com argv, a inbox não deve ser tocada");
+        Assert.True(File.Exists(Inbox.Path), "with argv, the inbox must not be touched");
     }
 }

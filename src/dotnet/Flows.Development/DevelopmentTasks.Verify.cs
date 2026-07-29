@@ -25,10 +25,11 @@ public static partial class DevelopmentTasks
         }
         catch (InvalidOperationException ex)
         {
-            // target_dir inválido (raiz, home, instalação do harness) -> mesmo caminho de
-            // "não tentou verificação automática" que target_dir sem verify-feature.sh;
-            // não derruba o processo com uma exceção não tratada.
-            Console.Error.WriteLine($"[dev] target_dir invalido para verify automatico: {ex.Message}");
+            // Invalid target_dir (root, home, harness install) -> same "automatic
+            // verification not attempted" path as a target_dir with no
+            // verify-feature.sh; doesn't bring down the process with an unhandled
+            // exception.
+            Console.Error.WriteLine($"[dev] invalid target_dir for automatic verify: {ex.Message}");
             return AutomatedVerifyResult.Missing();
         }
 
@@ -41,7 +42,7 @@ public static partial class DevelopmentTasks
         if (result.TimedOut)
         {
             return AutomatedVerifyResult.Failed(
-                $"FAIL: verify-feature.sh {featureId} excedeu timeout ({VerifyTimeoutDescription()})"
+                $"FAIL: verify-feature.sh {featureId} exceeded timeout ({VerifyTimeoutDescription()})"
                 + VerifyOutputSuffix(result, logPath));
         }
 
@@ -49,7 +50,7 @@ public static partial class DevelopmentTasks
             return AutomatedVerifyResult.Passed(PassResult(featureId, result.Output, result.Error, logPath));
 
         return AutomatedVerifyResult.Failed(
-            $"FAIL: verify-feature.sh {featureId} falhou (exit {result.ExitCode})"
+            $"FAIL: verify-feature.sh {featureId} failed (exit {result.ExitCode})"
             + VerifyOutputSuffix(result, logPath));
     }
 
@@ -88,7 +89,7 @@ public static partial class DevelopmentTasks
             }
             catch
             {
-                // O processo pode ter terminado entre o WaitForExit e o Kill.
+                // The process may have ended between WaitForExit and Kill.
             }
             process.WaitForExit();
             return new VerifyScriptResult(
@@ -125,7 +126,7 @@ public static partial class DevelopmentTasks
     private static string VerifyTimeoutDescription()
     {
         var timeoutMs = VerifyTimeoutMs();
-        return timeoutMs <= 0 ? "sem limite" : $"{timeoutMs}ms";
+        return timeoutMs <= 0 ? "no limit" : $"{timeoutMs}ms";
     }
 
     private static string WriteVerifyLog(
@@ -159,7 +160,7 @@ public static partial class DevelopmentTasks
         }
         catch (Exception ex)
         {
-            return $"log indisponivel ({OneLine(ex.Message)})";
+            return $"log unavailable ({OneLine(ex.Message)})";
         }
 
         return displayPath;
@@ -170,7 +171,7 @@ public static partial class DevelopmentTasks
         var firstLine = FirstMeaningfulLine(output, error);
         var result = firstLine.StartsWith("PASS", StringComparison.OrdinalIgnoreCase)
             ? Snippet(firstLine)
-            : $"PASS: verify-feature.sh {featureId} passou";
+            : $"PASS: verify-feature.sh {featureId} passed";
         return result + LogSuffix(logPath);
     }
 

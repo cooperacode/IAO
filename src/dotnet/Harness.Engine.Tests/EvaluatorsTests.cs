@@ -3,15 +3,15 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Evaluators determinísticos são funções puras — testadas sem tocar disco nem LLM.
-/// São o portão barato antes do juiz-LLM.
+/// Deterministic evaluators are pure functions — tested without touching disk or an LLM.
+/// They're the cheap gate before the LLM judge.
 /// </summary>
 public class EvaluatorsTests
 {
     [Theory]
     [InlineData("Bug", "Bug", 1.0)]
     [InlineData("Bug", "  Bug  ", 1.0)]
-    [InlineData("Bug", "Épico", 0.0)]
+    [InlineData("Bug", "Epic", 0.0)]
     public void ExactMatch_NormalizaEspacosEComparaConteudo(string expected, string actual, double value)
     {
         Assert.Equal(value, Evaluators.ExactMatch(expected, actual).Value);
@@ -27,9 +27,9 @@ public class EvaluatorsTests
     [Fact]
     public void Trajectory_CaminhoIdentico_PontuaCheio()
     {
-        var esperado = new[] { "start", "classify", "finalize" };
+        var expected = new[] { "start", "classify", "finalize" };
 
-        var score = Evaluators.Trajectory(esperado, ["start", "classify", "finalize"]);
+        var score = Evaluators.Trajectory(expected, ["start", "classify", "finalize"]);
 
         Assert.True(score.Passed);
         Assert.Equal(1.0, score.Value);
@@ -38,12 +38,12 @@ public class EvaluatorsTests
     [Fact]
     public void Trajectory_DivergeNoMeio_ContaSoOPrefixoEmOrdem()
     {
-        var esperado = new[] { "start", "classify", "split", "finalize" };
+        var expected = new[] { "start", "classify", "split", "finalize" };
 
-        // Acerta start+classify, depois pula direto para finalize (fora de ordem).
-        var score = Evaluators.Trajectory(esperado, ["start", "classify", "finalize"]);
+        // Matches start+classify, then jumps straight to finalize (out of order).
+        var score = Evaluators.Trajectory(expected, ["start", "classify", "finalize"]);
 
-        Assert.Equal(0.5, score.Value); // 2 de 4
+        Assert.Equal(0.5, score.Value); // 2 of 4
         Assert.False(score.Passed);
     }
 
@@ -58,12 +58,12 @@ public class EvaluatorsTests
     {
         var state = new HarnessState(3, new()
         {
-            ["descricao"] = "Login",
-            ["tipo"] = "Feature",
-            ["historias"] = "   ", // em branco não conta
+            ["description"] = "Login",
+            ["type"] = "Feature",
+            ["stories"] = "   ", // blank doesn't count
         });
 
-        var score = Evaluators.Completeness(state, ["descricao", "tipo", "historias"]);
+        var score = Evaluators.Completeness(state, ["description", "type", "stories"]);
 
         Assert.Equal(2.0 / 3.0, score.Value, precision: 6);
         Assert.False(score.Passed);
@@ -105,7 +105,7 @@ public class EvaluatorsTests
         var score = Evaluators.StepBudget(trace);
 
         Assert.False(score.Passed);
-        Assert.Equal("cortado pelo teto de tempo (timeout)", score.Detail);
+        Assert.Equal("cut off by the time ceiling (timeout)", score.Detail);
     }
 
     [Fact]

@@ -1,8 +1,8 @@
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Validação contextual (Fase 4): comando certo com VALOR fora da expectativa vira erro
-/// corretivo tipado — nunca "stop" silencioso, nunca persiste conteúdo ruim.
+/// Contextual validation (Phase 4): the right command with a VALUE outside expectations
+/// becomes a typed corrective error — never a silent "stop", never persists bad content.
 /// </summary>
 public class EnvelopeValidationTests : IDisposable
 {
@@ -13,7 +13,7 @@ public class EnvelopeValidationTests : IDisposable
 
     private static readonly Dictionary<string, Func<Envelope, ValidationResult>> Validators = new()
     {
-        ["classify"] = EnvelopeValidation.NotEmpty("a descrição do item"),
+        ["classify"] = EnvelopeValidation.NotEmpty("the item's description"),
     };
 
     public EnvelopeValidationTests() => StateStore.Reset();
@@ -25,9 +25,9 @@ public class EnvelopeValidationTests : IDisposable
         var result = TaskRegistry.Dispatch(
             ["""{"type":"tool","value":"classify"}"""], Tasks, Validators);
 
-        Assert.StartsWith("ERRO", result);
+        Assert.StartsWith("HARNESS PROTOCOL ERROR", result);
         Assert.NotEqual("stop", result);
-        Assert.Contains("recusado", result);
+        Assert.Contains("was rejected", result);
         Assert.DoesNotContain("PROMPT_CLASSIFY", result);
     }
 
@@ -54,9 +54,9 @@ public class EnvelopeValidationTests : IDisposable
     [Fact]
     public void MinLines_ContaQuebrasLiteraisEEscapadas()
     {
-        var validator = EnvelopeValidation.MinLines(2, "lista de histórias");
+        var validator = EnvelopeValidation.MinLines(2, "story list");
 
-        // Artefatos trafegam como string de uma linha com \n literais (aviso "Compact").
+        // Artifacts travel as a single-line string with literal \n (the "Compact" notice).
         var escaped = new Envelope("tool", "acceptance", [@"1. a\n2. b"]);
         var real = new Envelope("tool", "acceptance", ["1. a\n2. b"]);
         var single = new Envelope("tool", "acceptance", ["1. a"]);
@@ -69,48 +69,48 @@ public class EnvelopeValidationTests : IDisposable
     [Fact]
     public void ContainsNumber_ExigeAoMenosUmDigito()
     {
-        var validator = EnvelopeValidation.ContainsNumber("estimativas");
+        var validator = EnvelopeValidation.ContainsNumber("estimates");
 
-        Assert.True(validator(new Envelope("tool", "risks", ["5 pontos"])).Ok);
-        Assert.False(validator(new Envelope("tool", "risks", ["sem pontos"])).Ok);
+        Assert.True(validator(new Envelope("tool", "risks", ["5 points"])).Ok);
+        Assert.False(validator(new Envelope("tool", "risks", ["no points"])).Ok);
     }
 
     [Fact]
     public void Matches_CasaSemDiferenciarMaiusculas()
     {
-        var validator = EnvelopeValidation.Matches("READY|NOT READY", "veredito do DoR");
+        var validator = EnvelopeValidation.Matches("READY|NOT READY", "DoR verdict");
 
-        Assert.True(validator(new Envelope("tool", "finalize", ["Veredito: ready com ressalva"])).Ok);
-        Assert.False(validator(new Envelope("tool", "finalize", ["aprovado"])).Ok);
+        Assert.True(validator(new Envelope("tool", "finalize", ["Verdict: ready with caveat"])).Ok);
+        Assert.False(validator(new Envelope("tool", "finalize", ["approved"])).Ok);
     }
 
     [Fact]
     public void Matches_ComPadraoAncorado_RejeitaConteudoQueApenasContemOPrefixo()
     {
-        var validator = EnvelopeValidation.Matches(@"^(PASS\b|FAIL\b)", "veredito");
+        var validator = EnvelopeValidation.Matches(@"^(PASS\b|FAIL\b)", "verdict");
 
-        Assert.True(validator(new Envelope("command", "verify", ["PASS: testes verdes"])).Ok);
-        Assert.True(validator(new Envelope("command", "verify", ["FAIL: testes vermelhos"])).Ok);
-        Assert.False(validator(new Envelope("command", "verify", ["rodei os testes e deu PASS"])).Ok);
+        Assert.True(validator(new Envelope("command", "verify", ["PASS: tests green"])).Ok);
+        Assert.True(validator(new Envelope("command", "verify", ["FAIL: tests red"])).Ok);
+        Assert.False(validator(new Envelope("command", "verify", ["ran the tests and got PASS"])).Ok);
     }
 
     [Fact]
     public void All_FalhaNaPrimeiraRazao()
     {
         var validator = EnvelopeValidation.All(
-            EnvelopeValidation.NotEmpty("estimativas"),
-            EnvelopeValidation.ContainsNumber("estimativas com pontos"));
+            EnvelopeValidation.NotEmpty("estimates"),
+            EnvelopeValidation.ContainsNumber("estimates with points"));
 
-        var result = validator(new Envelope("tool", "risks", ["sem numeros"]));
+        var result = validator(new Envelope("tool", "risks", ["no numbers"]));
 
         Assert.False(result.Ok);
-        Assert.Contains("número", result.Reason);
+        Assert.Contains("number", result.Reason);
     }
 
     [Fact]
     public void Parse_IgnoraCamposDesconhecidos()
     {
-        // Campos extras (ex.: um "tokens" de driver antigo) não derrubam o parse.
+        // Extra fields (e.g. a "tokens" field from an old driver) don't break parsing.
         var envelope = Envelope.Parse("""{"type":"tool","value":"classify","args":["x"],"tokens":1234}""");
 
         Assert.NotNull(envelope);

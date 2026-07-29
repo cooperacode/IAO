@@ -1,9 +1,9 @@
-//! Grava uma linha por volta do loop em `.harness/trace.jsonl`. É a base tanto da
-//! telemetria quanto do evaluator de trajetória: `state_store` guarda só o estado final —
-//! sobrescreve `data` a cada passo —, então sem esta sequência gravada não há como avaliar
-//! o caminho que o agente percorreu.
+//! Records one line per loop iteration in `.harness/trace.jsonl`. This is the basis for
+//! both telemetry and the trajectory evaluator: `state_store` only keeps the final state —
+//! it overwrites `data` on every step —, so without this recorded sequence there's no way
+//! to evaluate the path the agent took.
 //!
-//! Custo: zero token e uma escrita append por invocação.
+//! Cost: zero tokens and one append write per invocation.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -11,26 +11,26 @@ use sha2::{Digest, Sha256};
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/trace.jsonl";
 
-/// Trajetória congelada do último run que terminou em `stop`. `harness_host` grava aqui ao
-/// concluir o flow produtor, para que outro flow (a avaliação) leia a evidência mesmo
-/// depois de resetar o `trace.jsonl` vivo no próprio `start`.
+/// Trajectory frozen from the last run that ended in `stop`. `harness_host` writes here
+/// when the producer flow completes, so another flow (the evaluation) can read the
+/// evidence even after resetting the live `trace.jsonl` in its own `start`.
 pub const LAST_RUN_PATH: &str = ".harness/last-run.trace.jsonl";
 
-/// Trajetória congelada do último run de avaliação. Caminho próprio para que a avaliação
-/// (que também termina em `stop`) não sobrescreva a evidência do run em `LAST_RUN_PATH`.
+/// Trajectory frozen from the last evaluation run. Its own path so the evaluation (which
+/// also ends in `stop`) doesn't overwrite the run's evidence in `LAST_RUN_PATH`.
 pub const LAST_EVALUATION_PATH: &str = ".harness/last-evaluation.trace.jsonl";
 
-/// Desfechos possíveis de um passo, gravados em `TraceEntry::outcome`.
+/// Possible outcomes of a step, recorded in `TraceEntry::outcome`.
 pub mod trace_outcome {
-    pub const INSTRUCTION: &str = "instruction"; // seguiu para o próximo passo
-    pub const STOP: &str = "stop"; // término normal do flow
-    pub const ERROR: &str = "error"; // erro tipado devolvido ao driver
-    pub const BUDGET: &str = "budget"; // corte pelo teto de passos
-    pub const TIMEOUT: &str = "timeout"; // corte pelo teto de tempo por passo
+    pub const INSTRUCTION: &str = "instruction"; // proceeded to the next step
+    pub const STOP: &str = "stop"; // normal flow termination
+    pub const ERROR: &str = "error"; // typed error returned to the driver
+    pub const BUDGET: &str = "budget"; // cut off by the step ceiling
+    pub const TIMEOUT: &str = "timeout"; // cut off by the per-step time ceiling
 }
 
-/// Uma volta do loop: passo, comando recebido, desfecho, custo (chars da instrução
-/// emitida) e horário de gravação.
+/// One loop iteration: step, received command, outcome, cost (chars of the emitted
+/// instruction), and recording time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceEntry {
     pub step: i32,
@@ -38,20 +38,21 @@ pub struct TraceEntry {
     pub outcome: String,
     #[serde(rename = "instructionChars")]
     pub instruction_chars: i32,
-    // ISO 8601 com offset, gravado como string (paridade com o wire JSON).
+    // ISO 8601 with offset, stored as a string (parity with the wire JSON).
     pub timestamp: String,
-    /// Hash-chain de integridade: SHA-256 hex da linha JSON anterior do trace (genesis —
-    /// primeira linha ou trace vazio/ausente — é 64 zeros). Qualquer edição ou remoção de
-    /// uma entrada anterior quebra o encadeamento das entradas seguintes, tornando
-    /// adulteração do trace detectável. `#[serde(default)]` para aceitar traces gravados
-    /// por versões anteriores do harness, sem este campo.
+    /// Integrity hash-chain: SHA-256 hex of the trace's previous JSON line (genesis — the
+    /// first line, or an empty/missing trace — is 64 zeros). Editing or removing an
+    /// earlier entry breaks the chain of subsequent entries, making trace tampering
+    /// detectable. `#[serde(default)]` to accept traces written by earlier versions of
+    /// the harness, which lack this field.
     #[serde(rename = "prevHash", default)]
     pub prev_hash: String,
-    /// Etiqueta opcional e agnóstica de domínio (ex.: "feature:3") que resolve a mesma dor
-    /// do `state_store`: `step` é um contador global do run inteiro, não identifica a QUE
-    /// unidade de trabalho o passo pertence. `trace` só carrega o valor — quem decide o que
-    /// ele significa é o flow (ver flows_development::tasks::pick). `#[serde(default)]` pelo
-    /// mesmo motivo de `prev_hash`: paridade com traces gravados antes deste campo existir.
+    /// Optional, domain-agnostic label (e.g. "feature:3") that solves the same pain point
+    /// as `state_store`: `step` is a counter global to the whole run, it doesn't identify
+    /// WHICH unit of work the step belongs to. `trace` just carries the value — it's the
+    /// flow that decides what it means (see flows_development::tasks::pick).
+    /// `#[serde(default)]` for the same reason as `prev_hash`: parity with traces written
+    /// before this field existed.
     #[serde(default)]
     pub label: String,
 }
@@ -66,9 +67,9 @@ fn sha256_hex(value: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Hash da última linha não-vazia do trace no `path` informado — `prev_hash` da próxima
-/// entrada. Genesis (64 zeros) se o arquivo não existe, está vazio ou acabou de ser
-/// resetado.
+/// Hash of the last non-empty line of the trace at the given `path` — the next entry's
+/// `prev_hash`. Genesis (64 zeros) if the file doesn't exist, is empty, or was just
+/// reset.
 fn last_line_hash(path: &str) -> String {
     let p = std::path::Path::new(path);
     if !p.exists() {
@@ -83,18 +84,18 @@ fn last_line_hash(path: &str) -> String {
     }
 }
 
-/// Trunca o trace no início de um novo workflow (junto do `state_store::reset`).
+/// Truncates the trace at the start of a new workflow (alongside `state_store::reset`).
 pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
         if let Err(e) = std::fs::remove_file(p) {
-            eprintln!("[Trace] falha ao limpar: {e}");
+            eprintln!("[Trace] failed to clear: {e}");
         }
     }
 }
 
-/// Conveniência sem etiqueta — equivalente a `append_with_label(.., "")`. Mantido para não
-/// obrigar todo call site (inclusive os testes) a passar um quinto argumento que não usam.
+/// Label-less convenience — equivalent to `append_with_label(.., "")`. Kept so not every
+/// call site (including tests) is forced to pass a fifth argument they don't use.
 pub fn append(step: i32, command: &str, outcome: &str, instruction_chars: i32) {
     append_with_label(step, command, outcome, instruction_chars, "");
 }
@@ -107,7 +108,7 @@ pub fn append_with_label(
     label: &str,
 ) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[Trace] falha ao gravar: {e}");
+        eprintln!("[Trace] failed to write: {e}");
         return;
     }
 
@@ -124,16 +125,16 @@ pub fn append_with_label(
     let mut line = match serde_json::to_string(&entry) {
         Ok(line) => line,
         Err(e) => {
-            eprintln!("[Trace] falha ao gravar: {e}");
+            eprintln!("[Trace] failed to write: {e}");
             return;
         }
     };
     line.push('\n');
 
-    // Uma única `write_all` com a linha completa (JSON + newline) já montada — não
-    // fragmentar em múltiplas escritas, para que o evento fique atômico mesmo sob
-    // interrupção a meio da chamada (append de log continua não-atômico entre linhas
-    // diferentes, mas cada linha em si não fica parcialmente gravada).
+    // A single `write_all` with the complete line (JSON + newline) already assembled —
+    // don't split it into multiple writes, so the event stays atomic even under an
+    // interruption mid-call (log appends across different lines are still not atomic
+    // relative to each other, but each line itself is never partially written).
     use std::io::Write;
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -142,32 +143,32 @@ pub fn append_with_label(
     match file {
         Ok(mut f) => {
             if let Err(e) = f.write_all(line.as_bytes()) {
-                eprintln!("[Trace] falha ao gravar: {e}");
+                eprintln!("[Trace] failed to write: {e}");
             }
         }
-        Err(e) => eprintln!("[Trace] falha ao gravar: {e}"),
+        Err(e) => eprintln!("[Trace] failed to write: {e}"),
     }
 }
 
-/// Congela o trace vivo no caminho de destino — a evidência do run concluído.
+/// Freezes the live trace at the destination path — the evidence of the completed run.
 pub fn snapshot(destination: &str) {
     if std::path::Path::new(FILE_PATH).exists() {
         if let Err(e) = std::fs::create_dir_all(DIR) {
-            eprintln!("[Trace] falha ao congelar: {e}");
+            eprintln!("[Trace] failed to freeze: {e}");
             return;
         }
         if let Err(e) = std::fs::copy(FILE_PATH, destination) {
-            eprintln!("[Trace] falha ao congelar: {e}");
+            eprintln!("[Trace] failed to freeze: {e}");
         }
     }
 }
 
-/// Relê o trace vivo na ordem em que foi gravado.
+/// Re-reads the live trace in the order it was written.
 pub fn load() -> Vec<TraceEntry> {
     load_from(FILE_PATH)
 }
 
-/// Relê um trace de um caminho arbitrário — insumo dos evaluators (ex.: o snapshot).
+/// Re-reads a trace from an arbitrary path — input for the evaluators (e.g. the snapshot).
 pub fn load_from(path: &str) -> Vec<TraceEntry> {
     let p = std::path::Path::new(path);
     if !p.exists() {

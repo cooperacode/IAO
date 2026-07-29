@@ -1,14 +1,14 @@
-//! Evaluators determinísticos (Exact Match, Regex, Trajectory) — a parte do Evaluator que
-//! NÃO precisa de LLM. Rodam in-process sobre o `Trace` e o `HarnessState`, custam zero
-//! token e servem de portão: só quando passam vale a pena escalar para o juiz-LLM
-//! (economia sob a restrição de tokens).
+//! Deterministic evaluators (Exact Match, Regex, Trajectory) — the part of the Evaluator
+//! that does NOT need an LLM. Run in-process over the `Trace` and `HarnessState`, cost
+//! zero tokens, and act as a gate: only when they pass is it worth escalating to the LLM
+//! judge (savings under the token budget constraint).
 
 use regex::Regex;
 
 use crate::harness_state::HarnessState;
 use crate::trace::{TraceEntry, trace_outcome};
 
-/// Nota de uma métrica em `[0,1]`. `passed` exige acerto pleno.
+/// Score for a metric in `[0,1]`. `passed` requires a full match.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Score {
     pub metric: String,
@@ -39,7 +39,7 @@ pub fn exact_match(expected: &str, actual: &str) -> Score {
     Score::new(
         "exact_match",
         value,
-        format!("esperado=\"{expected}\" obtido=\"{actual}\""),
+        format!("expected=\"{expected}\" got=\"{actual}\""),
     )
 }
 
@@ -50,8 +50,8 @@ pub fn matches_regex(pattern: &str, actual: &str) -> Score {
     Score::new("regex", if value { 1.0 } else { 0.0 }, pattern)
 }
 
-/// Fração do prefixo esperado que bateu, na ordem. Um passo fora de sequência corta a
-/// contagem ali — trajetória é sobre caminho, não sobre conjunto.
+/// Fraction of the expected prefix that matched, in order. A step out of sequence cuts
+/// the count off right there — trajectory is about the path, not the set.
 pub fn trajectory(expected: &[String], actual: &[String]) -> Score {
     let mut matched = 0;
     for i in 0..expected.len().min(actual.len()) {
@@ -69,11 +69,11 @@ pub fn trajectory(expected: &[String], actual: &[String]) -> Score {
     Score::new(
         "trajectory",
         value,
-        format!("{matched}/{} passos na ordem esperada", expected.len()),
+        format!("{matched}/{} steps in the expected order", expected.len()),
     )
 }
 
-/// Todas as chaves de domínio esperadas foram preenchidas no estado final?
+/// Were all the expected domain keys filled in the final state?
 pub fn completeness(state: &HarnessState, required_keys: &[String]) -> Score {
     let filled = required_keys
         .iter()
@@ -93,13 +93,13 @@ pub fn completeness(state: &HarnessState, required_keys: &[String]) -> Score {
     Score::new(
         "completeness",
         value,
-        format!("{filled}/{} chaves preenchidas", required_keys.len()),
+        format!("{filled}/{} keys filled", required_keys.len()),
     )
 }
 
-/// Terminou em `stop` sem ter batido no teto de passos nem no de tempo (`timeout`) —
-/// ambos ficariam indistinguíveis de uma trajetória simplesmente incompleta se não fossem
-/// checados à parte.
+/// Finished at `stop` without hitting the step ceiling or the time ceiling (`timeout`) —
+/// both would be indistinguishable from a simply-incomplete trajectory if they weren't
+/// checked separately.
 pub fn step_budget(trace: &[TraceEntry]) -> Score {
     let hit_budget = trace.iter().any(|e| e.outcome == trace_outcome::BUDGET);
     let hit_timeout = trace.iter().any(|e| e.outcome == trace_outcome::TIMEOUT);
@@ -111,18 +111,18 @@ pub fn step_budget(trace: &[TraceEntry]) -> Score {
         0.0
     };
     let detail = if hit_budget {
-        "cortado pelo teto de passos"
+        "cut off by the step ceiling"
     } else if hit_timeout {
-        "cortado pelo teto de tempo (timeout)"
+        "cut off by the time ceiling (timeout)"
     } else if terminated {
-        "concluído dentro do teto"
+        "completed within budget"
     } else {
-        "não terminou"
+        "did not finish"
     };
     Score::new("budget", value, detail)
 }
 
-/// Comandos do trace na ordem, ignorando por padrão as voltas de erro corretivo.
+/// Trace commands in order, ignoring corrective-error round-trips by default.
 pub fn commands_of(trace: &[TraceEntry], include_errors: bool) -> Vec<String> {
     trace
         .iter()
@@ -155,7 +155,7 @@ mod tests {
     fn exact_match_normaliza_espacos_e_compara_conteudo() {
         assert_eq!(exact_match("Bug", "Bug").value, 1.0);
         assert_eq!(exact_match("Bug", "  Bug  ").value, 1.0);
-        assert_eq!(exact_match("Bug", "Épico").value, 0.0);
+        assert_eq!(exact_match("Bug", "Epic").value, 0.0);
     }
 
     #[test]
@@ -166,9 +166,9 @@ mod tests {
 
     #[test]
     fn trajectory_caminho_identico_pontua_cheio() {
-        let esperado = strings(&["start", "classify", "finalize"]);
+        let expected = strings(&["start", "classify", "finalize"]);
 
-        let score = trajectory(&esperado, &strings(&["start", "classify", "finalize"]));
+        let score = trajectory(&expected, &strings(&["start", "classify", "finalize"]));
 
         assert!(score.passed());
         assert_eq!(score.value, 1.0);
@@ -176,9 +176,9 @@ mod tests {
 
     #[test]
     fn trajectory_diverge_no_meio_conta_so_o_prefixo_em_ordem() {
-        let esperado = strings(&["start", "classify", "split", "finalize"]);
+        let expected = strings(&["start", "classify", "split", "finalize"]);
 
-        let score = trajectory(&esperado, &strings(&["start", "classify", "finalize"]));
+        let score = trajectory(&expected, &strings(&["start", "classify", "finalize"]));
 
         assert_eq!(score.value, 0.5);
         assert!(!score.passed());
@@ -194,13 +194,13 @@ mod tests {
         let mut state = HarnessState::new(3, Default::default());
         state
             .data
-            .insert("descricao".to_string(), "Login".to_string());
-        state.data.insert("tipo".to_string(), "Feature".to_string());
+            .insert("description".to_string(), "Login".to_string());
+        state.data.insert("type".to_string(), "Feature".to_string());
         state
             .data
-            .insert("historias".to_string(), "   ".to_string()); // em branco não conta
+            .insert("stories".to_string(), "   ".to_string()); // blank doesn't count
 
-        let score = completeness(&state, &strings(&["descricao", "tipo", "historias"]));
+        let score = completeness(&state, &strings(&["description", "type", "stories"]));
 
         assert!((score.value - 2.0 / 3.0).abs() < 1e-6);
         assert!(!score.passed());
@@ -236,7 +236,7 @@ mod tests {
         let score = step_budget(&trace);
 
         assert!(!score.passed());
-        assert_eq!(score.detail, "cortado pelo teto de tempo (timeout)");
+        assert_eq!(score.detail, "cut off by the time ceiling (timeout)");
     }
 
     #[test]

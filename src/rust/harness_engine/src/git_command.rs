@@ -1,5 +1,5 @@
-//! Runner pequeno e shell-safe para comandos Git. A engine fornece o mecanismo; flows
-//! decidem quais comandos rodar e como interpretar o resultado.
+//! Small, shell-safe runner for Git commands. The engine provides the mechanism; flows
+//! decide which commands to run and how to interpret the result.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,10 +11,10 @@ pub struct GitCommandResult {
     pub error: String,
 }
 
-/// Diretório estável e sempre vazio usado como `core.hooksPath` em todo comando git
-/// disparado pelo harness: neutraliza hooks do repositório-alvo (pre-commit/post-commit
-/// etc.), que de outra forma rodariam código arbitrário controlado pelo próprio agente
-/// supervisionado (RFC §6.11).
+/// Stable, always-empty directory used as `core.hooksPath` for every git command fired by
+/// the harness: neutralizes the target repository's hooks (pre-commit/post-commit etc.),
+/// which would otherwise run arbitrary code controlled by the supervised agent itself
+/// (RFC §6.11).
 fn no_hooks_dir() -> PathBuf {
     let dir = std::env::temp_dir().join("iao-no-hooks");
     let _ = std::fs::create_dir_all(&dir);
@@ -25,10 +25,10 @@ pub fn run(working_directory: impl AsRef<Path>, args: &[&str]) -> GitCommandResu
     let hooks_path = no_hooks_dir();
     let hooks_path_arg = format!("core.hooksPath={}", hooks_path.display());
 
-    // Isolamento de Git (RFC §6.11): à frente dos args do chamador, sempre. Neutraliza
-    // hooks (core.hooksPath para um diretório vazio), credential helper (evita prompt ou
-    // vazamento de credencial armazenada) e pager (core.pager=cat evita travar num
-    // subprocesso interativo esperando stdin que nunca chega).
+    // Git isolation (RFC §6.11): ahead of the caller's args, always. Neutralizes hooks
+    // (core.hooksPath pointing to an empty directory), the credential helper (avoids a
+    // prompt or leaking a stored credential), and the pager (core.pager=cat avoids
+    // hanging on an interactive subprocess waiting for stdin that never arrives).
     let output = Command::new("git")
         .args(["-c", &hooks_path_arg])
         .args(["-c", "credential.helper="])
@@ -78,8 +78,8 @@ mod tests {
 
     #[test]
     fn run_injeta_isolamento_de_hooks_e_pager() {
-        // `git config --get` enxerga overrides de `-c` na pilha de config, então dá para
-        // confirmar que run() sempre os injeta sem precisar de um repositório real.
+        // `git config --get` sees `-c` overrides in the config stack, so we can confirm
+        // that run() always injects them without needing a real repository.
         let dir = tempfile::tempdir().unwrap();
 
         let hooks_path = run(dir.path(), &["config", "--get", "core.hooksPath"]);

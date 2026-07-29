@@ -3,15 +3,15 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O lote é o Task Registry (#2) como registry de avaliação: agrega os evaluators
-/// determinísticos sobre um golden set. Puro — testado sem disco nem LLM.
+/// The batch is Task Registry (#2) as an evaluation registry: aggregates the
+/// deterministic evaluators over a golden set. Pure — tested without disk or an LLM.
 /// </summary>
 public class BatchEvaluatorTests
 {
     private static readonly string[] HappyPath =
         ["start", "classify", "split", "acceptance", "estimate", "risks", "ready_check", "finalize"];
 
-    private static readonly string[] Keys = ["descricao", "tipo", "veredito"];
+    private static readonly string[] Keys = ["description", "type", "verdict"];
 
     private static IReadOnlyList<TraceEntry> TraceOf(IEnumerable<string> commands)
     {
@@ -30,7 +30,7 @@ public class BatchEvaluatorTests
     [Fact]
     public void Evaluate_RunPerfeito_PassaTodasAsMetricas()
     {
-        var golden = new GoldenCase("ok", "caso bom", HappyPath, Keys);
+        var golden = new GoldenCase("ok", "good case", HappyPath, Keys);
 
         var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith(Keys));
 
@@ -43,7 +43,7 @@ public class BatchEvaluatorTests
     [Fact]
     public void Evaluate_TrajetoriaIncompleta_Reprova()
     {
-        var golden = new GoldenCase("ruim", "pulou passos", HappyPath, Keys);
+        var golden = new GoldenCase("ruim", "skipped steps", HappyPath, Keys);
 
         var result = BatchEvaluator.Evaluate(golden, TraceOf(["start", "classify", "finalize"]), StateWith(Keys));
 
@@ -54,9 +54,9 @@ public class BatchEvaluatorTests
     [Fact]
     public void Evaluate_EstadoIncompleto_Reprova()
     {
-        var golden = new GoldenCase("faltou", "sem veredito", HappyPath, Keys);
+        var golden = new GoldenCase("faltou", "no verdict", HappyPath, Keys);
 
-        var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith("descricao", "tipo"));
+        var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith("description", "type"));
 
         Assert.False(result.Passed);
         Assert.Contains(result.Scores, s => s.Metric == "completeness" && !s.Passed);
@@ -88,38 +88,38 @@ public class BatchEvaluatorTests
     [Fact]
     public void Evaluate_CasoNegativoIntencional_QueReprovaNasMetricas_ContaComoOk()
     {
-        var golden = new GoldenCase("negativo", "trajetória ok, conteúdo faltando", HappyPath, Keys, ExpectPass: false);
+        var golden = new GoldenCase("negativo", "trajectory ok, missing content", HappyPath, Keys, ExpectPass: false);
 
-        var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith("descricao", "tipo")); // faltou veredito
+        var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith("description", "type")); // missing verdict
 
-        Assert.False(result.Passed); // reprova nas métricas...
-        Assert.True(result.Ok);      // ...que é exatamente o comportamento esperado
+        Assert.False(result.Passed); // fails the metrics...
+        Assert.True(result.Ok);      // ...which is exactly the expected behavior
     }
 
     [Fact]
     public void Evaluate_CasoNegativoQueDeixaDeReprovar_ContaComoFalha()
     {
-        var golden = new GoldenCase("negativo", "deveria reprovar", HappyPath, Keys, ExpectPass: false);
+        var golden = new GoldenCase("negativo", "should fail", HappyPath, Keys, ExpectPass: false);
 
-        var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith(Keys)); // agora passa em tudo
+        var result = BatchEvaluator.Evaluate(golden, TraceOf(HappyPath), StateWith(Keys)); // now passes everything
 
         Assert.True(result.Passed);
-        Assert.False(result.Ok); // esperava-se reprovação e não houve → o caso deixou de exercer o que deveria
+        Assert.False(result.Ok); // a failure was expected and didn't happen → the case stopped exercising what it should
     }
 
     [Fact]
     public void EvaluateAll_CasoNegativoQueReprovaMantemASuiteVerde()
     {
-        var bom = new GoldenCase("bom", "", HappyPath, Keys);
+        var good = new GoldenCase("bom", "", HappyPath, Keys);
         var neg = new GoldenCase("neg", "", HappyPath, Keys, ExpectPass: false);
 
         var batch = BatchEvaluator.EvaluateAll(
         [
-            (bom, TraceOf(HappyPath), StateWith(Keys)),
-            (neg, TraceOf(HappyPath), StateWith("descricao", "tipo")),
+            (good, TraceOf(HappyPath), StateWith(Keys)),
+            (neg, TraceOf(HappyPath), StateWith("description", "type")),
         ]);
 
-        Assert.Equal(2, batch.PassedCount); // ambos se comportaram como esperado
+        Assert.Equal(2, batch.PassedCount); // both behaved as expected
         Assert.Equal(1.0, batch.PassRate);
     }
 }

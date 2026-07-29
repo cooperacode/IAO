@@ -3,9 +3,9 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// verify_cmd/target_dir vivem fora de state.json de propósito: precisam sobreviver ao reset
-/// incondicional que TaskRegistry.Dispatch faz em state.json a cada "start", para que um run
-/// retomado (feature pendente) ainda funcione em smoke/verify sem precisar de um novo "plan".
+/// verify_cmd/target_dir live outside state.json on purpose: they need to survive the
+/// unconditional reset TaskRegistry.Dispatch does to state.json on every "start", so a
+/// resumed run (pending feature) still works in smoke/verify without needing a new "plan".
 /// </summary>
 public class RunConfigStoreTests : IDisposable
 {
@@ -55,6 +55,6 @@ public class RunConfigStoreTests : IDisposable
     [Fact]
     public void Reset_SemArquivo_NaoLanca()
     {
-        RunConfigStore.Reset(); // no-op, não deve lançar
+        RunConfigStore.Reset(); // no-op, must not throw
     }
 }

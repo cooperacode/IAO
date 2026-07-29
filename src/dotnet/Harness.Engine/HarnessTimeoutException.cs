@@ -1,10 +1,10 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Estourou o timeout de execução de um passo (ver <see cref="HarnessConfig.TimeoutMs"/>).
-/// Lançada dentro do <see cref="TaskRegistry"/> e capturada ali mesmo: vira diagnóstico no
-/// stderr + <c>"stop"</c> no stdout — o mesmo contrato de encerramento gracioso das demais
-/// guardas (teto de passos e de custo).
+/// A step's execution timeout was exceeded (see <see cref="HarnessConfig.TimeoutMs"/>).
+/// Thrown inside <see cref="TaskRegistry"/> and caught right there: it becomes a stderr
+/// diagnostic + <c>"stop"</c> on stdout — the same graceful-termination contract as the
+/// other guards (step and cost ceilings).
 /// </summary>
 public sealed class HarnessTimeoutException(int timeoutMs)
-    : Exception($"timeout de {timeoutMs}ms excedido na execução da task; encerrando.");
+    : Exception($"task execution exceeded the {timeoutMs}ms timeout; stopping.");

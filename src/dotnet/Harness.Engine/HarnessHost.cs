@@ -1,9 +1,8 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Ponto de entrada reutilizável de um flow. Um novo domínio só precisa definir suas
-/// tasks e chamar <see cref="Run"/> — toda a orquestração (dispatch, guardas, transporte)
-/// fica aqui.
+/// A flow's reusable entry point. A new domain only needs to define its tasks and call
+/// <see cref="Run"/> — all the orchestration (dispatch, guards, transport) lives here.
 /// </summary>
 public static class HarnessHost
 {
@@ -18,17 +17,17 @@ public static class HarnessHost
     {
         var result = TaskRegistry.Dispatch(args, tasks, validators, maxSteps, shouldResetOnStart);
 
-        // Run concluído: congela trajetória E estado final como evidência para a avaliação
-        // posterior, antes que um próximo flow resete o trace e o state vivos. Cada flow
-        // publica no SEU caminho (o refinamento em last-run.*, a avaliação em
-        // last-evaluation.*), para que a avaliação não sobrescreva o que ela mesma consome.
+        // Run completed: freezes the trajectory AND final state as evidence for later
+        // evaluation, before a next flow resets the live trace and state. Each flow
+        // publishes to ITS OWN path (refinement to last-run.*, evaluation to
+        // last-evaluation.*), so evaluation doesn't overwrite what it itself consumes.
         if (result == "stop")
         {
             Trace.Snapshot(traceSnapshotPath);
             StateStore.Snapshot(stateSnapshotPath);
         }
 
-        // Único ponto que escreve no stdout — o canal de transporte do harness.
+        // The only point that writes to stdout — the harness's transport channel.
         Console.WriteLine(result);
         return 0;
     }

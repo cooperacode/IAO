@@ -1,27 +1,28 @@
 ---
 name: session-report
-description: "gerar relatorio HTML de custo/uso da sessao mais recente do harness (tokens, custo por passo, por comando, erros) para claude, codex ou copilot"
+description: "generate an HTML cost/usage report for the harness's most recent session (tokens, cost per step, per command, errors) for claude, codex, or copilot"
 ---
 
-# SKILL: relatorio de uso e custo da sessao
+# SKILL: session usage and cost report
 
-Gera um relatorio HTML autocontido que correlaciona os passos do harness
-(`.harness/trace.jsonl`) com o consumo real de tokens de um driver (IDE/agente) — sem isso,
-"quanto custou essa execução, passo a passo" fica preso em linhas de tabela no terminal
-(`scripts/harness_cost_correlate.py`), sem visão consolidada.
+Generates a self-contained HTML report that correlates the harness steps
+(`.harness/trace.jsonl`) with a driver's (IDE/agent) actual token consumption — without this,
+"how much did this run cost, step by step" stays stuck in terminal table rows
+(`scripts/harness_cost_correlate.py`), with no consolidated view.
 
-## Rodar (caminho do agente)
+## Running it (the agent's path)
 
-O driver é `skills/session-report/generate_report.py`. Ele encadeia dois scripts já
-existentes, não reimplementa nada:
+The driver is `skills/session-report/generate_report.py`. It chains two existing scripts,
+without reimplementing anything:
 
-1. `scripts/<driver>_usage.py --json` — descobre a sessão aderente ao trace daquele driver
-   para este repo. Para Codex, escolhe a sessão com maior sobreposição temporal e usa sua
-   árvore de subagentes; para os demais drivers, usa a sessão de maior `last_ts`.
+1. `scripts/<driver>_usage.py --json` — discovers the session that best fits that driver's
+   trace for this repo. For Codex, it picks the session with the greatest time overlap and
+   uses its subagent tree; for the other drivers, it uses the session with the largest
+   `last_ts`.
 2. `scripts/harness_cost_correlate.py --usage-source <driver> --session <id> --trace-file .harness/trace.jsonl --json`
-   — correlaciona os passos do trace com o consumo daquela sessão. No Codex, o caminho
-   automático usa `--session-tree <id>` para incluir todos os descendentes.
-3. Normaliza e renderiza o HTML.
+   — correlates the trace steps with that session's consumption. On Codex, the automatic path
+   uses `--session-tree <id>` to include all descendants.
+3. Normalizes and renders the HTML.
 
 ```bash
 skills/session-report/generate_report.py --driver claude
@@ -29,91 +30,91 @@ skills/session-report/generate_report.py --driver codex
 skills/session-report/generate_report.py --driver copilot
 ```
 
-Gera `report/session-report-<driver>-<timestamp>.html` (pasta criada se não existir) e
-imprime o caminho no final. **Confirmado nesta sessão**, rodando os três drivers contra os
-dados reais deste repo: usando a sessão que efetivamente gerou `.harness/trace.jsonl`
-(`--session daba97f0-b838-4b05-92f3-1b778de86d78`), o relatório reproduziu exatamente os
-números do `.harness/report_custo_claude.txt` já existente no repo — 57 passos, $10.55
-atribuídos, $11.46 total, 42m 40s de duração.
+Generates `report/session-report-<driver>-<timestamp>.html` (folder created if it doesn't
+exist) and prints the path at the end. **Confirmed in this session**, running all three
+drivers against this repo's real data: using the session that actually generated
+`.harness/trace.jsonl` (`--session daba97f0-b838-4b05-92f3-1b778de86d78`), the report
+reproduced exactly the numbers from the existing `.harness/report_custo_claude.txt` in the
+repo — 57 steps, $10.55 attributed, $11.46 total, 42m 40s duration.
 
-### Escopo (opcional)
+### Scope (optional)
 
 ```bash
 skills/session-report/generate_report.py --driver claude --session <session-id>
 skills/session-report/generate_report.py --driver codex --session-tree <session-id>
 skills/session-report/generate_report.py --driver codex --trace-file .harness/last-development.trace.jsonl
-skills/session-report/generate_report.py --driver claude --out-dir /tmp/relatorios
+skills/session-report/generate_report.py --driver claude --out-dir /tmp/reports
 ```
 
-`--session` pula a auto-detecção e mantém o filtro estrito de uma única sessão.
-`--session-tree` (Codex) inclui a raiz e todos os subagentes descendentes. Sem nenhum dos
-dois, o relatório Codex seleciona automaticamente a sessão com maior sobreposição ao trace
-e agrega sua árvore. `--trace-file` aponta para outro trace (default: `.harness/trace.jsonl`;
-o repo também mantém `.harness/last-development.trace.jsonl`, um snapshot idêntico da última
-execução).
+`--session` skips auto-detection and keeps the strict single-session filter.
+`--session-tree` (Codex) includes the root and all descendant subagents. Without either, the
+Codex report automatically selects the session with the greatest overlap with the trace and
+aggregates its tree. `--trace-file` points to another trace (default: `.harness/trace.jsonl`;
+the repo also keeps `.harness/last-development.trace.jsonl`, an identical snapshot of the last
+run).
 
-## Pré-requisitos
+## Prerequisites
 
-- Python 3 (testado com 3.12) — sem dependências externas, só stdlib.
-- `scripts/claude_usage.py`, `scripts/codex_usage.py`, `scripts/copilot_usage.py` e
-  `scripts/harness_cost_correlate.py` já existentes na raiz do repo.
-- Um `.harness/trace.jsonl` (ou outro passado via `--trace-file`) de uma execução do harness
-  já feita — sem trace não há passo para correlacionar.
+- Python 3 (tested with 3.12) — no external dependencies, stdlib only.
+- `scripts/claude_usage.py`, `scripts/codex_usage.py`, `scripts/copilot_usage.py` and
+  `scripts/harness_cost_correlate.py` already present at the repo root.
+- A `.harness/trace.jsonl` (or another one passed via `--trace-file`) from a harness run that
+  has already happened — without a trace there's no step to correlate.
 
-## O que o relatorio mostra
+## What the report shows
 
-- **KPIs**: passos, erros, quantidade de sessões correlacionadas, custo atribuído (soma dos
-  passos), custo total do escopo (inclui consumo pós-último-passo, "não atribuído"), tokens
-  totais, custo médio/passo.
-- **Custo por comando** — gráfico de barras horizontal + tabela (cores atribuídas
-  dinamicamente aos comandos vistos no trace, não fixas).
-- **Telemetria por comando** — duração da janela correlacionada, eventos de token,
-  tool calls, input tokens, cached input tokens, non-cached input tokens, output tokens,
-  reasoning output tokens e média de tokens por passo. A contagem de tool calls/eventos
-  depende do rollout local do driver; hoje é preenchida para Codex.
-- **Custo por passo ao longo da execução** — gráfico de linha; passos com `outcome: error`
-  aparecem com anel vermelho.
-- **Erros registrados** — lista dos passos com `outcome: error` (oculta se não houver nenhum).
-- **Tokens e custo por modelo** — agregado dentro da janela da sessão (passos + não
-  atribuído), com quebra de input/cache/output/raciocínio.
-- **Log completo** — tabela colapsável com todos os passos, na ordem original, incluindo
-  duração, quebra de tokens e contadores de atividade quando disponíveis.
-- **Avisos** — warnings dos scripts de usage/correlate, modelos sem preço cadastrado, e a nota
-  de custo do Copilot (fatura por premium request, não por token — sem `$` estimado).
+- **KPIs**: steps, errors, number of correlated sessions, attributed cost (sum of the steps),
+  total scope cost (includes post-last-step consumption, "unattributed"), total tokens,
+  average cost/step.
+- **Cost per command** — horizontal bar chart + table (colors assigned dynamically to the
+  commands seen in the trace, not fixed).
+- **Telemetry per command** — duration of the correlated window, token events, tool calls,
+  input tokens, cached input tokens, non-cached input tokens, output tokens, reasoning output
+  tokens, and average tokens per step. Tool call/event counts depend on the driver's local
+  rollout; today it's populated for Codex.
+- **Cost per step over the run** — line chart; steps with `outcome: error` show up with a red
+  ring.
+- **Logged errors** — list of steps with `outcome: error` (hidden if there are none).
+- **Tokens and cost per model** — aggregated within the session window (steps + unattributed),
+  broken down by input/cache/output/reasoning.
+- **Full log** — collapsible table with every step, in original order, including duration,
+  token breakdown, and activity counters when available.
+- **Warnings** — warnings from the usage/correlate scripts, models without a registered price,
+  and the note on Copilot's cost (billed by premium request, not by token — no `$` estimate).
 
-O layout (paleta, KPI grid, gráficos SVG, tooltip) segue o design system de
-`curso/material/relatorio-execucao-harness.html` — este relatório reproduz a seção de
-custo/execução daquele template (é gerado a partir da mesma fonte de dados,
-`harness_cost_correlate.py`), mas fica de fora as seções de features/complexidade de código,
-que dependem de `feature_list.json` e análise Roslyn — fora do escopo desta skill.
+The layout (palette, KPI grid, SVG charts, tooltip) follows the design system of
+`curso/material/relatorio-execucao-harness.html` — this report reproduces the cost/execution
+section of that template (it's generated from the same data source,
+`harness_cost_correlate.py`), but leaves out the features/code-complexity sections, which
+depend on `feature_list.json` and Roslyn analysis — out of scope for this skill.
 
 ## Gotchas
 
-- **A correlação é por janela de tempo, não por chave compartilhada** — o Codex agora evita
-  selecionar uma conversa posterior ao preferir a sessão com maior sobreposição temporal ao
-  trace e inclui sua árvore de subagentes. Se não houver qualquer sobreposição, ainda existe
-  fallback para a sessão de maior `last_ts`; nesse caso, passe
-  `--session-tree <id-da-raiz-que-rodou-o-harness>` explicitamente. Claude e Copilot mantêm a
-  seleção por `last_ts` e podem exigir `--session`.
-- **Sem trace, sem relatório**: `harness_cost_correlate.py` exige um `--trace-file` existente
-  — não há fallback para "resumo geral sem passos". Se `.harness/trace.jsonl` não existir
-  (nenhuma execução do harness ainda), o driver falha com uma mensagem apontando para rodar o
-  harness primeiro.
-- **Custo do Copilot é sempre `n/d`** — o backend do `harness_cost_correlate.py` para copilot
-  retorna `cost=None` sempre (fatura por premium request com multiplicador, não por token);
-  o relatório mostra tokens normalmente mas todo KPI/coluna de custo vira "n/d", com uma nota
-  explicativa no rodapé.
-- **`--out-dir`/`--trace-file` default são sempre relativos à raiz do repo**, não ao
-  diretório onde o comando foi chamado — `generate_report.py` resolve `REPO_ROOT` a partir do
-  próprio caminho do arquivo (`skills/session-report/generate_report.py` → sobe dois níveis).
+- **Correlation is by time window, not by a shared key** — Codex now avoids selecting a later
+  conversation by preferring the session with the greatest time overlap with the trace and
+  includes its subagent tree. If there's no overlap at all, there's still a fallback to the
+  session with the largest `last_ts`; in that case, pass
+  `--session-tree <id-of-the-root-that-ran-the-harness>` explicitly. Claude and Copilot keep
+  selection by `last_ts` and may require `--session`.
+- **No trace, no report**: `harness_cost_correlate.py` requires an existing `--trace-file` —
+  there's no fallback to "general summary without steps". If `.harness/trace.jsonl` doesn't
+  exist (no harness run yet), the driver fails with a message pointing to run the harness
+  first.
+- **Copilot's cost is always `n/d`** — `harness_cost_correlate.py`'s backend for copilot
+  always returns `cost=None` (billed by premium request with a multiplier, not by token); the
+  report still shows tokens normally but every cost KPI/column becomes "n/d", with an
+  explanatory note in the footer.
+- **`--out-dir`/`--trace-file` defaults are always relative to the repo root**, not the
+  directory the command was called from — `generate_report.py` resolves `REPO_ROOT` from its
+  own file path (`skills/session-report/generate_report.py` → up two levels).
 
 ## Troubleshooting
 
-- `Trace do harness nao encontrado: .harness/trace.jsonl` — rode uma execução do harness
-  (`dev-initializer` + ciclo de features) antes, ou aponte `--trace-file` para um trace
-  existente (ex.: `.harness/last-development.trace.jsonl`).
-- `Nenhuma sessao de <driver> encontrada para este repo` — o driver escolhido nunca foi usado
-  neste repositório (o `<driver>_usage.py` correspondente não achou sessões). Rode o script
-  de usage direto (`python3 scripts/claude_usage.py`) para confirmar.
-- `Erro ao rodar <script>.py (exit 1)` — o script subjacente (usage ou correlate) falhou; o
-  stderr dele é repassado prefixado com `[<script>]` antes da mensagem de erro final.
+- `Trace do harness nao encontrado: .harness/trace.jsonl` — run a harness session first
+  (`dev-initializer` + feature cycle), or point `--trace-file` to an existing trace (e.g.
+  `.harness/last-development.trace.jsonl`).
+- `Nenhuma sessao de <driver> encontrada para este repo` — the chosen driver has never been
+  used in this repository (the corresponding `<driver>_usage.py` found no sessions). Run the
+  usage script directly (`python3 scripts/claude_usage.py`) to confirm.
+- `Erro ao rodar <script>.py (exit 1)` — the underlying script (usage or correlate) failed;
+  its stderr is passed through prefixed with `[<script>]` before the final error message.

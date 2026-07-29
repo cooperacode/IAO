@@ -48,9 +48,9 @@ func LoadStateFrom(path string) HarnessState {
 				}
 				return state
 			}
-			fmt.Fprintf(os.Stderr, "[StateStore] falha ao carregar: %s\n", err)
+			fmt.Fprintf(os.Stderr, "[StateStore] failed to load: %s\n", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "[StateStore] falha ao carregar: %s\n", err)
+			fmt.Fprintf(os.Stderr, "[StateStore] failed to load: %s\n", err)
 		}
 	}
 
@@ -60,16 +60,16 @@ func LoadStateFrom(path string) HarnessState {
 // SaveState persists state to the live state.json.
 func SaveState(state HarnessState) {
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] falha ao salvar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[StateStore] failed to save: %s\n", err)
 		return
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] falha ao salvar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[StateStore] failed to save: %s\n", err)
 		return
 	}
 	if err := writeAtomic(stateFilePath, string(data)); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] falha ao salvar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[StateStore] failed to save: %s\n", err)
 	}
 }
 
@@ -85,11 +85,11 @@ func SnapshotState(destination string) {
 		return
 	}
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] falha ao congelar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[StateStore] failed to freeze: %s\n", err)
 		return
 	}
 	if err := copyAtomic(stateFilePath, destination); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] falha ao congelar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[StateStore] failed to freeze: %s\n", err)
 	}
 }
 

@@ -35,7 +35,7 @@ func NotEmpty(expectation string) Validator {
 		if firstArg(e) != "" {
 			return ValidationPass
 		}
-		return ValidationFail(fmt.Sprintf("O argumento esperado veio vazio. Esperado: %s.", expectation))
+		return ValidationFail(fmt.Sprintf("The expected argument came back empty. Expected: %s.", expectation))
 	}
 }
 
@@ -47,7 +47,7 @@ func MinLines(count int, expectation string) Validator {
 			return ValidationPass
 		}
 		return ValidationFail(fmt.Sprintf(
-			"O argumento tem %d linha(s) úteis, mas a task espera ao menos %d. Esperado: %s.", lines, count, expectation))
+			"The argument has %d non-empty line(s), but the task expects at least %d. Expected: %s.", lines, count, expectation))
 	}
 }
 
@@ -59,7 +59,7 @@ func ContainsNumber(expectation string) Validator {
 		if digitRegexp.MatchString(firstArg(e)) {
 			return ValidationPass
 		}
-		return ValidationFail(fmt.Sprintf("O argumento não contém nenhum número. Esperado: %s.", expectation))
+		return ValidationFail(fmt.Sprintf("The argument does not contain any number. Expected: %s.", expectation))
 	}
 }
 
@@ -70,7 +70,7 @@ func Matches(pattern, expectation string) Validator {
 		if re.MatchString(firstArg(e)) {
 			return ValidationPass
 		}
-		return ValidationFail(fmt.Sprintf("O argumento não atende ao formato esperado. Esperado: %s.", expectation))
+		return ValidationFail(fmt.Sprintf("The argument does not match the expected format. Expected: %s.", expectation))
 	}
 }
 

@@ -41,8 +41,8 @@ public class GitCommandTests : IDisposable
     [Fact]
     public void Run_InjetaIsolamentoDeHooksEPager()
     {
-        // `git config --get` enxerga overrides de `-c` na pilha de config, então dá para
-        // confirmar que Run() sempre os injeta sem precisar de um repositório real.
+        // `git config --get` sees `-c` overrides on the config stack, so we can confirm
+        // Run() always injects them without needing a real repository.
         var hooksPath = GitCommand.Run(_tempDir, "config", "--get", "core.hooksPath");
         Assert.Equal(0, hooksPath.ExitCode);
         Assert.EndsWith("iao-no-hooks", hooksPath.Output.Trim());

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Portão local/CI da porta Python do harness: testes pytest + smoke E2E determinístico
-# (0 tokens). Propaga o primeiro exit code != 0. Espelha run-checks.sh (lado .NET).
+# Local/CI gate for the Python port of the harness: pytest tests + deterministic E2E smoke
+# (0 tokens). Propagates the first non-zero exit code. Mirrors run-checks.sh (.NET side).
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
@@ -10,12 +10,12 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 echo "==> pytest (src/python/tests)"
 PYTHONPATH="$DIR/src/python" "$PYTHON_BIN" -m pytest "$DIR/src/python/tests" -q
 
-echo "==> smoke do fluxo de desenvolvimento (Python, ponta a ponta)"
-# Dirige o wrapper Python pela inbox num workspace descartável (não toca o .harness/ do
-# repo). Pega o que o teste unitário não pega: transporte, inbox e o processo CLI real.
-# Determinístico e 0 tokens — o "driver" aqui é este script.
+echo "==> development flow smoke test (Python, end to end)"
+# Drives the Python wrapper through the inbox in a disposable workspace (doesn't touch the
+# repo's .harness/). Catches what the unit test doesn't: transport, inbox and the real CLI
+# process. Deterministic and 0 tokens — the "driver" here is this script.
 WRAPPER="$DIR/run-development-py.sh"
-[[ -x "$WRAPPER" ]] || { echo "[smoke] wrapper não encontrado ou não executável: $WRAPPER" >&2; exit 1; }
+[[ -x "$WRAPPER" ]] || { echo "[smoke] wrapper not found or not executable: $WRAPPER" >&2; exit 1; }
 
 SMOKE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_DIR"' EXIT
@@ -23,7 +23,7 @@ mkdir -p "$SMOKE_DIR/.harness"
 
 json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 
-dev_step() {  # tipo valor [args...] → escreve a inbox (JSON) e roda um passo; ecoa o stdout
+dev_step() {  # type value [args...] → writes the inbox (JSON) and runs one step; echoes stdout
   local typ="$1" val="$2"; shift 2
   local json="{\"type\":\"$typ\",\"value\":\"$val\"" first=1 a
   if [[ $# -gt 0 ]]; then
@@ -53,23 +53,23 @@ cat > "$SMOKE_DIR/app/verify-feature.sh" <<'SH'
 set -euo pipefail
 ./init.sh
 true
-echo "PASS: feature ${1:-all} verificada"
+echo "PASS: feature ${1:-all} verified"
 SH
 chmod +x "$SMOKE_DIR/app/verify-feature.sh"
 LAST=""
 for feature in 1 2; do
-  dev_step command bearings  "orientado"  >/dev/null
+  dev_step command bearings  "oriented"  >/dev/null
   dev_step command smoke     "baseline ok" >/dev/null
   dev_step command pick                    >/dev/null
-  LAST="$(dev_step command implement "feito")"
+  LAST="$(dev_step command implement "done")"
 done
 
-[[ "$LAST" == "stop" ]] || { echo "[smoke] esperava 'stop' ao fim do loop, veio: '$LAST'" >&2; exit 1; }
+[[ "$LAST" == "stop" ]] || { echo "[smoke] expected 'stop' at the end of the loop, got: '$LAST'" >&2; exit 1; }
 grep -Eq '"passes"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIR/.harness/feature_list.json" \
   && ! grep -Eq '"passes"[[:space:]]*:[[:space:]]*false' "$SMOKE_DIR/.harness/feature_list.json" \
-  || { echo "[smoke] feature_list.json não fechou com todas passando" >&2; exit 1; }
+  || { echo "[smoke] feature_list.json did not close with all features passing" >&2; exit 1; }
 [[ -s "$SMOKE_DIR/.harness/logs/verify-feature-2.log" ]] \
-  || { echo "[smoke] log de verify-feature não foi criado" >&2; exit 1; }
-echo "    loop fechou em stop e todas as features passam ✓"
+  || { echo "[smoke] verify-feature log was not created" >&2; exit 1; }
+echo "    loop closed on stop and all features pass ✓"
 
-echo "==> OK — testes verdes e smoke como esperado."
+echo "==> OK — tests green and smoke as expected."

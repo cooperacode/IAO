@@ -8,8 +8,8 @@
     <RootNamespace>Flows.Development</RootNamespace>
     <AssemblyName>Flows.Development</AssemblyName>
 
-    <!-- Native AOT: binário nativo autocontido, sem dependência do runtime .NET.
-         Publique com um RID: dotnet publish -c Release -r osx-arm64 (ou linux-x64, win-x64). -->
+    <!-- Native AOT: self-contained native binary, no dependency on the .NET runtime.
+         Publish with a RID: dotnet publish -c Release -r osx-arm64 (or linux-x64, win-x64). -->
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <StripSymbols>true</StripSymbols>

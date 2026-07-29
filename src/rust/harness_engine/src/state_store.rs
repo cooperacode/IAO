@@ -1,7 +1,7 @@
-//! Cada invocação do harness é um processo novo e sem memória. Este store persiste o
-//! estado acumulado (contador de passos + dados de domínio) em arquivo, para que o
-//! envelope trafegado pelo modelo fique mínimo — economia de tokens: o modelo passa uma
-//! chave, não o estado inteiro, a cada volta do loop.
+//! Every harness invocation is a new process with no memory. This store persists the
+//! accumulated state (step counter + domain data) to file, so the envelope carried by
+//! the model stays minimal — token savings: the model passes a key, not the whole
+//! state, on every loop iteration.
 
 use std::collections::HashMap;
 
@@ -10,27 +10,27 @@ use crate::harness_state::HarnessState;
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/state.json";
 
-/// Estado final congelado do último run concluído. Existe pela mesma razão que
-/// `trace::LAST_RUN_PATH`: o `start` de qualquer flow reseta o `state.json` vivo, então a
-/// avaliação (que checa completude) precisa ler as chaves de domínio de um snapshot
-/// estável, não do arquivo que seu próprio `start` zerou.
+/// Final state frozen from the last completed run. Exists for the same reason as
+/// `trace::LAST_RUN_PATH`: any flow's `start` resets the live `state.json`, so the
+/// evaluation (which checks completeness) needs to read the domain keys from a stable
+/// snapshot, not from the file its own `start` just zeroed out.
 pub const LAST_RUN_STATE_PATH: &str = ".harness/last-run.state.json";
 
-/// Estado final congelado do último run de avaliação — caminho próprio, não sobrescreve o
-/// do refinamento.
+/// Final state frozen from the last evaluation run — its own path, doesn't overwrite the
+/// refinement's.
 pub const LAST_EVALUATION_STATE_PATH: &str = ".harness/last-evaluation.state.json";
 
-/// Chave convencional em `HarnessState::data` para a etiqueta que `task_registry` propaga
-/// ao `trace` a cada passo (ver `trace::TraceEntry::label`). Genérica de propósito: a
-/// engine não sabe o que é uma "feature" — só relê esta chave se o flow a tiver setado
-/// (ex.: `flows_development::tasks::pick`).
+/// Conventional key in `HarnessState::data` for the label that `task_registry` propagates
+/// to `trace` on every step (see `trace::TraceEntry::label`). Generic on purpose: the
+/// engine doesn't know what a "feature" is — it only re-reads this key if the flow has
+/// set it (e.g. `flows_development::tasks::pick`).
 pub const TRACE_LABEL_KEY: &str = "trace_label";
 
 pub fn load() -> HarnessState {
     load_from(FILE_PATH)
 }
 
-/// Carrega um estado de um caminho arbitrário (ex.: a evidência de um caso do golden set).
+/// Loads a state from an arbitrary path (e.g. the evidence of a golden set case).
 pub fn load_from(path: &str) -> HarnessState {
     let p = std::path::Path::new(path);
     if p.exists() {
@@ -42,7 +42,7 @@ pub fn load_from(path: &str) -> HarnessState {
 
         match loaded {
             Ok(state) => return state,
-            Err(e) => eprintln!("[StateStore] falha ao carregar: {e}"),
+            Err(e) => eprintln!("[StateStore] failed to load: {e}"),
         }
     }
 
@@ -51,7 +51,7 @@ pub fn load_from(path: &str) -> HarnessState {
 
 pub fn save(state: &HarnessState) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[StateStore] falha ao salvar: {e}");
+        eprintln!("[StateStore] failed to save: {e}");
         return;
     }
     match serde_json::to_string(state) {
@@ -59,10 +59,10 @@ pub fn save(state: &HarnessState) {
             if let Err(e) =
                 crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
             {
-                eprintln!("[StateStore] falha ao salvar: {e}");
+                eprintln!("[StateStore] failed to save: {e}");
             }
         }
-        Err(e) => eprintln!("[StateStore] falha ao salvar: {e}"),
+        Err(e) => eprintln!("[StateStore] failed to save: {e}"),
     }
 }
 
@@ -70,15 +70,15 @@ pub fn reset() {
     save(&HarnessState::new(0, HashMap::new()));
 }
 
-/// Congela o `state.json` vivo no destino — a evidência de completude do run concluído.
+/// Freezes the live `state.json` at the destination — the evidence of the completed run's completeness.
 pub fn snapshot(destination: &str) {
     if std::path::Path::new(FILE_PATH).exists() {
         if let Err(e) = std::fs::create_dir_all(DIR) {
-            eprintln!("[StateStore] falha ao congelar: {e}");
+            eprintln!("[StateStore] failed to freeze: {e}");
             return;
         }
         if let Err(e) = std::fs::copy(FILE_PATH, destination) {
-            eprintln!("[StateStore] falha ao congelar: {e}");
+            eprintln!("[StateStore] failed to freeze: {e}");
         }
     }
 }
@@ -93,9 +93,9 @@ pub fn increment() -> i32 {
     next
 }
 
-/// Soma o custo do turno ao acumulado do run e devolve o total — insumo do teto de
-/// custo em `task_registry`. Chars de instrução emitida são a única medida: é o que a
-/// engine consegue atestar sozinha, sem depender de auto-relato do driver.
+/// Adds the turn's cost to the run's accumulator and returns the total — the input to
+/// the cost ceiling in `task_registry`. Emitted instruction chars are the only measure:
+/// it's what the engine can attest to on its own, without relying on driver self-reporting.
 pub fn add_cost(chars: i32) -> i32 {
     let state = load();
     let next_cost = state.cost_chars + chars;
@@ -117,7 +117,7 @@ pub fn get(key: &str) -> Option<String> {
     load().data.get(key).cloned()
 }
 
-/// Persiste o contexto do driver capturado no `start` (ver `task_registry`).
+/// Persists the driver context captured on `start` (see `task_registry`).
 pub fn set_context(context: HashMap<String, String>) {
     let state = load();
     save(&HarnessState {
@@ -126,7 +126,7 @@ pub fn set_context(context: HashMap<String, String>) {
     });
 }
 
-/// Contexto do driver persistido, para `prompt_formatter` reinjetar em toda saída.
+/// Persisted driver context, for `prompt_formatter` to reinject into every output.
 pub fn get_context() -> Option<HashMap<String, String>> {
     load().context
 }
@@ -164,9 +164,9 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        set("descricao", "Login com Google");
+        set("description", "Login with Google");
 
-        assert_eq!(get("descricao"), Some("Login com Google".to_string()));
+        assert_eq!(get("description"), Some("Login with Google".to_string()));
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        assert_eq!(get("nao-existe"), None);
+        assert_eq!(get("does-not-exist"), None);
     }
 
     #[test]
@@ -182,10 +182,10 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        set("tipo", "Bug");
-        set("tipo", "Épico");
+        set("type", "Bug");
+        set("type", "Epic");
 
-        assert_eq!(get("tipo"), Some("Épico".to_string()));
+        assert_eq!(get("type"), Some("Epic".to_string()));
     }
 
     #[test]
@@ -204,10 +204,10 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        set("descricao", "x");
+        set("description", "x");
         increment();
 
-        assert_eq!(get("descricao"), Some("x".to_string()));
+        assert_eq!(get("description"), Some("x".to_string()));
     }
 
     #[test]
@@ -215,13 +215,13 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        set("descricao", "x");
+        set("description", "x");
         increment();
 
         reset();
 
         assert_eq!(load().step, 0);
-        assert_eq!(get("descricao"), None);
+        assert_eq!(get("description"), None);
     }
 
     #[test]

@@ -54,7 +54,7 @@ type featureList struct {
 // WriteFeatures overwrites the whole list — used by `plan` (session 0) and MarkFeaturePassed.
 func WriteFeatures(features []Feature) {
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to write: %s\n", err)
 		return
 	}
 	if features == nil {
@@ -62,11 +62,11 @@ func WriteFeatures(features []Feature) {
 	}
 	data, err := json.MarshalIndent(featureList{Items: features}, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to write: %s\n", err)
 		return
 	}
 	if err := writeAtomic(featureListFilePath, string(data)); err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to write: %s\n", err)
 	}
 }
 
@@ -78,7 +78,7 @@ func WriteFeatures(features []Feature) {
 func ParseFeatures(rawJSON string) []Feature {
 	var parsed []rawFeature
 	if err := json.Unmarshal([]byte(rawJSON), &parsed); err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao interpretar features: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to parse features: %s\n", err)
 		return []Feature{}
 	}
 	if len(parsed) == 0 {
@@ -113,7 +113,7 @@ func ParseFeatures(rawJSON string) []Feature {
 	}
 
 	if err := dependencyGraphError(reindexed); err != "" {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] grafo de dependências inválido: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] invalid dependency graph: %s\n", err)
 		return []Feature{}
 	}
 
@@ -150,7 +150,7 @@ func dependencyGraphError(features []Feature) string {
 		}
 	}
 	if len(dangling) > 0 {
-		return fmt.Sprintf("dependsOn referencia id(s) inexistente(s): %s", strings.Join(dangling, ", "))
+		return fmt.Sprintf("dependsOn references nonexistent id(s): %s", strings.Join(dangling, ", "))
 	}
 
 	indegree := make(map[int]int, len(features))
@@ -207,7 +207,7 @@ func dependencyGraphError(features []Feature) string {
 	for i, id := range cyclic {
 		parts[i] = fmt.Sprintf("%d", id)
 	}
-	return fmt.Sprintf("dependência cíclica entre as features: %s", strings.Join(parts, ", "))
+	return fmt.Sprintf("cyclic dependency among features: %s", strings.Join(parts, ", "))
 }
 
 // LoadFeatures loads the persisted feature list.
@@ -217,12 +217,12 @@ func LoadFeatures() []Feature {
 	}
 	data, err := os.ReadFile(featureListFilePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao carregar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to load: %s\n", err)
 		return []Feature{}
 	}
 	var list featureList
 	if err := json.Unmarshal(data, &list); err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao carregar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to load: %s\n", err)
 		return []Feature{}
 	}
 	if list.Items == nil {
@@ -324,6 +324,6 @@ func ResetFeatures() {
 		return
 	}
 	if err := os.Remove(featureListFilePath); err != nil {
-		fmt.Fprintf(os.Stderr, "[FeatureStore] falha ao limpar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to clear: %s\n", err)
 	}
 }

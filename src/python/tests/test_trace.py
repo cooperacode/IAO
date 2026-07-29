@@ -1,5 +1,5 @@
-"""O trace é a sequência de comandos que state_store não guarda (ele sobrescreve o
-estado). Sem ele não há Trajectory Evaluation nem Telemetria de custo por passo."""
+"""The trace is the sequence of commands that state_store doesn't keep (it overwrites
+the state). Without it there's no Trajectory Evaluation or per-step cost Telemetry."""
 
 import hashlib
 import json
@@ -150,9 +150,9 @@ def test_reset_reinicia_a_cadeia_na_genese():
 
 
 def test_from_dict_sem_prev_hash_usa_default_vazio():
-    # Compatibilidade com trace.jsonl gravado antes deste campo existir.
-    legado = {"step": 1, "command": "start", "outcome": "instruction", "instructionChars": 10, "timestamp": "x"}
+    # Compatibility with a trace.jsonl written before this field existed.
+    legacy = {"step": 1, "command": "start", "outcome": "instruction", "instructionChars": 10, "timestamp": "x"}
 
-    entry = trace.TraceEntry.from_dict(legado)
+    entry = trace.TraceEntry.from_dict(legacy)
 
     assert entry.prev_hash == ""

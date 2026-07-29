@@ -1,9 +1,9 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Resolve caminhos relativos ao diretório de trabalho (raiz do repo, de onde o driver
-/// invoca o harness), com fallback para o diretório do binário. Compartilhado por quem
-/// injeta arquivos no prompt (skills, docs).
+/// Resolves paths relative to the working directory (the repo root, from where the driver
+/// invokes the harness), with a fallback to the binary's directory. Shared by whatever
+/// injects files into the prompt (skills, docs).
 /// </summary>
 public static class PathResolver
 {
@@ -23,20 +23,21 @@ public static class PathResolver
         if (Exists(fromBase) && IsContained(fromBase, baseDir))
             return fromBase;
 
-        // Nem o CWD nem o BaseDirectory serviram — ausente, ou um symlink desviando o alvo
-        // para fora das duas bases autorizadas. Devolve o caminho join original SEM seguir o
-        // link (não o alvo resolvido, que estaria fora da base); o File.Exists subsequente do
-        // chamador falha naturalmente quando o alvo de fato não é acessível/autorizado.
+        // Neither the CWD nor the BaseDirectory worked — missing, or a symlink steering the
+        // target outside both authorized bases. Returns the original joined path WITHOUT
+        // following the link (not the resolved target, which would be outside the base);
+        // the caller's subsequent File.Exists naturally fails when the target isn't
+        // actually accessible/authorized.
         return fromBase;
     }
 
     private static bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
 
     /// <summary>
-    /// Containment por symlink (RFC §6.3): resolve o alvo final do link (se <paramref name="candidate"/>
-    /// for um) e confere que ele está de fato dentro de <paramref name="baseDir"/>, comparando
-    /// caminhos canônicos por prefixo de diretório real — não prefixo de string lexical (o que
-    /// deixaria "/base-evil" passar como contido em "/base").
+    /// Symlink containment (RFC §6.3): resolves the link's final target (if <paramref name="candidate"/>
+    /// is one) and checks it's actually inside <paramref name="baseDir"/>, comparing
+    /// canonical paths by real directory prefix — not lexical string prefix (which would
+    /// let "/base-evil" pass as contained in "/base").
     /// </summary>
     private static bool IsContained(string candidate, string baseDir)
     {
@@ -52,7 +53,7 @@ public static class PathResolver
         return target.StartsWith(baseWithSep, comparison);
     }
 
-    /// <summary>Segue o link (se houver) até o alvo final; devolve o próprio caminho se não for um link ou a resolução falhar (ex.: link quebrado).</summary>
+    /// <summary>Follows the link (if any) to its final target; returns the path itself if it's not a link or resolution fails (e.g. a broken link).</summary>
     private static string ResolveFinalTarget(string path)
     {
         try
@@ -65,8 +66,8 @@ public static class PathResolver
         }
         catch
         {
-            // Link quebrado/inacessível: trata como não resolvido — cai no path original,
-            // e a checagem de containment acima decide com base nele.
+            // Broken/inaccessible link: treated as unresolved — falls back to the original
+            // path, and the containment check above decides based on it.
         }
 
         return path;

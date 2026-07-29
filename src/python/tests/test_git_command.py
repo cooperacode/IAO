@@ -20,8 +20,8 @@ def test_run_diretorio_inexistente_retorna_erro_sem_lancar(tmp_path):
 
 
 def test_run_injeta_isolamento_de_hooks_e_pager(tmp_path):
-    # `git config --get` enxerga overrides de `-c` na pilha de config, então dá para
-    # confirmar que run() sempre os injeta sem precisar de um repositório real.
+    # `git config --get` sees `-c` overrides on the config stack, so we can confirm
+    # run() always injects them without needing a real repository.
     hooks_path = git_command.run(tmp_path, "config", "--get", "core.hooksPath")
     assert hooks_path.exit_code == 0
     assert hooks_path.output.strip().endswith("iao-no-hooks")

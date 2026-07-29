@@ -1,42 +1,43 @@
 ---
 name: dev-handoff
-description: "deixar estado limpo para a próxima sessão"
+description: "leave clean state for the next session"
 ---
 
 # SKILL: leave clean state
 
-A próxima sessão começa **sem o seu contexto** — ela só terá o que você deixar registrado.
-Um handoff limpo é o que torna o loop retomável.
+The next session starts **without your context** — it will only have what you leave on
+record. A clean handoff is what makes the loop resumable.
 
-## 1. Commit descritivo
-`git commit` com uma mensagem que explique **o quê** e **por quê**, referenciando a feature.
-Um working tree limpo é a garantia de que o próximo `git log`/bisect faz sentido. Não deixe
-mudanças não commitadas nem arquivos temporários.
+## 1. Descriptive commit
+`git commit` with a message that explains **what** and **why**, referencing the feature.
+A clean working tree is the guarantee that the next `git log`/bisect makes sense. Don't leave
+uncommitted changes or temporary files.
 
-Não inclua logs completos no commit. Logs operacionais do harness devem ficar em
-`.harness/logs/`, que é estado local ignorado pelo Git; cite o caminho no `progress.txt`
-quando ele explicar como investigar uma falha/validação.
+Don't include full logs in the commit. The harness's operational logs belong in
+`.harness/logs/`, which is local state ignored by Git; cite the path in `progress.txt` when it
+explains how to investigate a failure/validation.
 
-## 2. Atualizar o progresso
-Anexe **uma única linha física** ao `progress.txt` com: a feature concluída (id + título), o
-que foi feito, e como verificar. É o que a próxima sessão lê no `bearings` para se orientar —
-um `tail -n 20` só funciona como resumo rápido se cada entrada couber numa linha.
+## 2. Update progress
+Append **a single physical line** to `progress.txt` with: the completed feature (id + title),
+what was done, and how to verify it. This is what the next session reads in `bearings` to get
+its bearings — a `tail -n 20` only works as a quick summary if each entry fits on one line.
 
-Antes de escrever, rode de fato `date -u +"%Y-%m-%d %H:%M UTC"` no shell e use a saída literal
-como prefixo entre colchetes — nunca escreva `UTC` sem hora (isso quebra o parsing do
-timestamp e o propósito do prefixo como separador entre sessões):
-`[2026-07-21 20:18 UTC] Feature #8 - Filtrar listagem...: <o que foi feito>. Verificar com: ...`
+Before writing, actually run `date -u +"%Y-%m-%d %H:%M UTC"` in the shell and use the literal
+output as the bracketed prefix — never write `UTC` without a time (this breaks the timestamp
+parsing and the purpose of the prefix as a separator between sessions):
+`[2026-07-21 20:18 UTC] Feature #8 - Filter listing...: <what was done>. Verify with: ...`
 
-Nunca quebre a entrada em parágrafos/blocos multi-linha, por mais detalhado que seja o que foi
-feito — resuma. Se sentir necessidade de mais detalhe do que cabe numa linha, esse detalhe
-pertence a `.harness/logs/` (citado por caminho), não ao `progress.txt`.
+Never split the entry into paragraphs/multi-line blocks, no matter how much detail there is
+about what was done — summarize it. If you feel the need for more detail than fits on one
+line, that detail belongs in `.harness/logs/` (cited by path), not in `progress.txt`.
 
-Antes de anexar, confira as últimas linhas do `progress.txt`: se o handoff automático do
-harness já registrou uma entrada `[data HH:MM UTC] Feature #<id> - ...` para esta mesma
-feature, não crie uma segunda — isso duplica o registro em dois formatos diferentes para o
-mesmo trabalho. Este passo manual é para preencher a lacuna quando o handoff automático falhou
-ou não rodou, não para complementar uma entrada que já existe.
+Before appending, check the last lines of `progress.txt`: if the harness's automatic handoff
+already logged an entry `[date HH:MM UTC] Feature #<id> - ...` for this same feature, don't
+create a second one — that duplicates the record in two different formats for the same work.
+This manual step is meant to fill the gap when the automatic handoff failed or didn't run, not
+to supplement an entry that already exists.
 
-Escreva de forma que alguém sem o seu contexto entenda em 10 segundos onde o trabalho está.
+Write it so that someone without your context understands in 10 seconds where the work
+stands.
 
-Confirme com o hash do commit em `$COMMIT`.
+Confirm with the commit hash in `$COMMIT`.

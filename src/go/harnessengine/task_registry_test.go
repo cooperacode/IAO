@@ -54,9 +54,9 @@ func TestDispatch_Finalize_ReturnsStop(t *testing.T) {
 func TestDispatch_UnknownCommand_ReturnsErrorNotStop(t *testing.T) {
 	isolate(t)
 
-	result := Dispatch([]string{`{"type":"text","value":"tipo"}`}, testTasks(), nil, nil, nil)
+	result := Dispatch([]string{`{"type":"text","value":"unknown"}`}, testTasks(), nil, nil, nil)
 
-	if !strings.HasPrefix(result, "ERRO") || result == "stop" || !strings.Contains(result, "'tipo'") {
+	if !strings.HasPrefix(result, "HARNESS PROTOCOL ERROR") || result == "stop" || !strings.Contains(result, "'unknown'") {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
@@ -66,7 +66,7 @@ func TestDispatch_MalformedJSON_ReturnsErrorNotStop(t *testing.T) {
 
 	result := Dispatch([]string{`{"type":"text","value":`}, testTasks(), nil, nil, nil)
 
-	if !strings.HasPrefix(result, "ERRO") || result == "stop" {
+	if !strings.HasPrefix(result, "HARNESS PROTOCOL ERROR") || result == "stop" {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
@@ -76,7 +76,7 @@ func TestDispatch_NoArgument_ReturnsErrorNotStop(t *testing.T) {
 
 	result := Dispatch(nil, testTasks(), nil, nil, nil)
 
-	if !strings.HasPrefix(result, "ERRO") || result == "stop" {
+	if !strings.HasPrefix(result, "HARNESS PROTOCOL ERROR") || result == "stop" {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
@@ -84,7 +84,7 @@ func TestDispatch_NoArgument_ReturnsErrorNotStop(t *testing.T) {
 func TestDispatch_ErrorMessage_ListsValidCommands(t *testing.T) {
 	isolate(t)
 
-	result := Dispatch([]string{`{"type":"text","value":"inexistente"}`}, testTasks(), nil, nil, nil)
+	result := Dispatch([]string{`{"type":"text","value":"nonexistent"}`}, testTasks(), nil, nil, nil)
 
 	for _, cmd := range []string{"start", "classify", "finalize"} {
 		if !strings.Contains(result, cmd) {
@@ -190,7 +190,7 @@ func TestDispatch_SlowTask_TimesOutAndReturnsStop(t *testing.T) {
 	slow := map[string]Action{
 		"slow": func(*Envelope) string {
 			time.Sleep(500 * time.Millisecond)
-			return "nunca chega"
+			return "never gets here"
 		},
 	}
 

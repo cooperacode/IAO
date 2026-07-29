@@ -1,16 +1,16 @@
-//! Avaliação em lote sobre um golden set: em vez de datasets MMLU/HumanEval, casos de
-//! desenvolvimento com a trajetória e as chaves esperadas. Puramente determinístico (0
-//! tokens): compara a evidência gravada de cada run contra a expectativa do caso e agrega
-//! a taxa de acerto.
+//! Batch evaluation over a golden set: instead of MMLU/HumanEval datasets, development
+//! cases with the expected trajectory and keys. Purely deterministic (0 tokens): compares
+//! the recorded evidence of each run against the case's expectation and aggregates the
+//! pass rate.
 
 use crate::evaluators::{self, Score};
 use crate::golden_case_store::GoldenCase;
 use crate::harness_state::HarnessState;
 use crate::trace::TraceEntry;
 
-/// Notas determinísticas de um caso. `passed` exige acerto pleno nas métricas; `ok` é o
-/// veredito da suíte — o caso se comportou como o golden set esperava (um caso negativo
-/// intencional é `ok` justamente quando `passed` é falso).
+/// Deterministic scores for a case. `passed` requires a full match across metrics; `ok`
+/// is the suite's verdict — whether the case behaved as the golden set expected (an
+/// intentional negative case is `ok` precisely when `passed` is false).
 #[derive(Debug, Clone)]
 pub struct CaseResult {
     pub id: String,
@@ -28,7 +28,7 @@ impl CaseResult {
     }
 }
 
-/// Agregado do lote: fração de casos que se comportaram como esperado (pronto para CI).
+/// Batch aggregate: fraction of cases that behaved as expected (CI-ready).
 #[derive(Debug, Clone)]
 pub struct BatchResult {
     pub cases: Vec<CaseResult>,
@@ -103,7 +103,7 @@ mod tests {
     }
 
     fn keys() -> Vec<String> {
-        ["descricao", "tipo", "veredito"]
+        ["description", "type", "verdict"]
             .iter()
             .map(|s| s.to_string())
             .collect()
@@ -163,7 +163,7 @@ mod tests {
                 "ready_check",
                 "finalize",
             ]),
-            &state_with(&["descricao", "tipo", "veredito"]),
+            &state_with(&["description", "type", "verdict"]),
         );
 
         assert!(result.passed());
@@ -189,12 +189,12 @@ mod tests {
 
     #[test]
     fn evaluate_trajetoria_incompleta_reprova() {
-        let g = golden("ruim", true);
+        let g = golden("bad", true);
 
         let result = evaluate(
             &g,
             &trace_of(&["start", "classify", "finalize"]),
-            &state_with(&["descricao", "tipo", "veredito"]),
+            &state_with(&["description", "type", "verdict"]),
         );
 
         assert!(!result.passed());
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn evaluate_estado_incompleto_reprova() {
-        let g = golden("faltou", true);
+        let g = golden("missing", true);
 
         let result = evaluate(
             &g,
@@ -222,7 +222,7 @@ mod tests {
                 "ready_check",
                 "finalize",
             ]),
-            &state_with(&["descricao", "tipo"]),
+            &state_with(&["description", "type"]),
         );
 
         assert!(!result.passed());
@@ -236,12 +236,12 @@ mod tests {
 
     #[test]
     fn evaluate_all_agrega_taxa_de_acerto() {
-        let bom = golden("bom", true);
-        let ruim = golden("ruim", true);
+        let good = golden("good", true);
+        let bad = golden("bad", true);
 
         let batch = evaluate_all(&[
             (
-                bom,
+                good,
                 trace_of(&[
                     "start",
                     "classify",
@@ -252,12 +252,12 @@ mod tests {
                     "ready_check",
                     "finalize",
                 ]),
-                state_with(&["descricao", "tipo", "veredito"]),
+                state_with(&["description", "type", "verdict"]),
             ),
             (
-                ruim,
+                bad,
                 trace_of(&["start", "classify"]),
-                state_with(&["descricao", "tipo", "veredito"]),
+                state_with(&["description", "type", "verdict"]),
             ),
         ]);
 
@@ -273,9 +273,9 @@ mod tests {
 
     #[test]
     fn evaluate_caso_negativo_intencional_que_reprova_nas_metricas_conta_como_ok() {
-        let g = golden("negativo", false);
+        let g = golden("negative", false);
 
-        // faltou "veredito"
+        // missing "verdict"
         let result = evaluate(
             &g,
             &trace_of(&[
@@ -288,18 +288,18 @@ mod tests {
                 "ready_check",
                 "finalize",
             ]),
-            &state_with(&["descricao", "tipo"]),
+            &state_with(&["description", "type"]),
         );
 
-        assert!(!result.passed()); // reprova nas métricas...
-        assert!(result.ok()); // ...que é exatamente o comportamento esperado
+        assert!(!result.passed()); // fails on the metrics...
+        assert!(result.ok()); // ...which is exactly the expected behavior
     }
 
     #[test]
     fn evaluate_caso_negativo_que_deixa_de_reprovar_conta_como_falha() {
-        let g = golden("negativo", false);
+        let g = golden("negative", false);
 
-        // agora passa em tudo
+        // now passes on everything
         let result = evaluate(
             &g,
             &trace_of(&[
@@ -312,21 +312,21 @@ mod tests {
                 "ready_check",
                 "finalize",
             ]),
-            &state_with(&["descricao", "tipo", "veredito"]),
+            &state_with(&["description", "type", "verdict"]),
         );
 
         assert!(result.passed());
-        assert!(!result.ok()); // esperava-se reprovação e não houve
+        assert!(!result.ok()); // a failure was expected and didn't happen
     }
 
     #[test]
     fn evaluate_all_caso_negativo_que_reprova_mantem_a_suite_verde() {
-        let bom = golden("bom", true);
+        let good = golden("good", true);
         let neg = golden("neg", false);
 
         let batch = evaluate_all(&[
             (
-                bom,
+                good,
                 trace_of(&[
                     "start",
                     "classify",
@@ -337,7 +337,7 @@ mod tests {
                     "ready_check",
                     "finalize",
                 ]),
-                state_with(&["descricao", "tipo", "veredito"]),
+                state_with(&["description", "type", "verdict"]),
             ),
             (
                 neg,
@@ -351,7 +351,7 @@ mod tests {
                     "ready_check",
                     "finalize",
                 ]),
-                state_with(&["descricao", "tipo"]),
+                state_with(&["description", "type"]),
             ),
         ]);
 

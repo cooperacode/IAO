@@ -60,7 +60,7 @@ func TestConfig_Load_PartialFile_FillsWithDefaults(t *testing.T) {
 func TestConfig_Load_InvalidFile_FallsBackToDefaultsWithoutPanicking(t *testing.T) {
 	isolate(t)
 
-	os.WriteFile("harness.json", []byte("{ isso não é json "), 0o644)
+	os.WriteFile("harness.json", []byte("{ this is not json "), 0o644)
 
 	if got := LoadConfig(); got != DefaultHarnessConfig() {
 		t.Fatalf("unexpected config: %+v", got)
@@ -102,7 +102,7 @@ func TestConfig_Load_InvalidEnvVar_IsIgnored(t *testing.T) {
 	isolate(t)
 
 	os.WriteFile("harness.json", []byte(`{"timeoutMs":1000}`), 0o644)
-	t.Setenv("HARNESS_TIMEOUT_MS", "não é número")
+	t.Setenv("HARNESS_TIMEOUT_MS", "not a number")
 
 	if got := LoadConfig().TimeoutMs; got != 1000 {
 		t.Fatalf("unexpected timeout: %d", got)

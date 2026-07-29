@@ -92,7 +92,7 @@ def test_start_com_feature_pendente_retoma_via_bearings_em_vez_de_resetar():
 
     result = tasks.start()
 
-    assert "NOVA SESSÃO" in result  # bearings_prompt, não o inicializador
+    assert "NEW SESSION" in result  # bearings_prompt, não o inicializador
     assert len(feature_store.load()) == 2  # intacta
     assert feature_store.pending_count() == 2  # nenhuma marcada como passando
     assert run_config_store.load().verify_cmd == "dotnet test"  # intacto
@@ -192,8 +192,8 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
 
     result = tasks.pick(_cmd("pick"))  # agora escolhe "A"
 
-    assert "Descrição: faz X" in result
-    assert "Referências do brief: RF-003" in result
+    assert "Description: faz X" in result
+    assert "Brief references: RF-003" in result
 
 
 def test_pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto():
@@ -203,8 +203,8 @@ def test_pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_
 
     result = tasks.pick(_cmd("pick"))
 
-    assert "Descrição:" not in result
-    assert "Referências do brief:" not in result
+    assert "Description:" not in result
+    assert "Brief references:" not in result
 
 
 def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():
@@ -216,7 +216,7 @@ def test_dispatch_start_com_feature_pendente_nao_trunca_trace_nem_step():
 
     result = _dispatch_json('{"type":"text","value":"start"}')
 
-    assert "NOVA SESSÃO" in result  # retomou via bearings, não reiniciou
+    assert "NEW SESSION" in result  # retomou via bearings, não reiniciou
     assert any(e.step == 41 and e.command == "handoff" for e in trace.load())  # trace preservado
     assert state_store.load().step == step_antes_do_start + 1  # contador continuou, não voltou a 1
 
@@ -240,7 +240,7 @@ def test_plan_persiste_features_e_roteia_para_bearings():
     assert len(feature_store.load()) == 2
     assert run_config_store.load().verify_cmd == "npm test"
     assert run_config_store.load().target_dir == "web"
-    assert "NOVA SESSÃO" in result
+    assert "NEW SESSION" in result
     assert '"value":"bearings"' in result
 
 
@@ -259,7 +259,7 @@ def test_plan_features_invalidas_reemite_o_plano():
     assert feature_store.load() == []
     assert run_config_store.load() == RunConfig()  # nada persistido
     assert '"value":"plan"' in result
-    assert "NOVA SESSÃO" not in result
+    assert "NEW SESSION" not in result
 
 
 def test_pick_escolhe_maior_prioridade_e_grava_a_feature_corrente():
@@ -280,7 +280,7 @@ def test_verify_fail_volta_para_implement():
 
     result = tasks.verify(_cmd("verify", "FAIL: testes vermelhos"))
 
-    assert "FALHOU" in result
+    assert "FAILED" in result
     assert '"value":"implement"' in result
 
 
@@ -289,7 +289,7 @@ def test_verify_pass_executa_handoff_automatico_e_avanca():
 
     result = tasks.verify(_cmd("verify", "PASS"))
 
-    assert "NOVA SESSÃO" in result
+    assert "NEW SESSION" in result
     assert '"value":"handoff"' not in result
     assert feature_store.pending_count() == 1
     assert "Feature #2" in Path("src/app/progress.txt").read_text()
@@ -307,7 +307,7 @@ echo "PASS: feature $1 verificada"
 
     result = tasks.implement(_cmd("implement", "implementei"))
 
-    assert "NOVA SESSÃO" in result
+    assert "NEW SESSION" in result
     assert '"value":"verify"' not in result
     assert feature_store.pending_count() == 1
     progress = Path("src/app/progress.txt").read_text()
@@ -331,7 +331,7 @@ exit 7
 
     result = tasks.implement(_cmd("implement", "implementei"))
 
-    assert "FALHOU" in result
+    assert "FAILED" in result
     assert "feature 2 quebrou" in result
     assert ".harness/logs/verify-feature-2.log" in result
     assert "LINHA DETALHADA QUE FICA SO NO LOG" not in result
@@ -350,7 +350,7 @@ def test_verify_veredito_invalido_reemite_verify():
 
     assert '"value":"verify"' in result
     assert '"value":"handoff"' not in result
-    assert "não começou" in result
+    assert "did not start" in result
 
 
 def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
@@ -367,7 +367,7 @@ def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     _advance_to_verify()
     after_first = tasks.verify(_cmd("verify", "PASS"))
 
-    assert "NOVA SESSÃO" in after_first  # ainda falta a id 1
+    assert "NEW SESSION" in after_first  # ainda falta a id 1
     assert feature_store.pending_count() == 1
 
     # 2ª feature (id 1)
@@ -386,7 +386,7 @@ def test_handoff_legado_com_hash_marca_feature_como_passando():
 
     result = tasks.handoff(_cmd("handoff", "abc123"))
 
-    assert "NOVA SESSÃO" in result
+    assert "NEW SESSION" in result
     assert feature_store.pending_count() == 1
 
 
@@ -407,7 +407,7 @@ def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
 
     result = tasks.verify(_cmd("verify", "PASS: tudo verde"))
 
-    assert "NOVA SESSÃO" in result
+    assert "NEW SESSION" in result
     committed_files = _git(repo, "show", "--name-only", "--format=", "HEAD")
     assert "app/progress.txt" in committed_files
     assert "outside.txt" not in committed_files
@@ -434,7 +434,7 @@ def test_plan_depends_on_ciclico_reemite_o_plano():
     assert feature_store.load() == []
     assert run_config_store.load() == RunConfig()
     assert '"value":"plan"' in result
-    assert "NOVA SESSÃO" not in result
+    assert "NEW SESSION" not in result
 
 
 def test_plan_depends_on_id_inexistente_reemite_o_plano():
@@ -444,7 +444,7 @@ def test_plan_depends_on_id_inexistente_reemite_o_plano():
 
     assert feature_store.load() == []
     assert '"value":"plan"' in result
-    assert "NOVA SESSÃO" not in result
+    assert "NEW SESSION" not in result
 
 
 def test_plan_corte_max_features_remove_dependencia_para_id_cortado():

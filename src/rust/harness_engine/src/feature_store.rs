@@ -1,11 +1,11 @@
-//! A lista de features do flow de desenvolvimento, persistida em
-//! `.harness/feature_list.json` — o "persistent artifact" que atravessa os hard resets de
-//! contexto: cada sessão (uma feature) lê e escreve aqui, sem depender do histórico da
-//! conversa. Todas nascem com `passes = false`; o flow vira uma por vez até não sobrar
-//! nenhuma pendente.
+//! The development flow's feature list, persisted at `.harness/feature_list.json` — the
+//! "persistent artifact" that survives context hard resets: each session (one feature)
+//! reads and writes here, without depending on the conversation history. All features are
+//! born with `passes = false`; the flow works through them one at a time until none are
+//! left pending.
 //!
-//! Mesma tolerância dos demais stores: ausente ou ilegível → lista vazia, nunca derruba o
-//! run.
+//! Same tolerance as the other stores: missing or unreadable → empty list, never brings
+//! down the run.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -14,15 +14,16 @@ use serde::{Deserialize, Serialize};
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/feature_list.json";
 
-/// Teto de caracteres de `Feature::description` — cota defensiva contra um driver verboso: a
-/// descrição é reinjetada no prompt de `implement` a cada feature, então sem teto ela infla
-/// silenciosamente o contexto de toda sessão futura.
+/// Character ceiling for `Feature::description` — a defensive quota against a verbose
+/// driver: the description is reinjected into the `implement` prompt for every feature, so
+/// without a ceiling it would silently inflate the context of every future session.
 pub const DESCRIPTION_MAX_CHARS: usize = 700;
 
-/// Uma feature do backlog de desenvolvimento: prioridade (menor = mais alta), se já passa,
-/// de quais outras (por id) depende, uma descrição livre (até `DESCRIPTION_MAX_CHARS`
-/// caracteres, reinjetada no prompt de `implement`) e códigos de referência explícitos do
-/// brief (ex.: "RF-003"; vazio quando o brief não cita nenhum).
+/// A feature from the development backlog: priority (lower = higher), whether it already
+/// passes, which others (by id) it depends on, a free-form description (up to
+/// `DESCRIPTION_MAX_CHARS` characters, reinjected into the `implement` prompt), and
+/// explicit reference codes from the brief (e.g. "RF-003"; empty when the brief cites
+/// none).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Feature {
     pub id: i32,
@@ -43,8 +44,8 @@ struct FeatureList {
     items: Vec<Feature>,
 }
 
-// Forma crua do array que o driver devolve no `plan` — `id` é opcional (reindexado pela
-// ordem quando ausente/<=0), e `passes` não é lido daqui: toda feature nasce pendente.
+// Raw shape of the array the driver returns in `plan` — `id` is optional (reindexed by
+// order when absent/<=0), and `passes` is not read from here: every feature is born pending.
 #[derive(Debug, Deserialize)]
 struct RawFeature {
     #[serde(default)]
@@ -59,10 +60,10 @@ struct RawFeature {
     references: Vec<String>,
 }
 
-/// Sobrescreve a lista inteira — usada pelo `plan` (session 0) e por `mark_passed`.
+/// Overwrites the entire list — used by `plan` (session 0) and by `mark_passed`.
 pub fn write(features: &[Feature]) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[FeatureStore] falha ao gravar: {e}");
+        eprintln!("[FeatureStore] failed to write: {e}");
         return;
     }
     let list = FeatureList {
@@ -71,22 +72,23 @@ pub fn write(features: &[Feature]) {
     match serde_json::to_string_pretty(&list) {
         Ok(json) => {
             if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json) {
-                eprintln!("[FeatureStore] falha ao gravar: {e}");
+                eprintln!("[FeatureStore] failed to write: {e}");
             }
         }
-        Err(e) => eprintln!("[FeatureStore] falha ao gravar: {e}"),
+        Err(e) => eprintln!("[FeatureStore] failed to write: {e}"),
     }
 }
 
-/// Interpreta o array cru de features que o driver devolve no `plan`
-/// (`[{"id":1,"title":"...","priority":1}, ...]`). Força `passes = false` (toda feature
-/// nasce pendente) e reindexa ids ausentes/duplicados pela ordem. Lista vazia se o JSON
-/// não interpretar — o caller re-emite o pedido (loop corretivo), não derruba o run.
+/// Parses the raw feature array the driver returns in `plan`
+/// (`[{"id":1,"title":"...","priority":1}, ...]`). Forces `passes = false` (every feature
+/// is born pending) and reindexes missing/duplicate ids by order. Empty list if the JSON
+/// fails to parse — the caller re-issues the request (corrective loop), doesn't bring down
+/// the run.
 pub fn parse(json: &str) -> Vec<Feature> {
     let parsed: Vec<RawFeature> = match serde_json::from_str(json) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("[FeatureStore] falha ao interpretar features: {e}");
+            eprintln!("[FeatureStore] failed to parse features: {e}");
             return Vec::new();
         }
     };
@@ -95,8 +97,8 @@ pub fn parse(json: &str) -> Vec<Feature> {
         return Vec::new();
     }
 
-    // Reindex primeiro: dependsOn só faz sentido referenciando ids já finais, não os
-    // brutos (possivelmente ausentes/duplicados) que vieram do driver.
+    // Reindex first: dependsOn only makes sense referencing final ids, not the raw
+    // (possibly missing/duplicated) ones that came from the driver.
     let reindexed: Vec<Feature> = parsed
         .into_iter()
         .enumerate()
@@ -112,15 +114,15 @@ pub fn parse(json: &str) -> Vec<Feature> {
         .collect();
 
     if let Some(error) = dependency_graph_error(&reindexed) {
-        eprintln!("[FeatureStore] grafo de dependências inválido: {error}");
+        eprintln!("[FeatureStore] invalid dependency graph: {error}");
         return Vec::new();
     }
 
     reindexed
 }
 
-// Corta em DESCRIPTION_MAX_CHARS caracteres — nunca lança, nunca rejeita a feature inteira
-// por causa disso, só encurta.
+// Cuts down to DESCRIPTION_MAX_CHARS characters — never throws, never rejects the whole
+// feature because of it, only shortens.
 fn truncate_description(description: &str) -> String {
     if description.chars().count() > DESCRIPTION_MAX_CHARS {
         description.chars().take(DESCRIPTION_MAX_CHARS).collect()
@@ -129,11 +131,11 @@ fn truncate_description(description: &str) -> String {
     }
 }
 
-// `None` se o grafo de `depends_on` é válido (todo id existe, sem ciclo); senão, uma
-// descrição do problema. Kahn (ordenação topológica): sobra nó fora do conjunto
-// resolvido ⇒ ciclo. Checa dangling ref primeiro — senão uma dependência fantasma seria
-// contada como eternamente não-resolvida e reportada como "ciclo" quando na verdade é id
-// inválido.
+// `None` if the `depends_on` graph is valid (every id exists, no cycle); otherwise, a
+// description of the problem. Kahn's algorithm (topological sort): a node left outside the
+// resolved set ⇒ cycle. Checks for dangling refs first — otherwise a phantom dependency
+// would be counted as eternally unresolved and reported as a "cycle" when it's actually an
+// invalid id.
 fn dependency_graph_error(features: &[Feature]) -> Option<String> {
     let valid_ids: HashSet<i32> = features.iter().map(|f| f.id).collect();
 
@@ -148,14 +150,14 @@ fn dependency_graph_error(features: &[Feature]) -> Option<String> {
         .collect();
     if !dangling.is_empty() {
         return Some(format!(
-            "dependsOn referencia id(s) inexistente(s): {}",
+            "dependsOn references nonexistent id(s): {}",
             dangling.join(", ")
         ));
     }
 
-    // i32 (não usize) de propósito: ids duplicados não são deduplicados hoje pelo reindex
-    // acima, então o indegree pode ser decrementado mais vezes que o esperado — não deve
-    // panicar por underflow nesse caso de borda, só não fechar o ciclo.
+    // i32 (not usize) on purpose: duplicate ids aren't deduplicated today by the reindex
+    // above, so indegree may get decremented more times than expected — must not panic on
+    // underflow in that edge case, just fail to close the cycle.
     let mut indegree: HashMap<i32, i32> = HashMap::new();
     for f in features {
         indegree.entry(f.id).or_insert(f.depends_on.len() as i32);
@@ -204,7 +206,7 @@ fn dependency_graph_error(features: &[Feature]) -> Option<String> {
             .map(|i| i.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        Some(format!("dependência cíclica entre as features: {cyclic}"))
+        Some(format!("cyclic dependency among features: {cyclic}"))
     }
 }
 
@@ -221,16 +223,16 @@ pub fn load() -> Vec<Feature> {
     match loaded {
         Ok(list) => list.items,
         Err(e) => {
-            eprintln!("[FeatureStore] falha ao carregar: {e}");
+            eprintln!("[FeatureStore] failed to load: {e}");
             Vec::new()
         }
     }
 }
 
-/// A próxima feature a implementar: a de maior prioridade (menor `priority`) entre as
-/// PRONTAS (todo id em `depends_on` já com `passes == true`); desempate por `id`. `None`
-/// quando não há pendência pronta — pode significar fim de fato (nenhuma pendência) ou
-/// dependências bloqueadas.
+/// The next feature to implement: the highest-priority one (lowest `priority`) among the
+/// READY ones (every id in `depends_on` already has `passes == true`); ties broken by
+/// `id`. `None` when there's no ready pending feature — this can mean either it's truly
+/// done (no pending features) or dependencies are blocked.
 pub fn next_pending() -> Option<Feature> {
     let features = load();
     let passed: HashSet<i32> = features.iter().filter(|f| f.passes).map(|f| f.id).collect();
@@ -241,7 +243,7 @@ pub fn next_pending() -> Option<Feature> {
         .min_by_key(|f| (f.priority, f.id))
 }
 
-/// Marca a feature como concluída e regrava a lista. No-op se o id não existe.
+/// Marks the feature as done and rewrites the list. No-op if the id doesn't exist.
 pub fn mark_passed(id: i32) {
     let mut features = load();
     if !features.iter().any(|f| f.id == id) {
@@ -255,23 +257,23 @@ pub fn mark_passed(id: i32) {
     write(&features);
 }
 
-/// Quantas features ainda faltam (`passes == false`).
+/// How many features are still remaining (`passes == false`).
 pub fn pending_count() -> usize {
     load().iter().filter(|f| !f.passes).count()
 }
 
-/// Há features e todas passaram — condição de término do loop.
+/// There are features and all of them passed — the loop's termination condition.
 pub fn all_passing() -> bool {
     let features = load();
     !features.is_empty() && features.iter().all(|f| f.passes)
 }
 
-/// Apaga a lista do run anterior — o flow PRODUTOR reseta no seu `start`.
+/// Deletes the previous run's list — the PRODUCER flow resets it on its `start`.
 pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
         if let Err(e) = std::fs::remove_file(p) {
-            eprintln!("[FeatureStore] falha ao limpar: {e}");
+            eprintln!("[FeatureStore] failed to clear: {e}");
         }
     }
 }
@@ -381,7 +383,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        assert!(parse("isso não é json").is_empty());
+        assert!(parse("this is not json").is_empty());
         assert!(parse("[]").is_empty());
     }
 
@@ -391,9 +393,9 @@ mod tests {
         let _iso = Isolated::new();
 
         write(&[
-            feature(1, "baixa", 3, false),
-            feature(2, "alta", 1, false),
-            feature(3, "media", 2, true), // já passa — ignorada
+            feature(1, "low", 3, false),
+            feature(2, "high", 1, false),
+            feature(3, "medium", 2, true), // already passes — ignored
         ]);
 
         assert_eq!(next_pending().unwrap().id, 2);
@@ -416,10 +418,10 @@ mod tests {
         let _iso = Isolated::new();
 
         let features = parse(
-            r#"[{"id":1,"title":"X","priority":1,"description":"faz Y","references":["RF-003"]}]"#,
+            r#"[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]"#,
         );
 
-        assert_eq!(features[0].description, "faz Y");
+        assert_eq!(features[0].description, "does Y");
         assert_eq!(features[0].references, vec!["RF-003".to_string()]);
     }
 
@@ -427,10 +429,10 @@ mod tests {
     fn parse_description_acima_do_teto_e_truncada() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let longa = "a".repeat(DESCRIPTION_MAX_CHARS + 50);
+        let long_description = "a".repeat(DESCRIPTION_MAX_CHARS + 50);
 
         let features = parse(&format!(
-            r#"[{{"id":1,"title":"X","priority":1,"description":"{longa}"}}]"#
+            r#"[{{"id":1,"title":"X","priority":1,"description":"{long_description}"}}]"#
         ));
 
         assert_eq!(features[0].description.chars().count(), DESCRIPTION_MAX_CHARS);
@@ -483,8 +485,8 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        // Simula um feature_list.json gravado por uma versão anterior do harness, sem a
-        // chave "dependsOn" — prova a compatibilidade retroativa.
+        // Simulates a feature_list.json written by an earlier version of the harness,
+        // without the "dependsOn" key — proves backward compatibility.
         std::fs::create_dir_all(".harness").unwrap();
         std::fs::write(
             ".harness/feature_list.json",
@@ -504,8 +506,8 @@ mod tests {
         let _iso = Isolated::new();
 
         write(&[
-            feature(1, "fundação", 2, false),
-            feature_dep(2, "depende de 1", 1, false, vec![1]), // prioridade "melhor", mas bloqueada
+            feature(1, "foundation", 2, false),
+            feature_dep(2, "depends on 1", 1, false, vec![1]), // "better" priority, but blocked
         ]);
 
         assert_eq!(next_pending().unwrap().id, 1);
@@ -517,8 +519,8 @@ mod tests {
         let _iso = Isolated::new();
 
         write(&[
-            feature(1, "fundação", 2, false),
-            feature_dep(2, "depende de 1", 1, false, vec![1]),
+            feature(1, "foundation", 2, false),
+            feature_dep(2, "depends on 1", 1, false, vec![1]),
         ]);
         assert_eq!(next_pending().unwrap().id, 1);
 
@@ -532,8 +534,8 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        // Grafo cíclico gravado direto via write (bypassando a validação de parse) —
-        // simula um feature_list.json editado à mão fora do fluxo normal.
+        // Cyclic graph written directly via write (bypassing parse's validation) —
+        // simulates a feature_list.json hand-edited outside the normal flow.
         write(&[
             feature_dep(1, "A", 1, false, vec![2]),
             feature_dep(2, "B", 2, false, vec![1]),

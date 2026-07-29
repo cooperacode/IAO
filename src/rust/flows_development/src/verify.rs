@@ -1,5 +1,6 @@
-//! Self-verify automático: roda `verify-feature.sh <id>` no diretório-alvo, com teto de
-//! tempo (derivado de `harness_config.timeout_ms`) e log completo em `.harness/logs/`.
+//! Automatic self-verify: runs `verify-feature.sh <id>` in the target directory, with a
+//! time ceiling (derived from `harness_config.timeout_ms`) and a full log in
+//! `.harness/logs/`.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -59,7 +60,7 @@ pub fn try_automated_verify(feature_id: i32, target_dir: &Path) -> AutomatedVeri
 
     if result.timed_out {
         return AutomatedVerifyResult::failed(format!(
-            "FAIL: verify-feature.sh {feature_id} excedeu timeout ({}){}",
+            "FAIL: verify-feature.sh {feature_id} exceeded timeout ({}){}",
             verify_timeout_description(),
             verify_output_suffix(&result, &log_path)
         ));
@@ -75,7 +76,7 @@ pub fn try_automated_verify(feature_id: i32, target_dir: &Path) -> AutomatedVeri
     }
 
     AutomatedVerifyResult::failed(format!(
-        "FAIL: verify-feature.sh {feature_id} falhou (exit {}){}",
+        "FAIL: verify-feature.sh {feature_id} failed (exit {}){}",
         result.exit_code,
         verify_output_suffix(&result, &log_path)
     ))
@@ -102,10 +103,10 @@ fn run_verify_script(target_dir: &Path, script: &Path, feature_id: i32) -> Verif
         }
     };
 
-    // Threads leitoras drenam os pipes continuamente — sem isto, um script com saída
-    // grande travaria escrevendo no pipe cheio enquanto o loop de poll abaixo só observa
-    // o status, sem ler nada (o mesmo problema que `ReadToEndAsync` do .NET e o dreno
-    // interno do `subprocess.run(timeout=...)` do Python evitam).
+    // Reader threads drain the pipes continuously — without this, a script with large
+    // output would hang writing into the full pipe while the poll loop below only
+    // observes the status, without reading anything (the same problem that .NET's
+    // `ReadToEndAsync` and Python's `subprocess.run(timeout=...)` internal drain avoid).
     let mut stdout_pipe = child.stdout.take().expect("stdout piped");
     let mut stderr_pipe = child.stderr.take().expect("stderr piped");
     let stdout_handle = thread::spawn(move || {
@@ -151,8 +152,8 @@ fn run_verify_script(target_dir: &Path, script: &Path, feature_id: i32) -> Verif
     }
 }
 
-// Teto de tempo do verify: uma margem sob o timeout global, para o harness ainda ter
-// chance de reportar o estouro antes que a própria guarda de passo do dispatch corte.
+// Verify's time ceiling: a margin under the global timeout, so the harness still has a
+// chance to report the overrun before dispatch's own step guard cuts it off.
 fn verify_timeout_ms() -> i32 {
     let timeout_ms = harness_config::current().timeout_ms;
     if timeout_ms <= 0 {
@@ -165,7 +166,7 @@ fn verify_timeout_ms() -> i32 {
 fn verify_timeout_description() -> String {
     let timeout_ms = verify_timeout_ms();
     if timeout_ms <= 0 {
-        "sem limite".to_string()
+        "no limit".to_string()
     } else {
         format!("{timeout_ms}ms")
     }
@@ -220,7 +221,7 @@ timedOut: {}\n\
     match write_result {
         Ok(()) => display_path,
         Err(e) => format!(
-            "log indisponivel ({})",
+            "log unavailable ({})",
             crate::handoff::one_line(&e.to_string(), "")
         ),
     }
@@ -231,7 +232,7 @@ fn pass_result(feature_id: i32, output: &str, error: &str, log_path: &str) -> St
     let result = if first_line.to_uppercase().starts_with("PASS") {
         snippet(&first_line)
     } else {
-        format!("PASS: verify-feature.sh {feature_id} passou")
+        format!("PASS: verify-feature.sh {feature_id} passed")
     };
     result + &log_suffix(log_path)
 }

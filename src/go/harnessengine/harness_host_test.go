@@ -12,7 +12,7 @@ func finalizeTask() map[string]Action {
 func TestRun_OnCompletion_FreezesTrajectoryAndStateAtFlowPath(t *testing.T) {
 	isolate(t)
 
-	SetState("descricao", "x")
+	SetState("description", "x")
 
 	Run([]string{`{"type":"command","value":"finalize"}`}, finalizeTask(), RunOptions{
 		TraceSnapshotPath: LastRunTracePath,
@@ -25,7 +25,7 @@ func TestRun_OnCompletion_FreezesTrajectoryAndStateAtFlowPath(t *testing.T) {
 	if !fileExists(LastRunStatePath) {
 		t.Fatal("expected state snapshot to exist")
 	}
-	if got := LoadStateFrom(LastRunStatePath).Data["descricao"]; got != "x" {
+	if got := LoadStateFrom(LastRunStatePath).Data["description"]; got != "x" {
 		t.Fatalf("unexpected snapshot data: %s", got)
 	}
 }
@@ -34,7 +34,7 @@ func TestRun_EvaluationDoesNotOverwriteRefinementEvidence(t *testing.T) {
 	isolate(t)
 
 	// 1) Refinement completes → last-run.* holds the refinement's evidence.
-	SetState("descricao", "refino")
+	SetState("description", "refinement")
 	Run([]string{`{"type":"command","value":"finalize"}`}, finalizeTask(), RunOptions{
 		TraceSnapshotPath: LastRunTracePath,
 		StateSnapshotPath: LastRunStatePath,
@@ -62,7 +62,7 @@ func TestRun_EvaluationDoesNotOverwriteRefinementEvidence(t *testing.T) {
 	if string(afterTraceBytes) != refinoTrace {
 		t.Fatal("evaluation must not touch the refinement's evidence")
 	}
-	if got := LoadStateFrom(LastRunStatePath).Data["descricao"]; got != "refino" {
+	if got := LoadStateFrom(LastRunStatePath).Data["description"]; got != "refinement" {
 		t.Fatalf("unexpected snapshot data: %s", got)
 	}
 }

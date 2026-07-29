@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="1182" viewBox="0 0 944 1182">
+<rect width="944" height="1182" fill="#fff"/>
+<rect x="2.14" y="2.14" width="939.72" height="1177.32" fill="rgb(255, 255, 255)" stroke="rgb(17, 17, 17)" stroke-width="4.28"/>
+<text x="42" y="67.15" font-family="'IBM Plex Serif', Georgia, serif" font-size="15" font-weight="400" fill="rgb(17, 17, 17)" letter-spacing="0.3">Figure 10</text>
+<text x="42" y="108.21" font-family="'IBM Plex Sans', Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="rgb(17, 17, 17)" letter-spacing="-0.26">Driver, harness and persisted state</text>
+<g transform="translate(22,129.2)">
+    <defs data-dc-tpl="524" data-om-id="17d014b4:529">
+      <marker data-dc-tpl="525" id="ah10en" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto" data-om-id="17d014b4:530"><path data-dc-tpl="526" d="M0,0 L10,5 L0,10 z" fill="#111" data-om-id="17d014b4:531"></path></marker>
+    </defs>
+    <g data-dc-tpl="527" fill="#111" font-family="IBM Plex Sans, system-ui, sans-serif" text-anchor="middle" data-om-id="17d014b4:532">
+      <rect data-dc-tpl="528" x="110" y="20" width="640" height="260" fill="#efedea" stroke="#111" stroke-width="2" data-om-id="17d014b4:533"></rect>
+      <text data-dc-tpl="529" x="430" y="90" font-size="27" font-weight="700" data-om-id="17d014b4:534">Driver — IDE agent</text>
+      <text data-dc-tpl="530" x="430" y="140" font-size="25" data-om-id="17d014b4:535">Codex · Claude Code · Copilot</text>
+      <text data-dc-tpl="531" x="430" y="182" font-size="25" data-om-id="17d014b4:536">· Devin</text>
+      <text data-dc-tpl="532" x="430" y="228" font-size="25" font-style="italic" data-om-id="17d014b4:537">interprets and executes</text>
+
+      <path data-dc-tpl="533" d="M400 282 C 358 322, 358 372, 396 410" fill="none" stroke="#111" stroke-width="2" marker-end="url(#ah10en)" data-om-id="17d014b4:538"></path>
+      <path data-dc-tpl="534" d="M465 410 C 503 372, 503 322, 461 282" fill="none" stroke="#111" stroke-width="2" marker-end="url(#ah10en)" data-om-id="17d014b4:539"></path>
+      <text data-dc-tpl="535" x="345" y="355" font-size="24" text-anchor="end" data-om-id="17d014b4:540">JSON envelope (stdin)</text>
+      <text data-dc-tpl="536" x="516" y="355" font-size="24" text-anchor="start" data-om-id="17d014b4:541">instruction (stdout)</text>
+
+      <rect data-dc-tpl="537" x="110" y="420" width="640" height="200" fill="#efedea" stroke="#111" stroke-width="2" data-om-id="17d014b4:542"></rect>
+      <text data-dc-tpl="538" x="430" y="480" font-size="27" font-weight="700" data-om-id="17d014b4:543">Harness — state machine</text>
+      <text data-dc-tpl="539" x="430" y="526" font-size="25" data-om-id="17d014b4:544">compiled code</text>
+      <text data-dc-tpl="540" x="430" y="572" font-size="25" font-style="italic" data-om-id="17d014b4:545">decides the next step</text>
+
+      <path data-dc-tpl="541" d="M430 622 L 430 700" fill="none" stroke="#111" stroke-width="2" stroke-dasharray="7 6" marker-end="url(#ah10en)" data-om-id="17d014b4:546"></path>
+
+      <path data-dc-tpl="542" d="M290 740 L 290 940" fill="none" stroke="#111" stroke-width="2" data-om-id="17d014b4:547"></path>
+      <path data-dc-tpl="543" d="M570 740 L 570 940" fill="none" stroke="#111" stroke-width="2" data-om-id="17d014b4:548"></path>
+      <path data-dc-tpl="544" d="M290 940 A 140 32 0 0 0 570 940" fill="none" stroke="#111" stroke-width="2" data-om-id="17d014b4:549"></path>
+      <ellipse data-dc-tpl="545" cx="430" cy="740" rx="140" ry="32" fill="none" stroke="#111" stroke-width="2" data-om-id="17d014b4:550"></ellipse>
+      <text data-dc-tpl="546" x="430" y="835" font-size="24" data-om-id="17d014b4:551">feature_list.json</text>
+      <text data-dc-tpl="547" x="430" y="885" font-size="24" data-om-id="17d014b4:552">progress.txt</text>
+    </g>
+  </g>
+</svg>

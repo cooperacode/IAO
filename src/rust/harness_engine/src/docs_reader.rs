@@ -1,23 +1,24 @@
-//! Lê um conjunto de documentos (`*.md` e `*.txt`) de uma pasta para injetar no prompt.
-//! É a entrada alternativa ao input interativo: o flow lê o material já existente (specs,
-//! notas, transcrições) e o modelo sintetiza um brief a partir dele.
+//! Reads a set of documents (`*.md` and `*.txt`) from a folder to inject into the prompt.
+//! This is the alternative input to interactive input: the flow reads material that
+//! already exists (specs, notes, transcripts) and the model synthesizes a brief from it.
 //!
-//! Análogo a como `prompt_formatter` injeta skills — a leitura é determinística (feita em
-//! código), só a síntese fica com o modelo.
+//! Analogous to how `prompt_formatter` injects skills — the reading is deterministic (done
+//! in code), only the synthesis is left to the model.
 
 use crate::{harness_config, path_resolver};
 
 const EXTENSIONS: [&str; 2] = ["md", "txt"];
 
-// Teto de octetos UTF-8 (RFC Apêndice B item 1: medir em bytes, não em codepoints, para
-// que o teto tenha o mesmo significado entre engines .NET/Python/Rust). Ao exceder, trunca
-// em fronteira de char válida e avisa no stderr. Valor vem do harness.json (ou do default).
+// UTF-8 byte ceiling (RFC Appendix B item 1: measure in bytes, not codepoints, so the
+// ceiling has the same meaning across the .NET/Python/Rust engines). When exceeded,
+// truncates at a valid char boundary and warns on stderr. Value comes from harness.json
+// (or the default).
 fn max_chars() -> usize {
     harness_config::current().docs_max_chars.max(0) as usize
 }
 
-/// Corta `text` em no máximo `max_bytes` octetos UTF-8, recuando até a fronteira de char
-/// válida mais próxima — nunca parte um caractere multibyte (acento, emoji) ao meio.
+/// Cuts `text` down to at most `max_bytes` UTF-8 bytes, backing off to the nearest valid
+/// char boundary — never splits a multibyte character (accent, emoji) in half.
 fn truncate_utf8_bytes(text: &str, max_bytes: usize) -> String {
     if text.len() <= max_bytes {
         return text.to_string();
@@ -31,15 +32,15 @@ fn truncate_utf8_bytes(text: &str, max_bytes: usize) -> String {
     text[..cut].to_string()
 }
 
-/// Existe a pasta e há ao menos um arquivo `*.md`/`*.txt`?
+/// Does the folder exist and does it contain at least one `*.md`/`*.txt` file?
 pub fn has_docs(folder: &str) -> bool {
     let dir = path_resolver::resolve(folder);
     let dir = std::path::Path::new(&dir);
     dir.is_dir() && !files(dir).is_empty()
 }
 
-/// Concatena os documentos em ordem alfabética, cada um sob um cabeçalho
-/// `## <nome-do-arquivo>`, e devolve também a lista de nomes (para citar as fontes).
+/// Concatenates the documents in alphabetical order, each under a `## <file-name>`
+/// heading, and also returns the list of names (to cite the sources).
 pub fn read(folder: &str) -> (String, Vec<String>) {
     let dir = path_resolver::resolve(folder);
     let dir = std::path::Path::new(&dir);
@@ -57,7 +58,7 @@ pub fn read(folder: &str) -> (String, Vec<String>) {
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("[DocsReader] falha ao ler {name}: {e}");
+                eprintln!("[DocsReader] failed to read {name}: {e}");
                 continue;
             }
         };
@@ -70,7 +71,7 @@ pub fn read(folder: &str) -> (String, Vec<String>) {
         content.push_str("\n\n");
 
         if content.len() > max_chars {
-            eprintln!("[DocsReader] conteúdo excedeu {max_chars} bytes (UTF-8); truncando em {name}.");
+            eprintln!("[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {name}.");
             content = truncate_utf8_bytes(&content, max_chars);
             break;
         }
@@ -108,7 +109,7 @@ mod tests {
     #[test]
     fn has_docs_pasta_inexistente_false() {
         let dir = temp_dir();
-        let missing = dir.path().join("nao-existe");
+        let missing = dir.path().join("does-not-exist");
 
         assert!(!has_docs(missing.to_str().unwrap()));
     }
@@ -123,8 +124,8 @@ mod tests {
     #[test]
     fn has_docs_ignora_extensoes_nao_suportadas() {
         let dir = temp_dir();
-        std::fs::write(dir.path().join("imagem.png"), "x").unwrap();
-        std::fs::write(dir.path().join("dados.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("image.png"), "x").unwrap();
+        std::fs::write(dir.path().join("data.json"), "{}").unwrap();
 
         assert!(!has_docs(dir.path().to_str().unwrap()));
     }
@@ -132,7 +133,7 @@ mod tests {
     #[test]
     fn has_docs_com_markdown_true() {
         let dir = temp_dir();
-        std::fs::write(dir.path().join("spec.md"), "conteúdo").unwrap();
+        std::fs::write(dir.path().join("spec.md"), "content").unwrap();
 
         assert!(has_docs(dir.path().to_str().unwrap()));
     }
@@ -140,24 +141,24 @@ mod tests {
     #[test]
     fn read_concatena_md_e_txt_em_ordem_alfabetica() {
         let dir = temp_dir();
-        std::fs::write(dir.path().join("b-notas.txt"), "notas").unwrap();
+        std::fs::write(dir.path().join("b-notes.txt"), "notes").unwrap();
         std::fs::write(dir.path().join("a-spec.md"), "spec").unwrap();
 
         let (content, files) = read(dir.path().to_str().unwrap());
 
         assert_eq!(
             files,
-            vec!["a-spec.md".to_string(), "b-notas.txt".to_string()]
+            vec!["a-spec.md".to_string(), "b-notes.txt".to_string()]
         );
         assert!(content.contains("## a-spec.md"));
-        assert!(content.contains("## b-notas.txt"));
-        assert!(content.find("a-spec.md") < content.find("b-notas.txt"));
+        assert!(content.contains("## b-notes.txt"));
+        assert!(content.find("a-spec.md") < content.find("b-notes.txt"));
     }
 
     #[test]
     fn read_pasta_inexistente_vazio_sem_fontes() {
         let dir = temp_dir();
-        let missing = dir.path().join("nao-existe");
+        let missing = dir.path().join("does-not-exist");
 
         let (content, files) = read(missing.to_str().unwrap());
 
@@ -167,22 +168,23 @@ mod tests {
 
     #[test]
     fn truncate_utf8_bytes_nao_quebra_caractere_multibyte_no_meio() {
-        // "café ☕" — "é" (2 bytes) e "☕" (3 bytes) são multibyte; um corte ingênuo em
-        // qualquer posição produziria uma string UTF-8 inválida (panic ao fatiar).
+        // "café ☕" — "é" (2 bytes) and "☕" (3 bytes) are multibyte; a naive cut at any
+        // position would produce an invalid UTF-8 string (panic while slicing).
         let text = "café ☕";
         for max in 0..=text.len() {
             let truncated = truncate_utf8_bytes(text, max);
             assert!(truncated.len() <= max);
-            // Se compilou e devolveu uma `String`, já é UTF-8 válido por construção do tipo.
+            // If it compiled and returned a `String`, it's already valid UTF-8 by the type's construction.
         }
     }
 
     #[test]
     fn read_trunca_em_fronteira_utf8_valida_sem_quebrar_caractere() {
         let dir = temp_dir();
-        // Conteúdo pequeno com acento perto do teto de bytes de docs_max_chars do config
-        // default não é prático de forçar aqui sem mexer em harness_config; o teste do
-        // helper acima cobre a garantia central. Este teste cobre a integração básica.
+        // Small content with an accent near the byte ceiling of the config's default
+        // docs_max_chars isn't practical to force here without touching harness_config;
+        // the helper test above covers the core guarantee. This test covers basic
+        // integration.
         std::fs::write(dir.path().join("a.md"), "café ☕").unwrap();
 
         let (content, _) = read(dir.path().to_str().unwrap());

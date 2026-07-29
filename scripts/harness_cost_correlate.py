@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
-"""Correlaciona passos do Harness.Engine com uso real de tokens do driver LLM.
+"""Correlates Harness.Engine steps with actual LLM driver token usage.
 
-O harness nao mede tokens: ele grava timestamps por passo em
-`.harness/trace.jsonl`. Este script carrega eventos de uso locais do driver
-externo (Claude Code ou Codex) e atribui a cada passo todo consumo ocorrido
-entre o timestamp do passo anterior e o timestamp do passo atual.
+The harness doesn't measure tokens: it writes a per-step timestamp to
+`.harness/trace.jsonl`. This script loads local usage events from the
+external driver (Claude Code or Codex) and attributes to each step all
+consumption that happened between the previous step's timestamp and the
+current step's timestamp.
 
-Fontes de uso suportadas:
-- `claude`: usa scripts/claude_usage.py e transcripts em ~/.claude/projects/...
-- `codex`: usa scripts/codex_usage.py e rollouts em ~/.codex/sessions + archived
-- `copilot`: usa scripts/copilot_usage.py e workspaceStorage do VS Code (GitHub
-  Copilot Chat). Sem estimativa de custo em dolar (Copilot fatura por "premium
-  request" com multiplicador, nao por token) -- so tokens.
+Supported usage sources:
+- `claude`: uses scripts/claude_usage.py and transcripts under ~/.claude/projects/...
+- `codex`: uses scripts/codex_usage.py and rollouts under ~/.codex/sessions + archived
+- `copilot`: uses scripts/copilot_usage.py and VS Code's workspaceStorage (GitHub
+  Copilot Chat). No dollar cost estimate (Copilot bills by "premium request"
+  with a multiplier, not by token) -- tokens only.
 
-Limitacoes:
-- O casamento e por janela de tempo, nao por uma chave compartilhada. Se o
-  trace.jsonl misturar varios runs, aponte --trace-file para um snapshot de um
-  unico run.
-- O passo 1 inclui todo consumo da sessao ate o timestamp do passo 1.
-- Consumo apos o ultimo passo fica em "nao atribuido".
-- Custos do Codex sao estimativas API-like quando a sessao usou login ChatGPT.
-- Copilot nunca tem custo em dolar (sempre "n/a"); tokens podem vir de uma
-  camada menos confiavel (`chatSessions`) ou nem existir (`sem-tokens") --
-  ver scripts/copilot_usage.py para o significado de cada fonte.
+Limitations:
+- Matching is done by time window, not by a shared key. If trace.jsonl mixes
+  several runs together, point --trace-file at a snapshot of a single run.
+- Step 1 includes all session consumption up to step 1's timestamp.
+- Consumption after the last step falls under "unattributed".
+- Codex costs are API-like estimates when the session used a ChatGPT login.
+- Copilot never has a dollar cost (always "n/a"); tokens may come from a
+  less reliable layer (`chatSessions`) or may not exist at all (`no-tokens`)
+  -- see scripts/copilot_usage.py for what each source means.
 
-Uso:
+Usage:
     scripts/harness_cost_correlate.py --session "$CLAUDE_CODE_SESSION_ID"
     scripts/harness_cost_correlate.py --usage-source codex --session <uuid>
     scripts/harness_cost_correlate.py --usage-source codex --session-tree <uuid>
@@ -127,16 +127,17 @@ def load_feature_boundaries(
     logs_dir: Path,
     feature_list_path: Path,
 ) -> tuple[list[FeatureBoundary], list[str]]:
-    """Le .harness/logs/verify-feature-<id>.log e usa o `timestampUtc` gravado
-    dentro de cada log (nao o mtime do arquivo, que pode mudar com checkout ou
-    rsync) como fronteira de "feature concluida". Ordenado por timestamp, cada
-    janela entre duas fronteiras consecutivas cobre todo o trabalho (pick,
-    implement, ciclos de fix, verify) daquela feature, mesmo havendo
-    retrabalho -- nao depende de contar quantos passos `implement` ocorreram.
+    """Reads .harness/logs/verify-feature-<id>.log and uses the `timestampUtc`
+    recorded inside each log (not the file's mtime, which can change on
+    checkout or rsync) as the "feature completed" boundary. Sorted by
+    timestamp, each window between two consecutive boundaries covers all the
+    work (pick, implement, fix cycles, verify) for that feature, even when
+    there's rework -- it doesn't depend on counting how many `implement`
+    steps occurred.
     """
     warnings: list[str] = []
     if not logs_dir.is_dir():
-        return [], [f"diretorio de logs de feature nao encontrado: {logs_dir}"]
+        return [], [f"feature logs directory not found: {logs_dir}"]
 
     titles = load_feature_titles(feature_list_path)
     boundaries: list[FeatureBoundary] = []
@@ -148,18 +149,18 @@ def load_feature_boundaries(
         try:
             text = log_path.read_text()
         except OSError as exc:
-            warnings.append(f"nao foi possivel ler {log_path}: {exc}")
+            warnings.append(f"could not read {log_path}: {exc}")
             continue
         ts_match = _TIMESTAMP_LINE_RE.search(text)
         if not ts_match:
-            warnings.append(f"timestampUtc nao encontrado em {log_path.name}")
+            warnings.append(f"timestampUtc not found in {log_path.name}")
             continue
-        # datetime.fromisoformat exige no maximo 6 digitos na fracao de segundos
+        # datetime.fromisoformat allows at most 6 digits in the seconds fraction
         raw_ts = re.sub(r"(\.\d{6})\d+", r"\1", ts_match.group(1))
         try:
             timestamp = parse_ts(raw_ts)
         except ValueError as exc:
-            warnings.append(f"timestampUtc invalido em {log_path.name}: {exc}")
+            warnings.append(f"invalid timestampUtc in {log_path.name}: {exc}")
             continue
         boundaries.append(
             FeatureBoundary(
@@ -224,7 +225,7 @@ class ClaudeBackend(UsageBackend):
     def load_events(self, args: argparse.Namespace) -> tuple[list[UsageEvent], list[str]]:
         project_dir = args.project_dir or claude.default_project_dir()
         if not project_dir.is_dir():
-            print(f"Diretorio de sessoes Claude nao encontrado: {project_dir}", file=sys.stderr)
+            print(f"Claude sessions directory not found: {project_dir}", file=sys.stderr)
             sys.exit(1)
 
         warnings: list[str] = []
@@ -277,7 +278,7 @@ class CodexBackend(UsageBackend):
     def load_events(self, args: argparse.Namespace) -> tuple[list[UsageEvent], list[str]]:
         home = args.codex_home or codex.codex_home()
         if not home.is_dir():
-            print(f"CODEX_HOME nao encontrado: {home}", file=sys.stderr)
+            print(f"CODEX_HOME not found: {home}", file=sys.stderr)
             sys.exit(1)
 
         repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parent.parent)
@@ -367,7 +368,7 @@ class CopilotBackend(UsageBackend):
     def load_events(self, args: argparse.Namespace) -> tuple[list[UsageEvent], list[str]]:
         user_dir = args.vscode_user_dir or copilot.default_vscode_user_dir()
         if not user_dir.is_dir():
-            print(f"Diretorio User do VS Code nao encontrado: {user_dir}", file=sys.stderr)
+            print(f"VS Code User directory not found: {user_dir}", file=sys.stderr)
             sys.exit(1)
 
         repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parent.parent)
@@ -407,8 +408,8 @@ class CopilotBackend(UsageBackend):
 
     def metadata(self) -> dict:
         return {
-            "pricing": "sem custo em dolar -- Copilot fatura por premium request "
-            "com multiplicador, nao por token (ver scripts/copilot_usage.py)",
+            "pricing": "no dollar cost -- Copilot bills by premium request "
+            "with a multiplier, not by token (see scripts/copilot_usage.py)",
         }
 
 
@@ -425,7 +426,7 @@ def correlate(
     events: list[UsageEvent],
     backend: UsageBackend,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Retorna (por_passo, nao_atribuido), agrupado por modelo."""
+    """Returns (per_step, unattributed), grouped by model."""
     per_step: list[dict[str, Any]] = []
     prev_ts: datetime | None = None
     for step in steps:

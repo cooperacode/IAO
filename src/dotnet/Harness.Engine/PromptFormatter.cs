@@ -2,7 +2,7 @@ using System.Text;
 
 namespace Harness.Engine;
 
-/// <summary>Monta o bloco de instrução (input/response/skills) entregue ao modelo.</summary>
+/// <summary>Builds the instruction block (input/response/skills) delivered to the model.</summary>
 public static class PromptFormatter
 {
     public static Dictionary<string, string> Skills(params string[] names)
@@ -17,8 +17,8 @@ public static class PromptFormatter
 
     public static string Format(string input, Envelope output, IDictionary<string, string>? skills = null)
     {
-        // Reinjeta o contexto do driver (capturado no `start`, ver TaskRegistry/StateStore)
-        // em toda saída — ponto único, para que nenhuma task precise repassá-lo manualmente.
+        // Reinjects the driver context (captured on `start`, see TaskRegistry/StateStore)
+        // into every output — a single point, so no task needs to pass it along manually.
         var enriched = output.Context is null
             ? output with { Context = StateStore.GetContext() }
             : output;

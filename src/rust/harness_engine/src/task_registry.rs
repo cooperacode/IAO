@@ -1,4 +1,4 @@
-//! Dispatch domain-agnostic: parse do envelope, guarda de iteração e erro tipado.
+//! Domain-agnostic dispatch: envelope parsing, iteration guard, and typed error.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,14 +12,14 @@ use crate::errors::HarnessTimeoutError;
 use crate::trace::trace_outcome;
 use crate::{harness_config, inbox, state_store, trace};
 
-/// `Arc` (não `Box`) de propósito: a guarda de tempo precisa mover a action para uma
-/// thread solta e abandonável (ver `run_with_timeout`) sem depender do tempo de vida do
-/// registro de comandos do chamador — o equivalente Rust ao objeto compartilhado que
-/// `Task.Run` (.NET) e a thread (Python) capturam de graça via GC/refcounting.
+/// `Arc` (not `Box`) on purpose: the time guard needs to move the action onto a detached,
+/// abandonable thread (see `run_with_timeout`) without depending on the caller's command
+/// registry's lifetime — the Rust equivalent of the shared object that `Task.Run` (.NET)
+/// and the thread (Python) capture for free via GC/refcounting.
 pub type Action = Arc<dyn Fn(Option<&Envelope>) -> String + Send + Sync>;
 
-/// Teto de passos: impede loop infinito que queimaria tokens indefinidamente. Valor vem
-/// do harness.json (ou do default) — ver `harness_config`.
+/// Step ceiling: prevents an infinite loop that would burn tokens indefinitely. Value
+/// comes from harness.json (or the default) — see `harness_config`.
 pub fn default_max_steps() -> i32 {
     harness_config::current().max_steps
 }
@@ -31,8 +31,9 @@ pub fn dispatch(
     max_steps: Option<i32>,
     should_reset_on_start: Option<&dyn Fn() -> bool>,
 ) -> String {
-    // Argv presente → transporte clássico (retrocompatível). Argv vazio → lê o envelope
-    // da inbox em arquivo, o transporte que elimina o hang de aspas do shell (ver inbox).
+    // Argv present → classic transport (backward compatible). Empty argv → reads the
+    // envelope from the file-based inbox, the transport that eliminates the shell quoting
+    // hang (see inbox).
     let from_inbox = args.is_empty();
     let arg0 = if !args.is_empty() {
         args[0].clone()
@@ -46,30 +47,31 @@ pub fn dispatch(
         Envelope::parse(&arg0)
     };
 
-    // Só consome a inbox quando o parse deu certo — um JSON quebrado deve gerar o ERRO
-    // corretivo e permanecer disponível para inspeção, não sumir silenciosamente.
+    // Only consumes the inbox when the parse succeeded — a broken JSON must produce the
+    // corrective ERROR and remain available for inspection, not vanish silently.
     if from_inbox && envelope.is_some() {
         inbox::consume();
     }
 
     if let Some(env) = &envelope {
         if env.value == "start" {
-            // Novo workflow começa do zero — estado e trace são truncados juntos. Mas um
-            // "start" também chega quando uma sessão fresca (ex.: hard reset por feature
-            // do Development) reabre um run em andamento — nesse caso é RETOMADA, não
-            // início, e truncar aqui apagaria o trace/step acumulados de features
-            // anteriores. O flow decide via should_reset_on_start; sem predicado, o
-            // padrão é sempre resetar (retrocompatível com flows single-shot).
+            // A new workflow starts from scratch — state and trace are truncated
+            // together. But a "start" also arrives when a fresh session (e.g. a
+            // per-feature hard reset in Development) reopens an in-progress run — in that
+            // case it's a RESUME, not a start, and truncating here would wipe the
+            // trace/step accumulated by previous features. The flow decides via
+            // should_reset_on_start; with no predicate, the default is to always reset
+            // (backward compatible with single-shot flows).
             let should_reset = should_reset_on_start.map(|f| f()).unwrap_or(true);
             if should_reset {
                 state_store::reset();
                 trace::reset();
             }
 
-            // Contexto do driver (ex.: {"driver":"claude code"}) nasce aqui e sobrevive
-            // no state_store — prompt_formatter o reinjeta em toda saída até o próximo
-            // "start". Independe do reset acima: mesmo numa retomada, o driver atual
-            // deve prevalecer.
+            // Driver context (e.g. {"driver":"claude code"}) is born here and survives in
+            // state_store — prompt_formatter reinjects it into every output until the
+            // next "start". Independent of the reset above: even on a resume, the current
+            // driver must prevail.
             if let Some(context) = &env.context {
                 if !context.is_empty() {
                     state_store::set_context(context.clone());
@@ -78,7 +80,7 @@ pub fn dispatch(
         }
     }
 
-    // Guarda de iteração — hard stop sob a restrição de tokens do time.
+    // Iteration guard — hard stop under the team's token budget constraint.
     let step = state_store::increment();
 
     let cost_chars = state_store::load().cost_chars;
@@ -97,14 +99,14 @@ pub fn dispatch(
         max_steps,
     );
 
-    // Uma linha por volta do loop: alimenta a telemetria e o evaluator de trajetória.
-    // Label é lido de novo (não do snapshot de load() acima) porque a própria action pode
-    // ter acabado de setá-lo (ex.: pick() escolhendo a feature deste passo).
+    // One line per loop iteration: feeds telemetry and the trajectory evaluator. Label is
+    // read again (not from the load() snapshot above) because the action itself may have
+    // just set it (e.g. pick() choosing this step's feature).
     let label = state_store::get(state_store::TRACE_LABEL_KEY).unwrap_or_default();
     trace::append_with_label(step, &command, outcome, result.len() as i32, &label);
 
-    // O custo da instrução emitida agora só é conhecido aqui — entra no acumulado que o
-    // guard do próximo turno vai checar.
+    // The cost of the instruction just emitted is only known here — it feeds into the
+    // accumulator the next turn's guard will check.
     state_store::add_cost(result.len() as i32);
     result
 }
@@ -117,33 +119,33 @@ fn resolve(
     validators: Option<&HashMap<String, Validator>>,
     max_steps: Option<i32>,
 ) -> (String, &'static str) {
-    // Teto de passos efetivo: o override por invocação (ex.: um flow long-running como o
-    // Development, que precisa de mais folga) tem precedência sobre o global do
-    // harness.json. Sem override, vale o do config.
+    // Effective step ceiling: the per-invocation override (e.g. a long-running flow like
+    // Development, which needs more headroom) takes precedence over harness.json's
+    // global. Without an override, the config's value applies.
     let effective_max_steps = max_steps.unwrap_or_else(default_max_steps);
     if step > effective_max_steps {
-        eprintln!("[harness] limite de {effective_max_steps} passos atingido; encerrando.");
+        eprintln!("[harness] step limit of {effective_max_steps} reached; stopping.");
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
 
-    // Teto de custo, segundo guard além do de passos. Chars de instrução emitida são a
-    // única medida: é o que a engine atesta sozinha. Token real vive nos metadados de
-    // billing do caller — um driver-LLM não tem como reportá-lo honestamente.
+    // Cost ceiling, a second guard alongside the step one. Emitted instruction chars are
+    // the only measure: it's what the engine attests to on its own. Real tokens live in
+    // the caller's billing metadata — an LLM driver has no way to honestly report them.
     let config = harness_config::current();
     if config.max_instruction_chars > 0 && cost_chars > config.max_instruction_chars {
         eprintln!(
-            "[harness] limite de {} chars de instrução atingido ({cost_chars}); encerrando.",
+            "[harness] instruction char limit of {} reached ({cost_chars}); stopping.",
             config.max_instruction_chars
         );
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
 
-    // Erro tipado em vez de "stop" silencioso: o modelo recebe a causa e pode reenviar o
-    // comando correto (loop corretivo, não término mudo).
+    // Typed error instead of a silent "stop": the model gets the cause and can resend the
+    // correct command (corrective loop, not a silent stall).
     let envelope = match envelope {
         None => {
             return (
-                error_instruction("Não foi possível interpretar o JSON recebido.", actions),
+                error_instruction("Could not parse the received JSON.", actions),
                 trace_outcome::ERROR,
             );
         }
@@ -154,7 +156,7 @@ fn resolve(
         None => {
             return (
                 error_instruction(
-                    &format!("O comando '{}' não existe.", envelope.value),
+                    &format!("The command '{}' does not exist.", envelope.value),
                     actions,
                 ),
                 trace_outcome::ERROR,
@@ -163,8 +165,9 @@ fn resolve(
         Some(a) => a,
     };
 
-    // Validação contextual: o comando existe, mas o VALOR atende à expectativa da task?
-    // Falhou → mesmo caminho de erro corretivo dos casos acima; o driver corrige e reenvia.
+    // Contextual validation: the command exists, but does the VALUE meet the task's
+    // expectation? On failure → the same corrective-error path as the cases above; the
+    // driver fixes it and resends.
     if let Some(validators) = validators {
         if let Some(validator) = validators.get(&envelope.value) {
             let rejected = validator(envelope);
@@ -172,7 +175,7 @@ fn resolve(
                 return (
                     error_instruction(
                         &format!(
-                            "O comando '{}' foi recusado: {} Corrija o conteúdo de 'args' e reenvie o mesmo comando.",
+                            "The command '{}' was rejected: {} Fix the 'args' content and resend the same command.",
                             envelope.value, rejected.reason
                         ),
                         actions,
@@ -183,10 +186,10 @@ fn resolve(
         }
     }
 
-    // Guarda de tempo: uma task travada (loop infinito na lógica de domínio) prenderia o
-    // processo indefinidamente. `run_with_timeout` impõe o teto por passo; o estouro vira
-    // erro tipado, capturado aqui, e segue o mesmo caminho gracioso do corte por budget:
-    // diagnóstico no stderr + "stop" no stdout (o canal lido pelo cliente IDE).
+    // Time guard: a stuck task (infinite loop in domain logic) would hang the process
+    // indefinitely. `run_with_timeout` enforces the per-step ceiling; the overrun becomes
+    // a typed error, caught here, and follows the same graceful path as the budget cutoff:
+    // diagnostic on stderr + "stop" on stdout (the channel read by the IDE client).
     match run_with_timeout(action, Some(envelope), config.timeout_ms) {
         Ok(result) => {
             let outcome = if result == "stop" {
@@ -203,19 +206,20 @@ fn resolve(
     }
 }
 
-// A task é uma closure síncrona e OPACA — não coopera com cancelamento. Rust não aborta
-// código síncrono travado com segurança, então o único timeout preemptivo real é rodá-la
-// noutra thread e ABANDONAR o que travar. `thread::spawn` (não `thread::scope`) porque o
-// processo termina todas as threads ao sair do `main`, mesmo com uma spawned ainda viva —
-// o mesmo modelo do `Task.Run` (threadpool) do .NET e da thread `daemon=True` do Python;
-// `thread::scope` bloquearia até a thread travada terminar, anulando o timeout.
+// The task is a synchronous, OPAQUE closure — it doesn't cooperate with cancellation.
+// Rust cannot safely abort stuck synchronous code, so the only real preemptive timeout is
+// to run it on another thread and ABANDON whatever hangs. `thread::spawn` (not
+// `thread::scope`) because the process kills all threads on exiting `main`, even a spawned
+// one still alive — the same model as .NET's `Task.Run` (threadpool) and Python's
+// `daemon=True` thread; `thread::scope` would block until the stuck thread finishes,
+// nullifying the timeout.
 fn run_with_timeout(
     action: &Action,
     envelope: Option<&Envelope>,
     timeout_ms: i32,
 ) -> Result<String, HarnessTimeoutError> {
     if timeout_ms <= 0 {
-        return Ok(action(envelope)); // guarda desligada — sem overhead de thread
+        return Ok(action(envelope)); // guard disabled — no thread overhead
     }
 
     let action = Arc::clone(action);
@@ -232,16 +236,16 @@ fn run_with_timeout(
 }
 
 fn error_instruction(reason: &str, actions: &HashMap<String, Action>) -> String {
-    // Ordenado por determinismo: `HashMap` não garante ordem de iteração estável entre
-    // execuções (ao contrário do `dict` do Python), e a mensagem é mais útil já ordenada.
+    // Sorted for determinism: `HashMap` doesn't guarantee stable iteration order across
+    // runs (unlike Python's `dict`), and the message is more useful already sorted.
     let mut keys: Vec<&str> = actions.keys().map(|k| k.as_str()).collect();
     keys.sort_unstable();
     let valid = keys.join(", ");
 
     format!(
-        "ERRO no protocolo do harness: {reason} Comandos válidos: {valid}. \
-Revise o campo 'value' do seu JSON de resposta (responda apenas com o JSON, sem cercas de \
-código nem comentários) e reenvie o comando."
+        "HARNESS PROTOCOL ERROR: {reason} Valid commands: {valid}. \
+Review the 'value' field in your JSON response (reply with the JSON only, no code fences \
+or commentary) and resend the command."
     )
 }
 
@@ -348,16 +352,16 @@ mod tests {
         let _iso = Isolated::new();
 
         let result = dispatch(
-            &arg(r#"{"type":"text","value":"tipo"}"#),
+            &arg(r#"{"type":"text","value":"type"}"#),
             &tasks(),
             None,
             None,
             None,
         );
 
-        assert!(result.starts_with("ERRO"));
+        assert!(result.starts_with("HARNESS PROTOCOL ERROR"));
         assert_ne!(result, "stop");
-        assert!(result.contains("'tipo'"));
+        assert!(result.contains("'type'"));
     }
 
     #[test]
@@ -373,7 +377,7 @@ mod tests {
             None,
         );
 
-        assert!(result.starts_with("ERRO"));
+        assert!(result.starts_with("HARNESS PROTOCOL ERROR"));
         assert_ne!(result, "stop");
     }
 
@@ -384,7 +388,7 @@ mod tests {
 
         let result = dispatch(&[], &tasks(), None, None, None);
 
-        assert!(result.starts_with("ERRO"));
+        assert!(result.starts_with("HARNESS PROTOCOL ERROR"));
         assert_ne!(result, "stop");
     }
 
@@ -394,7 +398,7 @@ mod tests {
         let _iso = Isolated::new();
 
         let result = dispatch(
-            &arg(r#"{"type":"text","value":"inexistente"}"#),
+            &arg(r#"{"type":"text","value":"nonexistent"}"#),
             &tasks(),
             None,
             None,
@@ -430,7 +434,7 @@ mod tests {
             None,
         );
 
-        // start reseta e então conta a si mesmo como passo 1.
+        // start resets and then counts itself as step 1.
         assert_eq!(state_store::load().step, 1);
     }
 
@@ -459,7 +463,7 @@ mod tests {
             Some(never_reset),
         );
 
-        assert_eq!(state_store::load().step, 4); // 3 anteriores + o próprio "start", sem reset
+        assert_eq!(state_store::load().step, 4); // 3 previous + "start" itself, no reset
         assert!(
             trace::load()
                 .iter()
@@ -490,7 +494,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(state_store::load().step, 1); // retrocompatível: sem predicado, sempre reseta
+        assert_eq!(state_store::load().step, 1); // backward compatible: no predicate, always resets
     }
 
     #[test]
@@ -529,7 +533,7 @@ mod tests {
             assert_ne!(ok, "stop");
         }
 
-        // O passo seguinte ultrapassa o teto e é cortado.
+        // The next step exceeds the ceiling and is cut off.
         let result = dispatch(
             &arg(r#"{"type":"tool","value":"classify","args":["x"]}"#),
             &tasks(),
@@ -546,7 +550,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        // SAFETY: serializado por `lock_cwd()`.
+        // SAFETY: serialized by `lock_cwd()`.
         unsafe { std::env::set_var("HARNESS_TIMEOUT_MS", "50") };
 
         let mut slow: HashMap<String, Action> = HashMap::new();
@@ -554,7 +558,7 @@ mod tests {
             "slow".to_string(),
             Arc::new(|_| {
                 thread::sleep(Duration::from_millis(500));
-                "nunca chega".to_string()
+                "never arrives".to_string()
             }),
         );
 
@@ -567,7 +571,7 @@ mod tests {
             None,
         );
 
-        // SAFETY: ver acima.
+        // SAFETY: see above.
         unsafe { std::env::remove_var("HARNESS_TIMEOUT_MS") };
         harness_config::reload();
 

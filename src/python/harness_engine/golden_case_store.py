@@ -1,4 +1,4 @@
-"""Carrega os casos do golden set do disco."""
+"""Loads the golden set cases from disk."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class GoldenCase:
-    """Um caso do golden set: o esperado contra o qual a evidência gravada é medida.
-    `expect_pass = False` marca um caso NEGATIVO INTENCIONAL — um run que DEVE reprovar
-    nas métricas (ex.: trajetória perfeita mas conteúdo faltante), usado para provar que
-    os evaluators pegam a falha. O padrão é `True`."""
+    """One golden set case: the expectation the recorded evidence is measured against.
+    `expect_pass = False` marks an INTENTIONAL NEGATIVE case — a run that MUST fail on
+    the metrics (e.g. a perfect trajectory but missing content), used to prove the
+    evaluators catch the failure. The default is `True`."""
 
     id: str
     description: str
@@ -36,12 +36,12 @@ def load(path: str) -> GoldenCase | None:
     try:
         return GoldenCase.from_dict(json.loads(Path(path).read_text()))
     except Exception as ex:
-        print(f"[GoldenCaseStore] falha ao carregar {path}: {ex}", file=sys.stderr)
+        print(f"[GoldenCaseStore] failed to load {path}: {ex}", file=sys.stderr)
         return None
 
 
 def load_directory(directory: str) -> list[GoldenCase]:
-    """Carrega todos os `*.json` de um diretório, ordenados por nome, ignorando os inválidos."""
+    """Loads every `*.json` in a directory, sorted by name, skipping invalid ones."""
     d = Path(directory)
     if not d.is_dir():
         return []

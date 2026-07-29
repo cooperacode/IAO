@@ -3,8 +3,8 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O DocsReader é a entrada alternativa ao input interativo: lê os documentos da pasta
-/// (determinístico, em código) para que o modelo só precise sintetizar o brief.
+/// DocsReader is the alternative input to the interactive one: it reads the folder's
+/// documents (deterministic, in code) so the model only needs to synthesize the brief.
 /// </summary>
 public class DocsReaderTests : IDisposable
 {
@@ -35,8 +35,8 @@ public class DocsReaderTests : IDisposable
     public void HasDocs_IgnoraExtensoesNaoSuportadas()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(Path.Combine(_dir, "imagem.png"), "x");
-        File.WriteAllText(Path.Combine(_dir, "dados.json"), "{}");
+        File.WriteAllText(Path.Combine(_dir, "image.png"), "x");
+        File.WriteAllText(Path.Combine(_dir, "data.json"), "{}");
 
         Assert.False(DocsReader.HasDocs(_dir));
     }
@@ -45,7 +45,7 @@ public class DocsReaderTests : IDisposable
     public void HasDocs_ComMarkdown_True()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(Path.Combine(_dir, "spec.md"), "conteúdo");
+        File.WriteAllText(Path.Combine(_dir, "spec.md"), "content");
 
         Assert.True(DocsReader.HasDocs(_dir));
     }
@@ -54,7 +54,7 @@ public class DocsReaderTests : IDisposable
     public void Read_ConcatenaMdETxtEmOrdemAlfabetica()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(Path.Combine(_dir, "b-notas.txt"), "notas");
+        File.WriteAllText(Path.Combine(_dir, "b-notas.txt"), "notes");
         File.WriteAllText(Path.Combine(_dir, "a-spec.md"), "spec");
 
         var (content, files) = DocsReader.Read(_dir);
@@ -79,16 +79,17 @@ public class DocsReaderTests : IDisposable
     [Fact]
     public void Read_ConteudoComAcentoEEmoji_NaoQuebraCaractereMultibyte()
     {
-        // "café ☕" tem "é" (2 bytes) e "☕" (3 bytes) em UTF-8 — um corte ingênuo por
-        // posição de byte no meio de qualquer um deles produziria bytes inválidos.
+        // "café ☕" has "é" (2 bytes) and "☕" (3 bytes) in UTF-8 — a naive cut by byte
+        // position in the middle of either would produce invalid bytes.
         Directory.CreateDirectory(_dir);
         File.WriteAllText(Path.Combine(_dir, "a.md"), "café ☕ café ☕ café ☕");
 
         var (content, _) = DocsReader.Read(_dir);
 
         Assert.Contains("café ☕", content);
-        // Se o conteúdo sobreviveu ao roundtrip como string .NET válida, o corte (quando
-        // aplicado) já respeitou a fronteira UTF-8 — string inválida teria virado U+FFFD.
+        // If the content survived the roundtrip as a valid .NET string, the cut (when
+        // applied) already respected the UTF-8 boundary — an invalid string would have
+        // turned into U+FFFD.
         Assert.DoesNotContain('�', content);
     }
 }

@@ -1,7 +1,7 @@
-"""Runner pequeno e shell-safe para comandos Git.
+"""Small, shell-safe runner for Git commands.
 
-A engine fornece o mecanismo; flows decidem quais comandos rodar e como interpretar o
-resultado.
+The engine provides the mechanism; flows decide which commands to run and how to
+interpret the result.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-# Diretório estável e sempre vazio usado como `core.hooksPath` em todo comando git disparado
-# pelo harness: neutraliza hooks do repositório-alvo (pre-commit/post-commit etc.), que de
-# outra forma rodariam código arbitrário controlado pelo próprio agente supervisionado.
+# Stable, always-empty directory used as `core.hooksPath` for every git command the
+# harness fires: neutralizes the target repo's hooks (pre-commit/post-commit etc.), which
+# would otherwise run arbitrary code controlled by the very agent being supervised.
 _NO_HOOKS_DIR = Path(tempfile.gettempdir()) / "iao-no-hooks"
 
 

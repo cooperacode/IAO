@@ -1,63 +1,82 @@
 ---
-description: Desenvolve um projeto feature a feature (padrão long-running) — inicializador expande o brief em features priorizadas; um loop de sessões de contexto fresco implementa uma por vez (bearings, smoke, pick, implement, verify, handoff) até todas passarem — dirigindo o harness .NET Flows.Development.
+description: Develops a project feature by feature (long-running pattern) — the initializer expands the brief into prioritized features; a loop of fresh-context sessions implements them one at a time (bearings, smoke, pick, implement, verify, handoff) until all pass — driving the .NET Flows.Development harness.
 auto_execution_mode: 3
 ---
 
-# Desenvolvimento long-running
+# Long-running development
 
-Leva um projeto do zero até "todas as features passando", **uma feature por vez**, com hard
-reset de contexto entre features.
+Takes a project from scratch to "all features passing", **one feature at a time**, with a
+hard context reset between features.
 
-Você é o **interpretador** de um harness cuja máquina de estados vive em código compilado (.NET). **A lógica do fluxo está no programa, não com você.** A cada passo você escreve o envelope em um arquivo, roda um comando, lê o `stdout` e segue exatamente a instrução retornada. Não decida por conta própria qual é o próximo passo.
+You are the **interpreter** for a harness whose state machine lives in compiled (.NET) code.
+**The flow logic lives in the program, not with you.** At each step you write the envelope to
+a file, run a command, read the `stdout` and follow exactly the instruction it returns. Don't
+decide the next step on your own.
 
-Programa: `./run-development.sh`
+Program: `./run-development.sh`
 
-## Contrato do canal
+## Channel contract
 
-- **`stdout`** = a próxima instrução. É a string literal `stop` (fim → pare), ou um bloco com `<input>` (o que fazer) e `<response>` (o JSON exato a devolver, com placeholders `$X`, e possivelmente um `<skills>` com a skill do passo).
-- **`stderr`** = diagnóstico. Ignore ao decidir o próximo passo.
-- **Sua saída de cada passo** = apenas o JSON de `<response>` preenchido, escrito em `.harness/inbox.json`, sem cercas de código nem texto ao redor.
+- **`stdout`** = the next instruction. It's the literal string `stop` (end → stop), or a
+  block with `<input>` (what to do) and `<response>` (the exact JSON to return, with `$X`
+  placeholders, and possibly a `<skills>` with the step's skill).
+- **`stderr`** = diagnostic. Ignore it when deciding the next step.
+- **Your output at each step** = only the JSON from `<response>` filled in, written to
+  `.harness/inbox.json`, with no code fences or surrounding text.
 
-## Regras
+## Rules
 
-1. **Transporte por arquivo (obrigatório).** Escreva o JSON do envelope em `.harness/inbox.json` e rode `./run-development.sh` **sem argumentos**. Nunca monte o JSON como argumento do shell: uma aspa esquecida trava o shell antes de o programa rodar.
-2. Baseie a decisão **apenas no `stdout`**.
-3. Os artefatos (resumos, resultados, features…) voltam como **string dentro de `args`**; para quebras de linha, use `\n` (exigência do JSON).
-4. Se o `stdout` começar com `ERRO no protocolo do harness:`, corrija o campo apontado reescrevendo `.harness/inbox.json` e **rode o script de novo** — não pare.
+1. **File-based transport (mandatory).** Write the envelope JSON to `.harness/inbox.json` and
+   run `./run-development.sh` **with no arguments**. Never build the JSON as a shell argument:
+   a forgotten quote locks up the shell before the program even runs.
+2. Base your decision **only on `stdout`**.
+3. Artifacts (summaries, results, features…) come back as a **string inside `args`**; for
+   newlines, use `\n` (JSON requirement).
+4. If `stdout` begins with `HARNESS PROTOCOL ERROR:`, fix the indicated field by rewriting
+   `.harness/inbox.json` and **run the script again** — don't stop.
 
-## Hard reset por feature (essencial)
+## Hard reset per feature (essential)
 
-Quando o `<input>` começar com `=== NOVA SESSÃO (contexto limpo) ===`, o harness inicia **uma nova feature**. Trate como sessão do zero: **spawne um sub-agente novo** para conduzi-la, que se reorienta **só** pelos artefatos persistentes (`progress.txt`, `git log`) — não herde nem re-resuma o contexto das features anteriores.
+When `<input>` begins with `=== NEW SESSION (clean context) ===`, the harness is starting
+**a new feature**. Treat it as a session from scratch: **spawn a new sub-agent** to drive it,
+which gets its bearings **only** from the persistent artifacts (`progress.txt`, `git log`) —
+don't inherit or re-summarize the context from previous features.
 
-Ao assumir uma sessão que morreu no meio de uma feature (ex.: acabaram os tokens em outra
-IDE), confira `progress.txt`/`git log` antes de reimplementar algo que já estava pronto — a
-retomada não recupera a posição exata dentro dela.
+When picking up a session that died mid-feature (e.g. ran out of tokens in another IDE),
+check `progress.txt`/`git log` before reimplementing something that was already done —
+resuming doesn't recover the exact position within it.
 
 ## Self-verify
 
-No passo `verify`, rode o comando de verificação indicado no `<input>` (`$VERIFY_CMD` capturado no `plan`) no diretório-alvo e teste como um usuário faria. Responda começando com `PASS` ou `FAIL: <motivo>`. Um `FAIL` faz o harness te mandar de volta a implementar a mesma feature.
+At the `verify` step, run the verification command indicated in `<input>` (`$VERIFY_CMD`
+captured in `plan`) in the target directory and test it as a user would. Respond starting with
+`PASS` or `FAIL: <reason>`. A `FAIL` sends the harness back to implementing the same feature.
 
-## Passos
+## Steps
 
-1. Inicie o fluxo: escreva `{ "type": "text", "value": "start", "context": { "driver": "devin" } }` em `.harness/inbox.json`, rode o script sem argumentos e guarde o `stdout`:
+1. Start the flow: write `{ "type": "text", "value": "start", "context": { "driver": "devin" } }`
+   to `.harness/inbox.json`, run the script with no arguments and keep the `stdout`:
    ```bash
    ./run-development.sh
    ```
-   (Sem artefato compilado ainda, o script builda sob demanda na primeira chamada.)
+   (With no compiled artifact yet, the script builds on demand on the first call.)
 
-2. Enquanto o `stdout` **não** for exatamente `stop`:
-   - Execute a instrução do bloco `<input>` (com a skill do bloco `<skills>`), respeitando o hard reset por feature.
-   - Preencha o JSON do bloco `<response>`, escreva-o em `.harness/inbox.json` e rode `./run-development.sh` (sem argumentos).
-   - Substitua o `stdout` pelo novo resultado e repita.
+2. While `stdout` is **not** exactly `stop`:
+   - Execute the instruction from the `<input>` block (with the skill from the `<skills>`
+     block), respecting the hard reset per feature.
+   - Fill in the JSON from the `<response>` block, write it to `.harness/inbox.json` and run
+     `./run-development.sh` (no arguments).
+   - Replace `stdout` with the new result and repeat.
 
-3. Ao ver `stop`, todas as features passam (`.harness/feature_list.json`). Reporte:
+3. On seeing `stop`, all features pass (`.harness/feature_list.json`). Report:
 
 ```markdown
-✅ DESENVOLVIMENTO CONCLUÍDO — todas as features passam (.harness/feature_list.json)
+✅ DEVELOPMENT COMPLETE — all features pass (.harness/feature_list.json)
 ```
 
-> Sem relatório de uso/custo para Devin: `skills/session-report/` depende de um script
-> `scripts/devin_usage.py` (equivalente a `claude_usage.py`/`codex_usage.py`/
-> `copilot_usage.py`) que ainda não existe — não pule esta nota achando que é só chamar a
-> skill com `--driver devin`, ela vai falhar (`choices` só aceita `claude`/`codex`/
-> `copilot`). Não gere o relatório neste workflow até esse script existir.
+> No usage/cost report for Devin: `skills/session-report/` depends on a script
+> `scripts/devin_usage.py` (equivalent to `claude_usage.py`/`codex_usage.py`/
+> `copilot_usage.py`) that doesn't exist yet — don't skip this note thinking it's just a matter
+> of calling the skill with `--driver devin`, it will fail (`choices` only accepts
+> `claude`/`codex`/`copilot`). Don't generate the report in this workflow until that script
+> exists.

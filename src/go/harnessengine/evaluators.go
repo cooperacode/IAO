@@ -29,7 +29,7 @@ func ExactMatch(expected, actual string) Score {
 	if strings.TrimSpace(expected) == strings.TrimSpace(actual) {
 		value = 1.0
 	}
-	return Score{Metric: "exact_match", Value: value, Detail: fmt.Sprintf(`esperado="%s" obtido="%s"`, expected, actual)}
+	return Score{Metric: "exact_match", Value: value, Detail: fmt.Sprintf(`expected="%s" got="%s"`, expected, actual)}
 }
 
 // MatchesRegex checks whether actual matches pattern.
@@ -56,7 +56,7 @@ func Trajectory(expected, actual []string) Score {
 	if len(expected) > 0 {
 		value = float64(matched) / float64(len(expected))
 	}
-	return Score{Metric: "trajectory", Value: value, Detail: fmt.Sprintf("%d/%d passos na ordem esperada", matched, len(expected))}
+	return Score{Metric: "trajectory", Value: value, Detail: fmt.Sprintf("%d/%d steps in expected order", matched, len(expected))}
 }
 
 // Completeness scores the fraction of required domain keys that were filled in the final state.
@@ -71,7 +71,7 @@ func Completeness(state HarnessState, requiredKeys []string) Score {
 	if len(requiredKeys) > 0 {
 		value = float64(filled) / float64(len(requiredKeys))
 	}
-	return Score{Metric: "completeness", Value: value, Detail: fmt.Sprintf("%d/%d chaves preenchidas", filled, len(requiredKeys))}
+	return Score{Metric: "completeness", Value: value, Detail: fmt.Sprintf("%d/%d keys filled", filled, len(requiredKeys))}
 }
 
 // StepBudget reports whether the run ended in TraceOutcome.Stop without hitting the step
@@ -91,14 +91,14 @@ func StepBudget(trace []TraceEntry) Score {
 	}
 
 	value := 0.0
-	detail := "não terminou"
+	detail := "did not finish"
 	switch {
 	case hitBudget:
-		detail = "cortado pelo teto de passos"
+		detail = "cut off by the step ceiling"
 	case hitTimeout:
-		detail = "cortado pelo teto de tempo (timeout)"
+		detail = "cut off by the time ceiling (timeout)"
 	case terminated:
-		detail = "concluído dentro do teto"
+		detail = "completed within budget"
 	}
 	if !hitBudget && !hitTimeout && terminated {
 		value = 1.0

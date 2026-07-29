@@ -1,4 +1,4 @@
-//! Estado persistido entre invocações: contador de passos + dados acumulados do domínio.
+//! State persisted across invocations: step counter + accumulated domain data.
 
 use std::collections::HashMap;
 
@@ -10,12 +10,12 @@ pub struct HarnessState {
     pub step: i32,
     #[serde(default)]
     pub data: HashMap<String, String>,
-    // Custo acumulado do run, insumo do teto de custo (ver task_registry).
+    // Accumulated cost for the run, the input to the cost ceiling (see task_registry).
     #[serde(rename = "costChars", default)]
     pub cost_chars: i32,
-    // Contexto do driver (ex.: {"driver": "claude code"}) capturado no envelope `start` —
-    // sobrevive entre invocações para que prompt_formatter possa reinjetá-lo em toda saída
-    // sem que cada task o repasse manualmente.
+    // Driver context (e.g. {"driver": "claude code"}) captured from the `start` envelope —
+    // survives across invocations so prompt_formatter can reinject it into every output
+    // without each task having to pass it along manually.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<HashMap<String, String>>,
 }

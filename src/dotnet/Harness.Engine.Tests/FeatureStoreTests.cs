@@ -3,9 +3,10 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// A feature_list.json é o "persistent artifact" que atravessa os hard resets de contexto do
-/// flow de desenvolvimento: seleção determinística da próxima pendente e término quando todas
-/// passam. Mesma tolerância dos demais stores — ausente/ilegível → lista vazia, nunca derruba.
+/// feature_list.json is the "persistent artifact" that survives the development flow's
+/// context hard resets: deterministic selection of the next pending feature and
+/// termination when all pass. Same tolerance as the other stores — missing/unreadable →
+/// empty list, never brings down the run.
 /// </summary>
 public class FeatureStoreTests : IDisposable
 {
@@ -42,7 +43,7 @@ public class FeatureStoreTests : IDisposable
             """[{"id":1,"title":"Login","priority":1},{"id":2,"title":"Logout","priority":3}]""");
 
         Assert.Equal(2, features.Count);
-        Assert.All(features, f => Assert.False(f.Passes)); // toda feature nasce pendente
+        Assert.All(features, f => Assert.False(f.Passes)); // every feature is born pending
         Assert.Equal("Login", features[0].Title);
     }
 
@@ -57,7 +58,7 @@ public class FeatureStoreTests : IDisposable
     [Fact]
     public void Parse_JsonInvalido_RetornaVazioSemLancar()
     {
-        Assert.Empty(FeatureStore.Parse("isso não é json"));
+        Assert.Empty(FeatureStore.Parse("this is not json"));
         Assert.Empty(FeatureStore.Parse("[]"));
     }
 
@@ -65,12 +66,12 @@ public class FeatureStoreTests : IDisposable
     public void NextPending_EscolheMaiorPrioridadePendente()
     {
         FeatureStore.Write([
-            new Feature(1, "baixa", 3, false),
-            new Feature(2, "alta", 1, false),
-            new Feature(3, "media", 2, true), // já passa — ignorada
+            new Feature(1, "low", 3, false),
+            new Feature(2, "high", 1, false),
+            new Feature(3, "medium", 2, true), // already passing — ignored
         ]);
 
-        Assert.Equal(2, FeatureStore.NextPending()!.Id); // prioridade 1
+        Assert.Equal(2, FeatureStore.NextPending()!.Id); // priority 1
     }
 
     [Fact]
@@ -94,19 +95,19 @@ public class FeatureStoreTests : IDisposable
     public void Parse_PreservaDescriptionEReferences()
     {
         var features = FeatureStore.Parse(
-            """[{"id":1,"title":"X","priority":1,"description":"faz Y","references":["RF-003"]}]""");
+            """[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]""");
 
-        Assert.Equal("faz Y", features[0].Description);
+        Assert.Equal("does Y", features[0].Description);
         Assert.Equal(["RF-003"], features[0].Refs);
     }
 
     [Fact]
     public void Parse_DescriptionAcimaDoTeto_ETruncada()
     {
-        var longa = new string('a', FeatureStore.DescriptionMaxChars + 50);
+        var longDescription = new string('a', FeatureStore.DescriptionMaxChars + 50);
 
         var features = FeatureStore.Parse(
-            $$"""[{"id":1,"title":"X","priority":1,"description":"{{longa}}"}]""");
+            $$"""[{"id":1,"title":"X","priority":1,"description":"{{longDescription}}"}]""");
 
         Assert.Equal(FeatureStore.DescriptionMaxChars, features[0].Description.Length);
     }
@@ -141,8 +142,8 @@ public class FeatureStoreTests : IDisposable
     [Fact]
     public void Load_FeatureListLegadoSemDependsOn_NaoLanca()
     {
-        // Simula um feature_list.json gravado por uma versão anterior do harness, sem a chave
-        // "dependsOn" — prova a compatibilidade retroativa que motivou o design com Deps.
+        // Simulates a feature_list.json written by an earlier harness version, without the
+        // "dependsOn" key — proves the backward compatibility that motivated the Deps design.
         Directory.CreateDirectory(".harness");
         File.WriteAllText(".harness/feature_list.json",
             """{"items":[{"id":1,"title":"A","priority":1,"passes":false}]}""");
@@ -157,8 +158,8 @@ public class FeatureStoreTests : IDisposable
     public void NextPending_IgnoraFeatureComDependenciaPendente()
     {
         FeatureStore.Write([
-            new Feature(1, "fundação", 2, false),
-            new Feature(2, "depende de 1", 1, false, [1]), // prioridade "melhor", mas bloqueada
+            new Feature(1, "foundation", 2, false),
+            new Feature(2, "depends on 1", 1, false, [1]), // "better" priority, but blocked
         ]);
 
         Assert.Equal(1, FeatureStore.NextPending()!.Id);
@@ -168,8 +169,8 @@ public class FeatureStoreTests : IDisposable
     public void NextPending_LiberaFeatureAposDependenciaPassar()
     {
         FeatureStore.Write([
-            new Feature(1, "fundação", 2, false),
-            new Feature(2, "depende de 1", 1, false, [1]),
+            new Feature(1, "foundation", 2, false),
+            new Feature(2, "depends on 1", 1, false, [1]),
         ]);
         Assert.Equal(1, FeatureStore.NextPending()!.Id);
 
@@ -181,8 +182,8 @@ public class FeatureStoreTests : IDisposable
     [Fact]
     public void NextPending_TodasBloqueadas_RetornaNullComPendenciasExistentes()
     {
-        // Grafo cíclico gravado direto via Write (bypassando a validação de Parse) — simula um
-        // feature_list.json editado à mão fora do fluxo normal.
+        // Cyclic graph written directly via Write (bypassing Parse's validation) — simulates
+        // a feature_list.json hand-edited outside the normal flow.
         FeatureStore.Write([
             new Feature(1, "A", 1, false, [2]),
             new Feature(2, "B", 2, false, [1]),
@@ -210,7 +211,7 @@ public class FeatureStoreTests : IDisposable
     [Fact]
     public void AllPassing_ListaVazia_EhFalso()
     {
-        Assert.False(FeatureStore.AllPassing()); // nada gravado → não é "tudo passando"
+        Assert.False(FeatureStore.AllPassing()); // nothing written → not "all passing"
     }
 
     [Fact]

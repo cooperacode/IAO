@@ -67,7 +67,7 @@ func Start() string {
 	// stopped.
 	if engine.PendingFeatureCount() > 0 {
 		fmt.Fprintln(os.Stderr,
-			"[dev] run em andamento detectado (feature pendente); retomando via bearings em vez de resetar.")
+			"[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.")
 		return BearingsPrompt()
 	}
 
@@ -175,7 +175,7 @@ func Bearings(envelope *engine.Envelope) string {
 // Smoke checks the per-feature budget after the smoke test.
 func Smoke(envelope *engine.Envelope) string {
 	if overFeatureBudget() {
-		return stopFlow("guarda por feature")
+		return stopFlow("per-feature guard")
 	}
 	return PickPrompt()
 }
@@ -183,7 +183,7 @@ func Smoke(envelope *engine.Envelope) string {
 // Pick deterministically selects the next ready feature.
 func Pick(envelope *engine.Envelope) string {
 	if overFeatureBudget() {
-		return stopFlow("guarda por feature")
+		return stopFlow("per-feature guard")
 	}
 
 	next := engine.NextPendingFeature()
@@ -195,7 +195,7 @@ func Pick(envelope *engine.Envelope) string {
 		if engine.PendingFeatureCount() == 0 {
 			return done()
 		}
-		return stopFlow("dependências bloqueadas — nenhuma feature pendente está pronta")
+		return stopFlow("blocked dependencies — no pending feature is ready")
 	}
 
 	engine.SetState(currentFeatureIdKey, strconv.Itoa(next.Id))
@@ -210,7 +210,7 @@ func Pick(envelope *engine.Envelope) string {
 // Implement records the driver's summary and attempts automated verification.
 func Implement(envelope *engine.Envelope) string {
 	if overFeatureBudget() {
-		return stopFlow("guarda por feature")
+		return stopFlow("per-feature guard")
 	}
 
 	summary := strings.TrimSpace(arg(envelope))
@@ -233,7 +233,7 @@ func Implement(envelope *engine.Envelope) string {
 // Verify handles the manual self-verify fallback path.
 func Verify(envelope *engine.Envelope) string {
 	if overFeatureBudget() {
-		return stopFlow("guarda por feature")
+		return stopFlow("per-feature guard")
 	}
 
 	// FAILED → back to implementing the SAME feature (correction loop, bounded by the
@@ -280,20 +280,20 @@ func overFeatureBudget() bool {
 	engine.SetState(featureStepsKey, strconv.Itoa(steps))
 
 	if steps > StepsPerFeature {
-		fmt.Fprintf(os.Stderr, "[dev] feature '%s' excedeu %d passos; encerrando.\n", state(currentFeatureTitleKey), StepsPerFeature)
+		fmt.Fprintf(os.Stderr, "[dev] feature '%s' exceeded %d steps; stopping.\n", state(currentFeatureTitleKey), StepsPerFeature)
 		return true
 	}
 	return false
 }
 
 func stopFlow(reason string) string {
-	fmt.Fprintf(os.Stderr, "[dev] encerrado por %s. feature_list em .harness/feature_list.json\n", reason)
+	fmt.Fprintf(os.Stderr, "[dev] stopped due to %s. feature_list in .harness/feature_list.json\n", reason)
 	return "stop"
 }
 
 func done() string {
 	fmt.Fprintf(os.Stderr,
-		"[dev] todas as %d features passam; concluído. Estado em .harness/feature_list.json\n", len(engine.LoadFeatures()))
+		"[dev] all %d features pass; done. State in .harness/feature_list.json\n", len(engine.LoadFeatures()))
 	return "stop"
 }
 

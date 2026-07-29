@@ -3,10 +3,10 @@ using System.Text.Json;
 namespace Harness.Engine;
 
 /// <summary>
-/// Cada invocação do harness é um processo novo e sem memória. Este store persiste o
-/// estado acumulado (contador de passos + dados de domínio) em arquivo, para que o
-/// envelope trafegado pelo modelo fique mínimo — economia de tokens: o modelo passa uma
-/// chave, não o estado inteiro, a cada volta do loop.
+/// Every harness invocation is a new, memory-less process. This store persists the
+/// accumulated state (step counter + domain data) to a file, so the envelope carried by
+/// the model stays minimal — token savings: the model passes a key, not the whole state,
+/// on every loop turn.
 /// </summary>
 public static class StateStore
 {
@@ -14,27 +14,28 @@ public static class StateStore
     private const string FilePath = ".harness/state.json";
 
     /// <summary>
-    /// Estado final congelado do último refinamento concluído. Existe pela mesma razão que
-    /// <see cref="Trace.LastRunPath"/>: o <c>start</c> de qualquer flow reseta o
-    /// <c>state.json</c> vivo, então a avaliação (que checa completude) precisa ler as chaves
-    /// de domínio de um snapshot estável, não do arquivo que seu próprio <c>start</c> zerou.
+    /// Final frozen state of the last completed refinement. Exists for the same reason as
+    /// <see cref="Trace.LastRunPath"/>: any flow's <c>start</c> resets the live
+    /// <c>state.json</c>, so evaluation (which checks completeness) needs to read the
+    /// domain keys from a stable snapshot, not the file its own <c>start</c> zeroed out.
     /// </summary>
     public const string LastRunStatePath = ".harness/last-run.state.json";
 
-    /// <summary>Estado final congelado do último run de avaliação — caminho próprio, não sobrescreve o do refinamento.</summary>
+    /// <summary>Final frozen state of the last evaluation run — its own path, doesn't overwrite refinement's.</summary>
     public const string LastEvaluationStatePath = ".harness/last-evaluation.state.json";
 
     /// <summary>
-    /// Chave convencional em <see cref="HarnessState.Data"/> para a etiqueta que o
-    /// <see cref="TaskRegistry"/> propaga ao <see cref="Trace"/> a cada passo (ver
-    /// <see cref="TraceEntry.Label"/>). Genérica de propósito: a engine não sabe o que é uma
-    /// "feature" — só relê esta chave se o flow a tiver setado (ex.: DevelopmentTasks.Pick).
+    /// Conventional key in <see cref="HarnessState.Data"/> for the label that
+    /// <see cref="TaskRegistry"/> propagates to <see cref="Trace"/> on every step (see
+    /// <see cref="TraceEntry.Label"/>). Deliberately generic: the engine doesn't know what
+    /// a "feature" is — it only re-reads this key if the flow has set it (e.g.
+    /// DevelopmentTasks.Pick).
     /// </summary>
     public const string TraceLabelKey = "trace_label";
 
     public static HarnessState Load() => LoadFrom(FilePath);
 
-    /// <summary>Carrega um estado de um caminho arbitrário (ex.: a evidência de um caso do golden set).</summary>
+    /// <summary>Loads a state from an arbitrary path (e.g. a golden-set case's evidence).</summary>
     public static HarnessState LoadFrom(string path)
     {
         try
@@ -49,7 +50,7 @@ public static class StateStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[StateStore] falha ao carregar: {ex.Message}");
+            Console.Error.WriteLine($"[StateStore] failed to load: {ex.Message}");
         }
 
         return new HarnessState(0, new());
@@ -64,13 +65,13 @@ public static class StateStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[StateStore] falha ao salvar: {ex.Message}");
+            Console.Error.WriteLine($"[StateStore] failed to save: {ex.Message}");
         }
     }
 
     public static void Reset() => Save(new HarnessState(0, new()));
 
-    /// <summary>Congela o <c>state.json</c> vivo no destino — a evidência de completude do run concluído.</summary>
+    /// <summary>Freezes the live <c>state.json</c> at the destination — the evidence of the completed run.</summary>
     public static void Snapshot(string destination)
     {
         try
@@ -83,7 +84,7 @@ public static class StateStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[StateStore] falha ao congelar: {ex.Message}");
+            Console.Error.WriteLine($"[StateStore] failed to freeze: {ex.Message}");
         }
     }
 
@@ -96,10 +97,11 @@ public static class StateStore
     }
 
     /// <summary>
-    /// Soma o custo do turno ao acumulado do run e devolve o total — insumo do teto de
-    /// custo em <see cref="TaskRegistry"/>. Octetos UTF-8 da instrução emitida são a única
-    /// medida (não chars .NET — ver RFC Apêndice B item 1): é o que a engine consegue atestar
-    /// sozinha, sem depender de auto-relato do driver, com o mesmo significado entre engines.
+    /// Adds the turn's cost to the run's accumulator and returns the total — input for the
+    /// cost ceiling in <see cref="TaskRegistry"/>. UTF-8 octets of the emitted instruction
+    /// are the only measure (not .NET chars — see RFC Appendix B item 1): it's what the
+    /// engine can attest on its own, without relying on the driver's self-report, with the
+    /// same meaning across engines.
     /// </summary>
     public static int AddCost(int chars)
     {
@@ -122,13 +124,13 @@ public static class StateStore
         return state.Data.TryGetValue(key, out var value) ? value : null;
     }
 
-    /// <summary>Persiste o contexto do driver capturado no <c>start</c> (ver TaskRegistry).</summary>
+    /// <summary>Persists the driver context captured on <c>start</c> (see TaskRegistry).</summary>
     public static void SetContext(Dictionary<string, string> context)
     {
         var state = Load();
         Save(state with { Context = context });
     }
 
-    /// <summary>Contexto do driver persistido, para o PromptFormatter reinjetar em toda saída.</summary>
+    /// <summary>Persisted driver context, for PromptFormatter to reinject into every output.</summary>
     public static Dictionary<string, string>? GetContext() => Load().Context;
 }

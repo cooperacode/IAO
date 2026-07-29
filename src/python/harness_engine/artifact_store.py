@@ -1,11 +1,11 @@
-"""Persiste cada artefato do flow no seu próprio arquivo (`.harness/<nome>.md`) e mantém
-um manifesto (`.harness/artifacts.json`) com a ordem de gravação. O manifesto é o
-contrato entre produtor e consumidor: a avaliação lê os artefatos por ele, sem depender
-de um relatório combinado.
+"""Persists each flow artifact in its own file (`.harness/<name>.md`) and keeps a
+manifest (`.harness/artifacts.json`) with the write order. The manifest is the contract
+between producer and consumer: evaluation reads the artifacts through it, without
+depending on a combined report.
 
-Só o flow PRODUTOR reseta o manifesto (no seu `start`) — o consumidor (avaliação) não
-toca nele, pela mesma razão dos snapshots de trace/state_store: o start do avaliador não
-pode apagar a evidência que ele mesmo vai ler.
+Only the PRODUCER flow resets the manifest (on its `start`) — the consumer (evaluation)
+doesn't touch it, for the same reason as the trace/state_store snapshots: the
+evaluator's start must not erase the evidence it is itself about to read.
 """
 
 from __future__ import annotations
@@ -21,17 +21,17 @@ MANIFEST_PATH = ".harness/artifacts.json"
 
 
 def reset() -> None:
-    """Apaga os artefatos do run anterior e o manifesto — chamado pelo flow produtor no start."""
+    """Deletes the previous run's artifacts and the manifest — called by the producer flow on start."""
     try:
         for file in files():
             Path(file).unlink(missing_ok=True)
         Path(MANIFEST_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[ArtifactStore] falha ao limpar: {ex}", file=sys.stderr)
+        print(f"[ArtifactStore] failed to clear: {ex}", file=sys.stderr)
 
 
 def write(name: str, content: str) -> str:
-    """Grava `.harness/<nome>.md` e registra o caminho no manifesto (uma vez, em ordem de chegada)."""
+    """Writes `.harness/<name>.md` and registers the path in the manifest (once, in arrival order)."""
     path = str(Path(_DIR) / f"{name}.md")
 
     try:
@@ -43,26 +43,26 @@ def write(name: str, content: str) -> str:
             current_files.append(path)
             _save_manifest(current_files)
     except Exception as ex:
-        print(f"[ArtifactStore] falha ao gravar {name}: {ex}", file=sys.stderr)
+        print(f"[ArtifactStore] failed to write {name}: {ex}", file=sys.stderr)
 
     return path
 
 
 def read(name: str) -> str:
-    """Lê um único artefato por nome (ex.: para reinjeção em prompts). "" se ausente/ilegível."""
+    """Reads a single artifact by name (e.g. for reinjection into prompts). "" if absent/unreadable."""
     path = Path(_DIR) / f"{name}.md"
 
     try:
         if path.exists():
             return path.read_text()
     except Exception as ex:
-        print(f"[ArtifactStore] falha ao ler {name}: {ex}", file=sys.stderr)
+        print(f"[ArtifactStore] failed to read {name}: {ex}", file=sys.stderr)
 
     return ""
 
 
 def files() -> list[str]:
-    """Caminhos registrados no manifesto, na ordem em que foram gravados."""
+    """Paths registered in the manifest, in the order they were written."""
     try:
         p = Path(MANIFEST_PATH)
         if p.exists():
@@ -71,18 +71,18 @@ def files() -> list[str]:
             if isinstance(result, list):
                 return [str(f) for f in result]
     except Exception as ex:
-        print(f"[ArtifactStore] falha ao carregar manifesto: {ex}", file=sys.stderr)
+        print(f"[ArtifactStore] failed to load manifest: {ex}", file=sys.stderr)
 
     return []
 
 
 def has_artifacts() -> bool:
-    """Há artefatos gravados e presentes no disco?"""
+    """Are there artifacts written and present on disk?"""
     return any(Path(f).exists() for f in files())
 
 
 def read_all() -> str:
-    """Concatena os artefatos na ordem do manifesto — o insumo do juiz-LLM."""
+    """Concatenates the artifacts in manifest order — the LLM judge's input."""
     parts: list[str] = []
 
     for file in files():
@@ -91,7 +91,7 @@ def read_all() -> str:
             if p.exists():
                 parts.append(p.read_text().rstrip() + "\n")
         except Exception as ex:
-            print(f"[ArtifactStore] falha ao ler {file}: {ex}", file=sys.stderr)
+            print(f"[ArtifactStore] failed to read {file}: {ex}", file=sys.stderr)
 
     return "".join(parts).rstrip()
 

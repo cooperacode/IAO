@@ -1,6 +1,6 @@
-//! Handoff automático: commit git do diretório-alvo (excluindo `.harness/`) + linha em
-//! `progress.txt`, sem gastar um turno do modelo. Falha em qualquer etapa cai no prompt
-//! legado de reparo manual (`prompts::handoff_prompt`).
+//! Automatic handoff: git commit of the target directory (excluding `.harness/`) + a line
+//! in `progress.txt`, without spending a model turn. A failure at any step falls back to
+//! the legacy manual-repair prompt (`prompts::handoff_prompt`).
 
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,7 @@ fn state(key: &str) -> String {
 pub fn complete_verified_feature(verify_result: &str) -> String {
     match try_automated_handoff(verify_result) {
         Ok(confirmation) => {
-            eprintln!("[dev] handoff automatico concluido: {confirmation}");
+            eprintln!("[dev] automatic handoff completed: {confirmation}");
             if let Ok(id) = state(CURRENT_FEATURE_ID_KEY).parse::<i32>() {
                 feature_store::mark_passed(id);
             }
@@ -27,7 +27,7 @@ pub fn complete_verified_feature(verify_result: &str) -> String {
             }
         }
         Err(failure) => {
-            eprintln!("[dev] handoff automatico falhou: {failure}");
+            eprintln!("[dev] automatic handoff failed: {failure}");
             prompts::handoff_prompt(Some(&failure))
         }
     }
@@ -36,7 +36,7 @@ pub fn complete_verified_feature(verify_result: &str) -> String {
 fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     let feature_id: i32 = state(CURRENT_FEATURE_ID_KEY)
         .parse()
-        .map_err(|_| "feature atual ausente no state.json".to_string())?;
+        .map_err(|_| "current feature missing from state.json".to_string())?;
 
     let feature = feature_store::load()
         .into_iter()
@@ -52,7 +52,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     let target_dir = resolve_target_dir(&config.target_dir)?;
 
     std::fs::create_dir_all(&target_dir)
-        .map_err(|e| format!("falha ao atualizar progress.txt: {e}"))?;
+        .map_err(|e| format!("failed to update progress.txt: {e}"))?;
     append_progress(
         &target_dir,
         feature_id,
@@ -60,7 +60,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
         &config.verify_cmd,
         verify_result,
     )
-    .map_err(|e| format!("falha ao atualizar progress.txt: {e}"))?;
+    .map_err(|e| format!("failed to update progress.txt: {e}"))?;
 
     let rev_parse = git_command::run(&target_dir, &["rev-parse", "--show-toplevel"]);
     if rev_parse.exit_code != 0 {
@@ -68,7 +68,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
             "NO_GIT: {}",
             one_line(
                 &rev_parse.error,
-                "diretorio-alvo fora de um repositorio Git"
+                "target directory is outside a Git repository"
             )
         ));
     }
@@ -76,7 +76,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     let add = git_command::run(&target_dir, &["add", "-A", "--", ".", ":(exclude).harness"]);
     if add.exit_code != 0 {
         return Err(format!(
-            "git add falhou: {}",
+            "git add failed: {}",
             one_line(&add.error, &add.output)
         ));
     }
@@ -102,7 +102,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     }
     if diff.exit_code > 1 {
         return Err(format!(
-            "git diff --cached falhou: {}",
+            "git diff --cached failed: {}",
             one_line(&diff.error, &diff.output)
         ));
     }
@@ -120,7 +120,7 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     );
     if commit.exit_code != 0 {
         return Err(format!(
-            "git commit falhou: {}",
+            "git commit failed: {}",
             one_line(&commit.error, &commit.output)
         ));
     }
@@ -131,13 +131,13 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
     );
     if status.exit_code != 0 {
         return Err(format!(
-            "git status falhou: {}",
+            "git status failed: {}",
             one_line(&status.error, &status.output)
         ));
     }
     if !status.output.trim().is_empty() {
         return Err(format!(
-            "diretorio-alvo ainda sujo apos commit: {}",
+            "target directory still dirty after commit: {}",
             one_line(&status.output, "")
         ));
     }
@@ -147,21 +147,21 @@ fn try_automated_handoff(verify_result: &str) -> Result<String, String> {
         Ok(one_line(&hash.output, "COMMIT_CREATED"))
     } else {
         Err(format!(
-            "commit criado, mas hash nao foi lido: {}",
+            "commit created, but the hash could not be read: {}",
             one_line(&hash.error, &hash.output)
         ))
     }
 }
 
-/// Resolve o diretório-alvo do handoff e rejeita as configurações claramente perigosas ou
-/// sem sentido antes de rodar `git add`/`git commit` nele. Containment completo contra uma
-/// raiz de política assinada (capability broker) é trabalho de fase futura — isto é só a
-/// lista mínima de rejeição do RFC §6.3: vazio, raiz do filesystem, HOME do usuário, ou o
-/// diretório de instalação do próprio harness.
+/// Resolves the handoff's target directory and rejects clearly dangerous or nonsensical
+/// configurations before running `git add`/`git commit` in it. Full containment against a
+/// signed policy root (capability broker) is future-phase work — this is just the RFC
+/// §6.3 minimal rejection list: empty, filesystem root, the user's HOME, or the harness's
+/// own install directory.
 pub fn resolve_target_dir(target_dir: &str) -> Result<PathBuf, String> {
     let configured = target_dir.trim();
     if configured.is_empty() {
-        return Err("target_dir vazio: nenhum diretório-alvo configurado".to_string());
+        return Err("target_dir empty: no target directory configured".to_string());
     }
 
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -170,7 +170,7 @@ pub fn resolve_target_dir(target_dir: &str) -> Result<PathBuf, String> {
 
     if resolved.parent().is_none() {
         return Err(format!(
-            "target_dir resolvido para a raiz do sistema de arquivos: {}",
+            "target_dir resolves to the filesystem root: {}",
             resolved.display()
         ));
     }
@@ -181,7 +181,7 @@ pub fn resolve_target_dir(target_dir: &str) -> Result<PathBuf, String> {
             let home_canonical = home_path.canonicalize().unwrap_or(home_path);
             if resolved == home_canonical {
                 return Err(format!(
-                    "target_dir resolvido para o diretório home do usuário: {}",
+                    "target_dir resolves to the user's home directory: {}",
                     resolved.display()
                 ));
             }
@@ -195,7 +195,7 @@ pub fn resolve_target_dir(target_dir: &str) -> Result<PathBuf, String> {
                 .unwrap_or_else(|_| exe_dir.to_path_buf());
             if resolved == exe_dir_canonical {
                 return Err(format!(
-                    "target_dir resolvido para o diretório de instalação do harness: {}",
+                    "target_dir resolves to the harness install directory: {}",
                     resolved.display()
                 ));
             }
@@ -212,15 +212,15 @@ fn append_progress(
     verify_cmd: &str,
     verify_result: &str,
 ) -> std::io::Result<()> {
-    let summary = one_line(&state(CURRENT_FEATURE_SUMMARY_KEY), "implementacao concluida");
+    let summary = one_line(&state(CURRENT_FEATURE_SUMMARY_KEY), "implementation completed");
     let verify = one_line(verify_result, "PASS");
     let command = if verify_cmd.trim().is_empty() {
-        "comando de verificacao do projeto".to_string()
+        "the project's verify command".to_string()
     } else {
         verify_cmd.to_string()
     };
     let line = format!(
-        "[{} UTC] Feature #{feature_id} - {}: {summary}. Verificar com: {}. Resultado: {verify}",
+        "[{} UTC] Feature #{feature_id} - {}: {summary}. Verify with: {}. Result: {verify}",
         chrono::Utc::now().format("%Y-%m-%d %H:%M"),
         one_line(title, ""),
         one_line(&command, "")
@@ -242,10 +242,10 @@ fn commit_message(feature_id: i32, title: &str) -> String {
     format!("feat(development): complete feature #{feature_id} - {suffix}")
 }
 
-/// Corta `text` em no máximo `max_bytes` octetos UTF-8, recuando até a fronteira de char
-/// válida mais próxima — nunca parte um caractere multibyte (acento, emoji) ao meio.
-/// Compartilhado por `commit_message` e `verify::snippet` (RFC Apêndice B item 1: medir em
-/// bytes, não em codepoints, para igualar a semântica entre engines .NET/Python/Rust).
+/// Cuts `text` at no more than `max_bytes` UTF-8 octets, backing off to the nearest valid
+/// char boundary — never splits a multi-byte character (accent, emoji) in half. Shared by
+/// `commit_message` and `verify::snippet` (RFC Appendix B item 1: measure in bytes, not
+/// codepoints, so the semantics match across the .NET/Python/Rust engines).
 pub fn truncate_utf8_bytes(text: &str, max_bytes: usize) -> String {
     if text.len() <= max_bytes {
         return text.to_string();
@@ -278,9 +278,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn truncate_utf8_bytes_nao_quebra_caractere_multibyte_no_meio() {
-        // "café ☕" — "é" (2 bytes) e "☕" (3 bytes) são multibyte; um corte ingênuo em
-        // qualquer posição produziria uma string UTF-8 inválida (panic ao fatiar).
+    fn truncate_utf8_bytes_does_not_split_a_multibyte_char_in_half() {
+        // "café ☕" — "é" (2 bytes) and "☕" (3 bytes) are multibyte; a naive cut at any
+        // position would produce an invalid UTF-8 string (panic when slicing).
         let text = "café ☕";
         for max in 0..=text.len() {
             let truncated = truncate_utf8_bytes(text, max);
@@ -289,12 +289,13 @@ mod tests {
     }
 
     #[test]
-    fn commit_message_trunca_titulo_longo_em_bytes_utf8() {
-        let title = "café ".repeat(20); // bem acima de 72 bytes, com acento perto do corte
+    fn commit_message_truncates_a_long_title_on_utf8_byte_boundaries() {
+        let title = "café ".repeat(20); // well above 72 bytes, with an accent near the cut
         let message = commit_message(1, &title);
 
         assert!(message.starts_with("feat(development): complete feature #1 - "));
-        // Se o corte tivesse partido um "é" ao meio, a formatação acima já teria
-        // panicado ao montar a String — chegar aqui já prova o corte válido.
+        // If the cut had split an "é" in half, the formatting above would already have
+        // panicked while building the String — reaching this point already proves the cut
+        // was valid.
     }
 }

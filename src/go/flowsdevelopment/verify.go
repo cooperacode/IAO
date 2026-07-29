@@ -38,7 +38,7 @@ func tryAutomatedVerify() automatedVerifyResult {
 		// Invalid target_dir (root, home, harness install) -> same "didn't attempt
 		// automated verification" path as a target_dir with no verify-feature.sh; doesn't
 		// bring the process down with an unhandled error.
-		fmt.Fprintf(os.Stderr, "[dev] target_dir invalido para verify automatico: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[dev] invalid target_dir for automatic verify: %s\n", err)
 		return missingVerify()
 	}
 
@@ -50,7 +50,7 @@ func tryAutomatedVerify() automatedVerifyResult {
 	result := runVerifyScript(targetDir, script, featureId)
 	logPath := writeVerifyLog(targetDir, script, featureId, result)
 	if result.TimedOut {
-		return failedVerify(fmt.Sprintf("FAIL: verify-feature.sh %d excedeu timeout (%s)%s",
+		return failedVerify(fmt.Sprintf("FAIL: verify-feature.sh %d exceeded timeout (%s)%s",
 			featureId, verifyTimeoutDescription(), verifyOutputSuffix(result, logPath)))
 	}
 
@@ -58,7 +58,7 @@ func tryAutomatedVerify() automatedVerifyResult {
 		return passedVerify(passResult(featureId, result.Output, result.Error, logPath))
 	}
 
-	return failedVerify(fmt.Sprintf("FAIL: verify-feature.sh %d falhou (exit %d)%s",
+	return failedVerify(fmt.Sprintf("FAIL: verify-feature.sh %d failed (exit %d)%s",
 		featureId, result.ExitCode, verifyOutputSuffix(result, logPath)))
 }
 
@@ -126,7 +126,7 @@ func verifyTimeoutMs() int {
 func verifyTimeoutDescription() string {
 	timeoutMs := verifyTimeoutMs()
 	if timeoutMs <= 0 {
-		return "sem limite"
+		return "no limit"
 	}
 	return fmt.Sprintf("%dms", timeoutMs)
 }
@@ -137,10 +137,10 @@ func writeVerifyLog(targetDir, script string, featureId int, result verifyScript
 
 	fullPath, err := filepath.Abs(relativePath)
 	if err != nil {
-		return fmt.Sprintf("log indisponivel (%s)", oneLine(err.Error(), ""))
+		return fmt.Sprintf("log unavailable (%s)", oneLine(err.Error(), ""))
 	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return fmt.Sprintf("log indisponivel (%s)", oneLine(err.Error(), ""))
+		return fmt.Sprintf("log unavailable (%s)", oneLine(err.Error(), ""))
 	}
 
 	content := fmt.Sprintf(
@@ -149,7 +149,7 @@ func writeVerifyLog(targetDir, script string, featureId int, result verifyScript
 		result.ExitCode, result.TimedOut, result.Output, result.Error)
 
 	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
-		return fmt.Sprintf("log indisponivel (%s)", oneLine(err.Error(), ""))
+		return fmt.Sprintf("log unavailable (%s)", oneLine(err.Error(), ""))
 	}
 
 	return displayPath
@@ -161,7 +161,7 @@ func passResult(featureId int, output, errOutput, logPath string) string {
 	if strings.HasPrefix(strings.ToUpper(firstLine), "PASS") {
 		result = snippet(firstLine, 240)
 	} else {
-		result = fmt.Sprintf("PASS: verify-feature.sh %d passou", featureId)
+		result = fmt.Sprintf("PASS: verify-feature.sh %d passed", featureId)
 	}
 	return result + logSuffix(logPath)
 }

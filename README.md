@@ -45,9 +45,10 @@ contract and no real need to govern multiple iterations.
 
 ## Structure
 
-![High-level architecture — Harness · Flows.Development](assets/images/fig-9-hla-layers-en.svg)
+<p align="center"><image src="assets/images/fig-10-driver-harness-state-en.svg" width="500" alt="High-level architecture — Harness · Flows.Development"/></p>
+<p align="center"><i>Figure 1: The harness and flow layers are deterministic, while the agent is creative and operational.</i></p>
 
-Five layers, top to bottom: the **driver** (IDE agent) executes instructions
+The **driver** (IDE agent) executes instructions
 but does not decide the next state; the **transport** (`.harness/inbox.json`
 in, `stdout` out) carries the envelope and the instruction; **Harness.Engine**
 is the domain-agnostic core (entry/dispatch, prompt/context, infra,
@@ -59,8 +60,9 @@ memory that makes a hard-reset session viable.
 
 Development flow:
 
-![High-level architecture — Harness · Flows.Development](assets/images/fig-6-en.svg)
 
+![High-level architecture — Harness · Flows.Development](assets/images/fig-6-en.svg)
+<p align="center"><i>Figure 2: The development flow is a state machine over a feature backlog, with a step budget and a dependency graph.</i></p>
 
 `verify` and `handoff` exist as driver-facing commands but only run as a
 fallback path — the harness requests them only when `verify-feature.sh` is
@@ -147,14 +149,13 @@ Costs and trade-offs:
 
 ## Implementation
 
-This repository includes four protocol-compatible implementations:
+This repository includes three protocol-compatible implementations:
 
 | Runner | Requirement | Notes |
 |---|---|---|
 | `./run-development.sh` | .NET SDK compatible with `net10.0`, unless a Native AOT binary was already published | Default runner used by the included IDE adapters. Builds the DLL on demand when needed. |
 | `./run-development-py.sh` | Python 3.11+ | Protocol-compatible Python port. Uses the same `.harness/` files and inbox transport. |
 | `./run-development-rs.sh` | Rust toolchain (`cargo`), unless a release binary was already built | Protocol-compatible Rust port. Builds `cargo build --release` on demand; the resulting binary is already native, with no separate AOT step. |
-| `./run-development-go.sh` | Go toolchain (`go`), unless a binary was already built | Protocol-compatible Go port. Builds `go build` on demand; the resulting binary is already native, with no separate AOT step. |
 
 The `harness.json` file configures global limits such as `maxSteps`,
 `maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`.
@@ -168,11 +169,84 @@ The included adapters call `./run-development.sh` by default:
 | GitHub Copilot | `.github/prompts/development.prompt.md` |
 | Devin | `.devin/workflows/development.md` |
 
-To run through Python, Rust, or Go, point the agent to `./run-development-py.sh`,
-`./run-development-rs.sh`, or `./run-development-go.sh` while keeping the same
-`.harness/inbox.json` protocol. Each port has its own local verification script
-(`./run-checks.sh`, `./run-checks-py.sh`, `./run-checks-rs.sh`,
-`./run-checks-go.sh`) acting as a parity gate against the others.
+To run through Python or Rust, point the agent to `./run-development-py.sh` or
+`./run-development-rs.sh` while keeping the same `.harness/inbox.json`
+protocol. Each port has its own local verification script
+(`./run-checks.sh`, `./run-checks-py.sh`, `./run-checks-rs.sh`) acting as a
+parity gate against the others.
+
+## Refinement Flow (Pre-Development)
+
+`Flows.Refinement` is a second flow built on the same harness pattern and
+transport. It runs **before** `Flows.Development`, turning an incomplete idea,
+brief, or existing documentation into four traceable artifacts covering the
+first three phases of the SDLC — Planning, Analysis, and Design:
+
+```text
+start -> discover -> planning -> analysis -> design -> review --READY--> publish -> stop
+                                                  |
+                                                  +-- FAIL:<phase> --> <phase> (recascade)
+```
+
+- `discover` consolidates the brief (read from `docs/*.md`/`docs/*.txt`, or
+  gathered interactively when no source is eligible) into
+  `.harness/discovery.md`;
+- `planning`, `analysis`, and `design` persist the Project Charter, the
+  Software Requirements Specification (SRS), and the Software Design Document
+  (SDD) — each validated deterministically (identifiers, required sections,
+  byte limits, cross-document traceability) before being written;
+- `review` either approves the set (`READY`), which triggers an automatic,
+  code-driven `publish` step, or rejects a specific phase
+  (`FAIL:planning`/`FAIL:analysis`/`FAIL:design`), which regenerates that
+  phase and every phase downstream of it;
+- after two failed review cycles, the run ends as
+  `refinement_status=needs_human_decision` instead of looping indefinitely.
+
+Start it the same way as the development flow — same runner shape, same
+`.harness/inbox.json` transport:
+
+```bash
+./run-refinement.sh '{ "type": "text", "value": "start" }'
+```
+
+`./run-refinement.sh` follows the same on-demand build/native-binary
+resolution as `./run-development.sh` (see the Implementation table above);
+today it only has a .NET implementation.
+
+Unlike the development flow, refinement runs as a single continuous session
+(`start` through `stop`) rather than one fresh context per feature — each
+phase's instruction points at the already-persisted `.harness/*.md` file
+instead of re-injecting its content, so a driver can still reread from disk
+instead of relying on conversation memory. The included adapters call
+`./run-refinement.sh`:
+
+| Agent | Adapter |
+|---|---|
+| Codex | `.codex/agents/refinement.toml` |
+| Claude Code | `.claude/agents/refinement.agent.md` |
+| GitHub Copilot | `.github/prompts/refinement.prompt.md` |
+| Devin | `.devin/workflows/refinement.md` |
+
+On success, the four approved documents are published atomically to:
+
+```text
+docs/<slug>-01-project-charter.md
+docs/<slug>-02-software-requirements-specification.md
+docs/<slug>-03-software-design-document.md
+docs/<slug>-04-readiness-handoff.md
+```
+
+Each published file carries a `<!-- generated-by: Flows.Refinement -->`
+marker, the run id, and a notice that it does not represent human approval
+unless one is explicitly recorded in its content — publishing never
+overwrites a pre-existing file that lacks that marker.
+
+**The handoff to `Flows.Development` is manual and explicit.**
+`Flows.Refinement` never calls `Flows.Development` internally — the harness
+only produces documents in `docs/`; a human (or the driving agent, on
+request) decides when to point `Flows.Development` at those documents so its
+`plan` step reads them as the brief. This keeps the two flows composable
+without coupling one flow's state machine to the other's.
 
 ## Example Usage
 
@@ -192,7 +266,6 @@ Manual protocol check:
 ./run-development.sh '{ "type": "text", "value": "start" }'
 ./run-development-py.sh '{ "type": "text", "value": "start" }'
 ./run-development-rs.sh '{ "type": "text", "value": "start" }'
-./run-development-go.sh '{ "type": "text", "value": "start" }'
 ```
 
 Local verification:
@@ -201,7 +274,6 @@ Local verification:
 ./run-checks.sh
 ./run-checks-py.sh
 ./run-checks-rs.sh
-./run-checks-go.sh
 ```
 
 ## Known Uses
@@ -213,9 +285,6 @@ Local verification:
   the better operational choice.
 - **Rust port**: compatible implementation with no separate runtime or SDK
   dependency — the release binary is already native.
-- **Go port**: compatible implementation with no separate runtime or SDK
-  dependency — the build output is already native, with a lighter toolchain
-  footprint than Rust.
 - **IDE adapters**: Codex, Claude Code, GitHub Copilot, and Devin using the
   same runner and inbox protocol.
 

@@ -57,7 +57,7 @@ func TestFeatures_ParseWithoutId_Reindexes(t *testing.T) {
 func TestFeatures_ParseInvalidJSON_ReturnsEmptyWithoutPanicking(t *testing.T) {
 	isolate(t)
 
-	if len(ParseFeatures("isso não é json")) != 0 {
+	if len(ParseFeatures("this is not json")) != 0 {
 		t.Fatal("expected empty")
 	}
 	if len(ParseFeatures("[]")) != 0 {
@@ -93,9 +93,9 @@ func TestFeatures_ParseMissingDescriptionAndReferences_NormalizeToEmpty(t *testi
 func TestFeatures_ParsePreservesDescriptionAndReferences(t *testing.T) {
 	isolate(t)
 
-	features := ParseFeatures(`[{"id":1,"title":"X","priority":1,"description":"faz Y","references":["RF-003"]}]`)
+	features := ParseFeatures(`[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]`)
 
-	if features[0].Description != "faz Y" || len(features[0].References) != 1 || features[0].References[0] != "RF-003" {
+	if features[0].Description != "does Y" || len(features[0].References) != 1 || features[0].References[0] != "RF-003" {
 		t.Fatalf("unexpected feature: %+v", features[0])
 	}
 }
@@ -171,8 +171,8 @@ func TestFeatures_NextPending_IgnoresFeatureWithPendingDependency(t *testing.T) 
 	isolate(t)
 
 	WriteFeatures([]Feature{
-		feature(1, "fundação", 2, false),
-		featureDep(2, "depende de 1", 1, false, []int{1}),
+		feature(1, "foundation", 2, false),
+		featureDep(2, "depends on 1", 1, false, []int{1}),
 	})
 
 	next := NextPendingFeature()
@@ -185,8 +185,8 @@ func TestFeatures_NextPending_ReleasesFeatureAfterDependencyPasses(t *testing.T)
 	isolate(t)
 
 	WriteFeatures([]Feature{
-		feature(1, "fundação", 2, false),
-		featureDep(2, "depende de 1", 1, false, []int{1}),
+		feature(1, "foundation", 2, false),
+		featureDep(2, "depends on 1", 1, false, []int{1}),
 	})
 	if NextPendingFeature().Id != 1 {
 		t.Fatal("expected feature 1 first")

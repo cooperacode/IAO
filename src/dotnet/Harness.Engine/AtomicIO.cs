@@ -1,13 +1,14 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Escrita "final" atômica para os stores em <c>.harness</c>: grava num arquivo temporário no
-/// MESMO diretório do destino e troca via <see cref="File.Move(string, string, bool)"/> com
-/// <c>overwrite: true</c> — atômico na mesma partição desde .NET Core 3.0+. Evita que um
-/// crash/kill no meio da escrita deixe o arquivo final truncado ou parcialmente sobrescrito;
-/// um leitor concorrente sempre vê a versão anterior completa ou a nova completa, nunca um
-/// estado intermediário. Não se aplica aos <c>File.AppendAllText</c> de log/trace — esses já
-/// são atômicos no nível do evento (uma linha, uma chamada) e não precisam de troca de arquivo.
+/// Atomic "final" write for the stores under <c>.harness</c>: writes to a temp file in
+/// the SAME directory as the destination and swaps it in via
+/// <see cref="File.Move(string, string, bool)"/> with <c>overwrite: true</c> — atomic on
+/// the same partition since .NET Core 3.0+. Prevents a crash/kill mid-write from leaving
+/// the final file truncated or partially overwritten; a concurrent reader always sees
+/// either the complete previous version or the complete new one, never an intermediate
+/// state. Doesn't apply to the log/trace <c>File.AppendAllText</c> calls — those are
+/// already atomic at the event level (one line, one call) and don't need a file swap.
 /// </summary>
 internal static class AtomicIO
 {
@@ -26,7 +27,7 @@ internal static class AtomicIO
         }
     }
 
-    /// <summary>Mesma garantia atômica de <see cref="WriteAllTextAtomic"/>, mas copiando de um arquivo-fonte existente (ex.: snapshot de um store vivo para o seu congelado).</summary>
+    /// <summary>Same atomic guarantee as <see cref="WriteAllTextAtomic"/>, but copying from an existing source file (e.g. snapshotting a live store into its frozen one).</summary>
     public static void CopyAtomic(string sourcePath, string destinationPath)
     {
         var tmp = TempPathFor(destinationPath);
@@ -42,8 +43,9 @@ internal static class AtomicIO
         }
     }
 
-    // Nome único por escrita no MESMO diretório do destino — Path.GetTempFileName() não serve
-    // porque cria fora dessa pasta, quebrando a garantia de rename atômico (mesma partição).
+    // Unique name per write in the SAME directory as the destination — Path.GetTempFileName()
+    // won't do because it creates outside that folder, breaking the atomic-rename guarantee
+    // (same partition).
     private static string TempPathFor(string destination) => $"{destination}.tmp-{Guid.NewGuid():N}";
 
     private static void CleanupBestEffort(string tmp)
@@ -55,7 +57,7 @@ internal static class AtomicIO
         }
         catch
         {
-            // Limpeza é best-effort — não mascara a exceção original que já está sendo relançada.
+            // Cleanup is best-effort — doesn't mask the original exception already being rethrown.
         }
     }
 }

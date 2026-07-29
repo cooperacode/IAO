@@ -1,4 +1,4 @@
-"""Dispatch domain-agnostic: parse do envelope, guarda de iteração e erro tipado."""
+"""Domain-agnostic dispatch: envelope parsing, iteration guard, and typed error handling."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ Validator = Callable[[Envelope], ValidationResult]
 
 
 def default_max_steps() -> int:
-    """Teto de passos: impede loop infinito que queimaria tokens indefinidamente.
-    Valor vem do harness.json (ou do default) — ver harness_config."""
+    """Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
+    Value comes from harness.json (or the default) — see harness_config."""
     return harness_config.current().max_steps
 
 
@@ -28,36 +28,39 @@ def dispatch(
     max_steps: int | None = None,
     should_reset_on_start: Callable[[], bool] | None = None,
 ) -> str:
-    # Argv presente → transporte clássico (retrocompatível). Argv vazio → lê o envelope da
-    # inbox em arquivo, o transporte que elimina o hang de aspas do shell (ver inbox).
+    # Argv present → classic transport (backward compatible). Empty argv → reads the
+    # envelope from the file-based inbox, the transport that eliminates the shell-quoting
+    # hang (see inbox).
     from_inbox = len(args) == 0
     arg0 = args[0] if len(args) >= 1 else inbox.read()
 
     envelope = Envelope.parse(arg0) if arg0 and arg0.strip() else None
 
-    # Só consome a inbox quando o parse deu certo — um JSON quebrado deve gerar o ERRO
-    # corretivo e permanecer disponível para inspeção, não sumir silenciosamente.
+    # Only consume the inbox when parsing succeeded — a broken JSON must produce the
+    # corrective ERROR and remain available for inspection, not silently disappear.
     if from_inbox and envelope is not None:
         inbox.consume()
 
     if envelope is not None and envelope.value == "start":
-        # Novo workflow começa do zero — estado e trace são truncados juntos. Mas um "start"
-        # também chega quando uma sessão fresca (ex.: hard reset por feature do Development)
-        # reabre um run em andamento — nesse caso é RETOMADA, não início, e truncar aqui
-        # apagaria o trace/step acumulados de features anteriores. O flow decide via
-        # should_reset_on_start (ele sabe se há trabalho pendente); sem predicado, o padrão é
-        # sempre resetar (retrocompatível com flows single-shot).
+        # A new workflow starts from scratch — state and trace are truncated together. But a
+        # "start" also arrives when a fresh session (e.g. a Development per-feature hard
+        # reset) reopens a run in progress — in that case it's a RESUME, not a start, and
+        # truncating here would throw away the trace/step accumulated by previous features.
+        # The flow decides via should_reset_on_start (it knows whether there's pending
+        # work); with no predicate, the default is to always reset (backward compatible
+        # with single-shot flows).
         if should_reset_on_start is None or should_reset_on_start():
             state_store.reset()
             trace.reset()
 
-        # Contexto do driver (ex.: {"driver":"claude code"}) nasce aqui e sobrevive no
-        # state_store — prompt_formatter o reinjeta em toda saída até o próximo "start".
-        # Independe do reset acima: mesmo numa retomada, o driver atual deve prevalecer.
+        # The driver context (e.g. {"driver":"claude code"}) is born here and survives in
+        # state_store — prompt_formatter reinjects it into every output until the next
+        # "start". Independent of the reset above: even on a resume, the current driver
+        # must prevail.
         if envelope.context:
             state_store.set_context(envelope.context)
 
-    # Guarda de iteração — hard stop sob a restrição de tokens do time.
+    # Iteration guard — hard stop under the team's token budget.
     step = state_store.increment()
 
     cost_chars = state_store.load().cost_chars
@@ -65,19 +68,19 @@ def dispatch(
 
     result, outcome = _resolve(envelope, step, cost_chars, actions, validators, max_steps)
 
-    # Octetos UTF-8, não codepoints (Apêndice B item 1 do RFC) — a mesma unidade em todo
-    # engine (.NET/Python/Rust), para que o teto de custo signifique a mesma coisa cross-
-    # engine independente de acento/emoji na instrução emitida.
+    # UTF-8 octets, not codepoints (RFC Appendix B item 1) — the same unit across every
+    # engine (.NET/Python/Rust), so the cost ceiling means the same thing cross-engine
+    # regardless of accents/emoji in the emitted instruction.
     result_bytes = len(result.encode("utf-8"))
 
-    # Uma linha por volta do loop: alimenta a telemetria e o evaluator de trajetória.
-    # Label é lido de novo (não do snapshot de load() acima) porque a própria action pode
-    # ter acabado de setá-lo (ex.: pick() escolhendo a feature deste passo).
+    # One line per loop turn: feeds telemetry and the trajectory evaluator. Label is
+    # re-read (not from the load() snapshot above) because the action itself may have
+    # just set it (e.g. pick() choosing this step's feature).
     label = state_store.get(state_store.TRACE_LABEL_KEY) or ""
     trace.append(step, command, outcome, result_bytes, label)
 
-    # O custo da instrução emitida agora só é conhecido aqui — entra no acumulado que o
-    # guard do próximo turno vai checar.
+    # The emitted instruction's cost is only known here now — it feeds the accumulator
+    # the next turn's guard will check.
     state_store.add_cost(result_bytes)
     return result
 
@@ -90,36 +93,37 @@ def _resolve(
     validators: Mapping[str, Validator] | None,
     max_steps: int | None,
 ) -> tuple[str, str]:
-    # Teto de passos efetivo: o override por invocação (ex.: um flow long-running como o
-    # Development, que precisa de mais folga) tem precedência sobre o global do harness.json.
+    # Effective step ceiling: the per-call override (e.g. a long-running flow like
+    # Development, which needs more slack) takes precedence over harness.json's global one.
     effective_max_steps = max_steps if max_steps is not None else default_max_steps()
     if step > effective_max_steps:
-        print(f"[harness] limite de {effective_max_steps} passos atingido; encerrando.", file=sys.stderr)
+        print(f"[harness] step limit of {effective_max_steps} reached; stopping.", file=sys.stderr)
         return "stop", trace.TraceOutcome.BUDGET
 
-    # Teto de custo, segundo guard além do de passos. Chars de instrução emitida são a
-    # única medida: é o que a engine atesta sozinha. Token real vive nos metadados de
-    # billing do caller — um driver-LLM não tem como reportá-lo honestamente.
+    # Cost ceiling, a second guard beyond the step one. Emitted-instruction chars are the
+    # only measure: it's what the engine can attest on its own. Real tokens live in the
+    # caller's billing metadata — an LLM driver has no way to honestly report them.
     config = harness_config.current()
     if config.max_instruction_chars > 0 and cost_chars > config.max_instruction_chars:
         print(
-            f"[harness] limite de {config.max_instruction_chars} chars de instrução "
-            f"atingido ({cost_chars}); encerrando.",
+            f"[harness] instruction char limit of {config.max_instruction_chars} "
+            f"reached ({cost_chars}); stopping.",
             file=sys.stderr,
         )
         return "stop", trace.TraceOutcome.BUDGET
 
-    # Erro tipado em vez de "stop" silencioso: o modelo recebe a causa e pode reenviar o
-    # comando correto (loop corretivo, não término mudo).
+    # Typed error instead of silent "stop": the model receives the cause and can resend
+    # the right command (corrective loop, not silent termination).
     if envelope is None:
-        return _error_instruction("Não foi possível interpretar o JSON recebido.", actions), trace.TraceOutcome.ERROR
+        return _error_instruction("Could not parse the received JSON.", actions), trace.TraceOutcome.ERROR
 
     action = actions.get(envelope.value)
     if action is None:
-        return _error_instruction(f"O comando '{envelope.value}' não existe.", actions), trace.TraceOutcome.ERROR
+        return _error_instruction(f"The command '{envelope.value}' does not exist.", actions), trace.TraceOutcome.ERROR
 
-    # Validação contextual: o comando existe, mas o VALOR atende à expectativa da task?
-    # Falhou → mesmo caminho de erro corretivo dos casos acima; o driver corrige e reenvia.
+    # Contextual validation: the command exists, but does the VALUE meet the task's
+    # expectation? Failed → same corrective-error path as the cases above; the driver
+    # fixes and resends.
     if validators is not None:
         validator = validators.get(envelope.value)
         if validator is not None:
@@ -127,17 +131,17 @@ def _resolve(
             if not rejected.ok:
                 return (
                     _error_instruction(
-                        f"O comando '{envelope.value}' foi recusado: {rejected.reason} "
-                        "Corrija o conteúdo de 'args' e reenvie o mesmo comando.",
+                        f"The command '{envelope.value}' was rejected: {rejected.reason} "
+                        "Fix the 'args' content and resend the same command.",
                         actions,
                     ),
                     trace.TraceOutcome.ERROR,
                 )
 
-    # Guarda de tempo: uma task travada (loop infinito na lógica de domínio) prenderia o
-    # processo indefinidamente. _run_with_timeout impõe o teto por passo; o estouro vira
-    # erro tipado, capturado aqui, e segue o mesmo caminho gracioso do corte por budget:
-    # diagnóstico no stderr + "stop" no stdout (o canal lido pelo cliente IDE).
+    # Time guard: a stuck task (infinite loop in domain logic) would hang the process
+    # indefinitely. _run_with_timeout enforces the per-step ceiling; a timeout becomes a
+    # typed error, caught here, following the same graceful path as the budget cut:
+    # stderr diagnostic + "stop" on stdout (the channel the IDE client reads).
     try:
         result = _run_with_timeout(action, envelope, config.timeout_ms)
         return result, (trace.TraceOutcome.STOP if result == "stop" else trace.TraceOutcome.INSTRUCTION)
@@ -146,16 +150,16 @@ def _resolve(
         return "stop", trace.TraceOutcome.TIMEOUT
 
 
-# A task é uma função síncrona e OPACA — não coopera com cancelamento. O Python (CPython)
-# não aborta código síncrono travado com segurança (não existe Thread.Abort), então o
-# único timeout preemptivo real é rodá-la noutra thread e ABANDONAR o que travar.
-# threading.Thread(daemon=True) — e não concurrent.futures.ThreadPoolExecutor — porque
-# desde o Python 3.9 os workers do executor são joinados num handler de atexit, o que
-# travaria a saída do processo se uma task ficasse presa; uma thread daemon é abandonada
-# de fato ao processo sair, o mesmo modelo do Task.Run + threadpool background do .NET.
+# The task is a synchronous, OPAQUE function — it does not cooperate with cancellation.
+# Python (CPython) cannot safely abort stuck synchronous code (there's no Thread.Abort),
+# so the only real preemptive timeout is to run it on another thread and ABANDON whatever
+# hangs. threading.Thread(daemon=True) — and not concurrent.futures.ThreadPoolExecutor —
+# because since Python 3.9 the executor's workers are joined in an atexit handler, which
+# would hang the process on exit if a task got stuck; a daemon thread is truly abandoned
+# when the process exits, the same model as .NET's Task.Run + background threadpool.
 def _run_with_timeout(action: Action, envelope: Envelope | None, timeout_ms: int) -> str:
     if timeout_ms <= 0:
-        return action(envelope)  # guarda desligada — sem overhead de thread
+        return action(envelope)  # guard disabled — no thread overhead
 
     result_box: list[str] = []
     error_box: list[BaseException] = []
@@ -163,7 +167,7 @@ def _run_with_timeout(action: Action, envelope: Envelope | None, timeout_ms: int
     def runner() -> None:
         try:
             result_box.append(action(envelope))
-        except BaseException as ex:  # noqa: BLE001 — repropagada na thread principal abaixo
+        except BaseException as ex:  # noqa: BLE001 — re-raised on the main thread below
             error_box.append(ex)
 
     thread = threading.Thread(target=runner, daemon=True)
@@ -182,7 +186,7 @@ def _run_with_timeout(action: Action, envelope: Envelope | None, timeout_ms: int
 def _error_instruction(reason: str, actions: Mapping[str, Action]) -> str:
     valid = ", ".join(actions.keys())
     return (
-        f"ERRO no protocolo do harness: {reason} Comandos válidos: {valid}. "
-        "Revise o campo 'value' do seu JSON de resposta (responda apenas com o JSON, "
-        "sem cercas de código nem comentários) e reenvie o comando."
+        f"HARNESS PROTOCOL ERROR: {reason} Valid commands: {valid}. "
+        "Review the 'value' field in your JSON response (reply with the JSON only, "
+        "no code fences or commentary) and resend the command."
     )

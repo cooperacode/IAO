@@ -1,8 +1,8 @@
-"""Isolamento de teste: cada teste roda num `tmp_path` próprio (chdir), em vez do
-`[assembly: CollectionBehavior(DisableTestParallelization = true)]` do lado C# (necessário
-lá porque os stores usam caminho fixo relativo ao cwd compartilhado entre testes). Aqui o
-isolamento é real por teste, não só serialização — os testes ficam livres para rodar em
-paralelo (ex.: pytest-xdist) se algum dia for preciso.
+"""Test isolation: each test runs in its own `tmp_path` (chdir), instead of the C# side's
+`[assembly: CollectionBehavior(DisableTestParallelization = true)]` (needed there because
+the stores use a fixed path relative to the cwd shared across tests). Here isolation is
+real per test, not just serialization — the tests are free to run in parallel (e.g.
+pytest-xdist) if that's ever needed.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from harness_engine import harness_config
 @pytest.fixture(autouse=True)
 def isolated_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    # Em C# cada invocação do harness é um processo novo (o cache de HarnessConfig.Current
-    # dura naturalmente 1 dispatch); num processo pytest de longa vida isso não vale de
-    # graça — sem isto, o config carregado no primeiro teste vazaria para os seguintes.
+    # In C# each harness invocation is a new process (HarnessConfig.Current's cache
+    # naturally lasts 1 dispatch); in a long-lived pytest process that's not free — without
+    # this, the config loaded in the first test would leak into the following ones.
     harness_config.reset()
     yield
     harness_config.reset()

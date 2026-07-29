@@ -1,6 +1,6 @@
-"""Construção dos prompts do flow de desenvolvimento — a "estratégia" separada da máquina
-de estados em `tasks.py`. Cada passo referencia o token de saída por constante (`$XXX`):
-o mesmo nome que o driver preenche e devolve como arg do próximo envelope.
+"""Builds the development flow's prompts — the "strategy" kept separate from the state
+machine in `tasks.py`. Each step references its output token via a constant (`$XXX`): the
+same name the driver fills in and returns as the next envelope's arg.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from harness_engine import artifact_store, prompt_formatter, run_config_store, s
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import DESCRIPTION_MAX_CHARS, Feature
 
-# Tokens de saída (o driver guarda o artefato do passo nestes e os devolve como args).
+# Output tokens (the driver stores the step's artifact in these and returns them as args).
 FEATURES = "$FEATURES"
 VERIFY_CMD = "$VERIFY_CMD"
 TARGET_DIR = "$TARGET_DIR"
@@ -20,7 +20,7 @@ SUMMARY = "$SUMMARY"
 RESULT = "$RESULT"
 COMMIT = "$COMMIT"
 
-# Forma da feature_list embutida nos prompts.
+# Shape of the feature_list embedded in the prompts.
 FEATURES_SHAPE = (
     '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]'
 )
@@ -31,18 +31,19 @@ def _state(key: str) -> str:
 
 
 def _brief_block() -> str:
-    """Reinjeta o brief persistido (artifact_store, state_keys.BRIEF_ARTIFACT_NAME) nos dois
-    pontos do loop que realmente raciocinam sobre "o que construir" — bearings e implement,
-    e só ali: smoke/pick/verify/fix/handoff rodam script ou fazem bookkeeping, sem necessidade
-    de contexto de escopo. Devolve uma linha em branco (mesma quebra de parágrafo de antes
-    desta feature) quando não há brief persistido — modo interativo, ou retomada de um run
-    anterior a esta feature —, ou o bloco "<brief>" quando há. Mesmo tratamento das skills
-    (prompt_formatter._read_skills): quebras de linha viram o marcador literal "\\n" e o bloco
-    inteiro fica numa única linha — o conteúdo do brief não precisa preservar a formatação
-    Markdown original aqui, só estar disponível. Reinjetar sempre o MESMO texto, byte a byte,
-    também é a aposta de menor custo para se beneficiar de cache de prompt do provedor por
-    trás do driver (não garantido: o harness só controla o texto emitido, não se o driver
-    marca um breakpoint de cache ali)."""
+    """Reinjects the persisted brief (artifact_store, state_keys.BRIEF_ARTIFACT_NAME) at the
+    two points of the loop that actually reason about "what to build" — bearings and
+    implement, and only there: smoke/pick/verify/fix/handoff just run a script or do
+    bookkeeping, with no need for scope context. Returns a blank line (the same paragraph
+    break as before this feature) when there's no persisted brief — interactive mode, or
+    resuming a run from before this feature —, or the "<brief>" block when there is one.
+    Same treatment as the skills (prompt_formatter._read_skills): line breaks become the
+    literal "\\n" marker and the whole block ends up on a single line — the brief content
+    doesn't need to preserve its original Markdown formatting here, just be available.
+    Always reinjecting the SAME text, byte for byte, is also the lowest-cost bet to
+    benefit from the driver's underlying provider's prompt cache (not guaranteed: the
+    harness only controls the emitted text, not whether the driver marks a cache
+    breakpoint there)."""
     brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME)
     if not brief.strip():
         return "\n"
@@ -51,35 +52,35 @@ def _brief_block() -> str:
 
 
 def _feature_context_block(feature: Feature) -> str:
-    """Reinjeta description/references (harness_engine.feature_store.Feature) no prompt de
-    implement — o único ponto do loop que recebe o Feature inteiro, não só título/id via
-    state_store. Devolve uma linha em branco (mesma quebra de parágrafo de antes desta
-    feature) quando a feature não tem nenhum dos dois — ex.: feature_list.json de uma versão
-    anterior a esta, sem os campos — o bloco some, não aparece com valores vazios."""
+    """Reinjects description/references (harness_engine.feature_store.Feature) into the
+    implement prompt — the only point of the loop that receives the whole Feature object,
+    not just title/id via state_store. Returns a blank line (the same paragraph break as
+    before this feature) when the feature has neither — e.g. a feature_list.json from a
+    version before these fields existed — the block disappears, it doesn't show up empty."""
     if not feature.description.strip() and not feature.refs:
         return "\n"
-    references = ", ".join(feature.refs) if feature.refs else "nenhuma"
-    return f"Descrição: {feature.description}\nReferências do brief: {references}\n\n"
+    references = ", ".join(feature.refs) if feature.refs else "none"
+    return f"Description: {feature.description}\nBrief references: {references}\n\n"
 
 
-# --- session 0: inicializador -------------------------------------------------
+# --- session 0: initializer -------------------------------------------------
 
 
 def initializer_prompt(content: str, files: list[str]) -> str:
-    input_text = f"""Você é o INICIALIZADOR (session 0). A partir do brief abaixo:
-1. Garanta um repositório Git no diretório-alvo (rode `git init` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
-2. Escafolde o ambiente do projeto-alvo: crie um `init.sh` idempotente que instala dependências e sobe/builda o app, um `verify-feature.sh <id>` idempotente que verifica uma feature, e a estrutura mínima de pastas.
-3. Expanda o brief numa lista PRIORIZADA de features pequenas e verificáveis, cada uma implementável e testável isoladamente. Numere a prioridade (1 = mais alta). Se uma feature só faz sentido depois de outra(s) (ex.: precisa de um schema que outra feature cria), registre os ids delas em `dependsOn` — array vazio quando não houver dependência. O harness respeita essa ordem além da prioridade. Preencha também, para cada feature: `description`, uma descrição objetiva do que ela faz (até {DESCRIPTION_MAX_CHARS} caracteres); e `references`, os códigos explícitos citados no brief que se relacionam a ela (ex.: "RF-003", "JIRA-142", uma seção nomeada) — array vazio se o brief não citar nenhum código explícito para essa feature (não invente um).
+    input_text = f"""You are the INITIALIZER (session 0). From the brief below:
+1. Ensure there is a Git repository in the target directory (run `git init` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
+2. Scaffold the target project's environment: create an idempotent `init.sh` that installs dependencies and brings up/builds the app, an idempotent `verify-feature.sh <id>` that verifies a feature, and the minimal folder structure.
+3. Expand the brief into a PRIORITIZED list of small, verifiable features, each independently implementable and testable. Number the priority (1 = highest). If a feature only makes sense after another one (e.g. it needs a schema another feature creates), record their ids in `dependsOn` — empty array when there is no dependency. The harness honors this order in addition to priority. Also fill in, for each feature: `description`, an objective description of what it does (up to {DESCRIPTION_MAX_CHARS} characters); and `references`, the explicit codes cited in the brief that relate to it (e.g. "RF-003", "JIRA-142", a named section) — empty array if the brief cites no explicit code for that feature (do not invent one).
 
-<brief fontes="{', '.join(files)}">
+<brief sources="{', '.join(files)}">
 {content}
 </brief>
 
-Guarde em '{FEATURES}' um ARRAY JSON: {FEATURES_SHAPE}
-(só o array, sem passes — toda feature nasce pendente). Guarde o comando de
-verificação em '{VERIFY_CMD}' (ex.: `dotnet test`, `npm test`) e o diretório-alvo
-em '{TARGET_DIR}'. O `verify-feature.sh` pode rodar a suite completa no começo:
-`./init.sh`, depois `$VERIFY_CMD`, imprimir `PASS: feature <id> ...` e sair 0."""
+Store a JSON ARRAY in '{FEATURES}': {FEATURES_SHAPE}
+(just the array, no passes — every feature is born pending). Store the verify
+command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test`) and the target directory
+in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:
+`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "plan", (FEATURES, VERIFY_CMD, TARGET_DIR)),
@@ -88,17 +89,17 @@ em '{TARGET_DIR}'. O `verify-feature.sh` pode rodar a suite completa no começo:
 
 
 def initializer_interactive() -> str:
-    input_text = f"""Você é o INICIALIZADOR (session 0). Use a #tool:askQuestions e pergunte ao usuário:
-(a) o que construir (objetivo do app), (b) o diretório-alvo e (c) o comando de
-verificação (ex.: `dotnet test`, `npm test`). Depois:
-1. Garanta um repositório Git no diretório-alvo (rode `git init` se necessário) e crie/reaproveite uma branch de trabalho dedicada (nunca direto em main/master).
-2. Escafolde o ambiente: crie um `init.sh` idempotente e um `verify-feature.sh <id>` idempotente no diretório-alvo.
-3. Expanda o objetivo numa lista PRIORIZADA de features pequenas e verificáveis. Se uma depender de outra, registre os ids em `dependsOn` (array vazio quando não houver). Preencha também `description` (até {DESCRIPTION_MAX_CHARS} caracteres) e `references` (códigos explícitos citados pelo usuário para essa feature; array vazio se não houver nenhum).
+    input_text = f"""You are the INITIALIZER (session 0). Use the #tool:askQuestions and ask the user:
+(a) what to build (the app's goal), (b) the target directory, and (c) the verify
+command (e.g. `dotnet test`, `npm test`). Then:
+1. Ensure there is a Git repository in the target directory (run `git init` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
+2. Scaffold the environment: create an idempotent `init.sh` and an idempotent `verify-feature.sh <id>` in the target directory.
+3. Expand the goal into a PRIORITIZED list of small, verifiable features. If one depends on another, record their ids in `dependsOn` (empty array when there is none). Also fill in `description` (up to {DESCRIPTION_MAX_CHARS} characters) and `references` (explicit codes cited by the user for that feature; empty array if there are none).
 
-Guarde em '{FEATURES}' um ARRAY JSON {FEATURES_SHAPE},
-o comando em '{VERIFY_CMD}' e o diretório em '{TARGET_DIR}'. O `verify-feature.sh`
-pode rodar a suite completa no começo: `./init.sh`, depois `$VERIFY_CMD`, imprimir
-`PASS: feature <id> ...` e sair 0."""
+Store a JSON ARRAY in '{FEATURES}' {FEATURES_SHAPE},
+the command in '{VERIFY_CMD}' and the directory in '{TARGET_DIR}'. The `verify-feature.sh`
+may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print
+`PASS: feature <id> ...` and exit 0."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "plan", (FEATURES, VERIFY_CMD, TARGET_DIR)),
@@ -107,28 +108,28 @@ pode rodar a suite completa no começo: `./init.sh`, depois `$VERIFY_CMD`, impri
 
 
 def plan_retry_prompt() -> str:
-    input_text = f"""Não consegui interpretar a lista de features. Reenvie em '{FEATURES}' um ARRAY JSON
-válido, exatamente no formato {FEATURES_SHAPE} — só o array, sem texto ao redor.
-Repita o comando `{VERIFY_CMD}` e `{TARGET_DIR}`."""
+    input_text = f"""Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
+ARRAY, in exactly the format {FEATURES_SHAPE} — just the array, no surrounding text.
+Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "plan", (FEATURES, VERIFY_CMD, TARGET_DIR)),
     )
 
 
-# --- loop por feature (uma sessão de contexto fresco) --------------------------
+# --- per-feature loop (one fresh-context session) --------------------------
 
 
 def bearings_prompt() -> str:
     brief = _brief_block()
-    input_text = f"""=== NOVA SESSÃO (contexto limpo) ===
-Você é um agente de codificação começando uma sessão FRESCA. Não assuma nada da
-sessão anterior — todo o estado está nos artefatos persistentes.
-{brief}Oriente-se com saída curta: rode `pwd`, leia só o fim do `progress.txt` e o
-`git log --oneline` recente para entender o que já foi feito. Não cole logs
-longos; se precisar preservar detalhe, salve em `.harness/logs/`.
+    input_text = f"""=== NEW SESSION (clean context) ===
+You are a coding agent starting a FRESH session. Do not assume anything from the
+previous session — all state lives in the persistent artifacts.
+{brief}Get your bearings with short output: run `pwd`, read only the tail of `progress.txt` and the
+recent `git log --oneline` to understand what has already been done. Do not paste long
+logs; if you need to preserve detail, save it in `.harness/logs/`.
 
-Resuma o que encontrou em '""" + NOTE + "' em 2-4 linhas."
+Summarize what you found in '""" + NOTE + "' in 2-4 lines."
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "bearings", (NOTE,)),
@@ -137,10 +138,10 @@ Resuma o que encontrou em '""" + NOTE + "' em 2-4 linhas."
 
 
 def smoke_prompt() -> str:
-    input_text = f"""Smoke test: rode `./init.sh` no diretório-alvo ({run_config_store.load().target_dir}) e confirme
-que o baseline sobe/builda sem erro antes de mexer em qualquer feature. Salve a saída
-completa em `.harness/logs/smoke.log` e relate em '{SMOKE}' só `ok` ou o erro principal
-e o caminho do log."""
+    input_text = f"""Smoke test: run `./init.sh` in the target directory ({run_config_store.load().target_dir}) and confirm
+that the baseline comes up/builds without error before touching any feature. Save the
+full output to `.harness/logs/smoke.log` and report in '{SMOKE}' just `ok` or the
+main error and the log path."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "smoke", (SMOKE,)),
@@ -149,20 +150,20 @@ e o caminho do log."""
 
 
 def pick_prompt() -> str:
-    input_text = """Baseline confirmado. Envie o comando `pick` para receber a próxima feature a
-implementar (a de maior prioridade ainda pendente — o harness escolhe)."""
+    input_text = """Baseline confirmed. Send the `pick` command to receive the next feature to
+implement (the highest-priority one still pending — the harness chooses)."""
     return prompt_formatter.format(input_text, Envelope(EnvelopeType.COMMAND, "pick", ()))
 
 
 def implement_prompt(feature: Feature) -> str:
     brief = _brief_block()
     context = _feature_context_block(feature)
-    input_text = f"""Implemente EXCLUSIVAMENTE esta feature, de forma incremental e mínima — nada além
-dela:
-{brief}Feature #{feature.id} (prioridade {feature.priority}): {feature.title}
-{context}Trabalhe no diretório-alvo ({run_config_store.load().target_dir}). Se rodar comandos com
-saída longa, salve em `.harness/logs/` e não cole logs no resumo. Ao terminar, resuma o
-que implementou em '{SUMMARY}' em uma frase curta."""
+    input_text = f"""Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond
+it:
+{brief}Feature #{feature.id} (priority {feature.priority}): {feature.title}
+{context}Work in the target directory ({run_config_store.load().target_dir}). If you run commands with
+long output, save it to `.harness/logs/` and do not paste logs into the summary. When done,
+summarize what you implemented in '{SUMMARY}' in one short sentence."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "implement", (SUMMARY,)),
@@ -171,14 +172,14 @@ que implementou em '{SUMMARY}' em uma frase curta."""
 
 
 def verify_prompt() -> str:
-    input_text = f"""O harness não encontrou `verify-feature.sh` no diretório-alvo, então faça o
-self-verify manual da feature #{_state(state_keys.CURRENT_FEATURE_ID)} ({_state(state_keys.CURRENT_FEATURE_TITLE)})
-como um usuário faria: rode `{run_config_store.load().verify_cmd}` no diretório-alvo
-({run_config_store.load().target_dir}) e confirme o comportamento ponta a ponta. Salve a
-saída completa em `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
+    input_text = f"""The harness did not find `verify-feature.sh` in the target directory, so do a
+manual self-verify of feature #{_state(state_keys.CURRENT_FEATURE_ID)} ({_state(state_keys.CURRENT_FEATURE_TITLE)})
+the way a user would: run `{run_config_store.load().verify_cmd}` in the target directory
+({run_config_store.load().target_dir}) and confirm the behavior end to end. Save the
+full output to `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
 
-Responda em '{RESULT}' começando com `PASS` ou `FAIL: <motivo>`, incluindo só o erro
-principal e o caminho do log."""
+Respond in '{RESULT}' starting with `PASS` or `FAIL: <reason>`, including only the
+main error and the log path."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "verify", (RESULT,)),
@@ -187,11 +188,11 @@ principal e o caminho do log."""
 
 
 def verify_retry_prompt() -> str:
-    input_text = f"""O veredito do self-verify não começou com `PASS` nem `FAIL`. Reexecute, se
-necessário, `{run_config_store.load().verify_cmd}` no diretório-alvo ({run_config_store.load().target_dir})
-salvando a saída completa em `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
-Responda em '{RESULT}' começando exatamente com `PASS` ou `FAIL: <motivo>`, sem colar
-logs longos."""
+    input_text = f"""The self-verify verdict did not start with `PASS` or `FAIL`. Re-run, if
+needed, `{run_config_store.load().verify_cmd}` in the target directory ({run_config_store.load().target_dir})
+saving the full output to `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
+Respond in '{RESULT}' starting exactly with `PASS` or `FAIL: <reason>`, without pasting
+long logs."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "verify", (RESULT,)),
@@ -202,13 +203,13 @@ logs longos."""
 def fix_prompt(verify_failure: str | None = None) -> str:
     failure = ""
     if verify_failure and verify_failure.strip():
-        failure = f"""Falha observada: {verify_failure}
+        failure = f"""Failure observed: {verify_failure}
 
 """
-    input_text = f"""A verificação FALHOU na feature #{_state(state_keys.CURRENT_FEATURE_ID)}
-({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Corrija a implementação (ainda SÓ esta feature).
-Se consultar logs, leia só o trecho relevante. Resuma o ajuste em '{SUMMARY}' — em seguida
-verificamos de novo."""
+    input_text = f"""Verification FAILED on feature #{_state(state_keys.CURRENT_FEATURE_ID)}
+({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Fix the implementation (still ONLY this feature).
+If you check logs, read only the relevant excerpt. Summarize the fix in '{SUMMARY}' — we'll
+verify again next."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "implement", (SUMMARY,)),
@@ -219,14 +220,14 @@ verificamos de novo."""
 def handoff_prompt(automatic_failure: str | None = None) -> str:
     failure = ""
     if automatic_failure and automatic_failure.strip():
-        failure = f"""O handoff automatico falhou: {automatic_failure}
+        failure = f"""Automatic handoff failed: {automatic_failure}
 
 """
-    input_text = f"""{failure}Deixe o estado LIMPO para a próxima sessão:
-1. `git commit` com mensagem descritiva referenciando a feature #{_state(state_keys.CURRENT_FEATURE_ID)}. Se o diretório-alvo não estiver em um repositório Git, registre isso explicitamente como `NO_GIT: <motivo>`.
-2. Anexe uma linha ao `progress.txt`: feature concluída, o que foi feito e como verificar.
+    input_text = f"""{failure}Leave the state CLEAN for the next session:
+1. `git commit` with a descriptive message referencing feature #{_state(state_keys.CURRENT_FEATURE_ID)}. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.
+2. Append a line to `progress.txt`: feature completed, what was done, and how to verify.
 
-Confirme com o hash do commit ou `NO_GIT: <motivo>` em '{COMMIT}'."""
+Confirm with the commit hash or `NO_GIT: <reason>` in '{COMMIT}'."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "handoff", (COMMIT,)),
@@ -235,9 +236,9 @@ Confirme com o hash do commit ou `NO_GIT: <motivo>` em '{COMMIT}'."""
 
 
 def handoff_retry_prompt() -> str:
-    input_text = f"""A confirmação do handoff veio vazia. Atualize `progress.txt` no diretório-alvo
-({run_config_store.load().target_dir}) e responda em '{COMMIT}' com o hash do commit ou
-`NO_GIT: <motivo>` quando não houver repositório Git."""
+    input_text = f"""The handoff confirmation came back empty. Update `progress.txt` in the target directory
+({run_config_store.load().target_dir}) and respond in '{COMMIT}' with the commit hash or
+`NO_GIT: <reason>` when there is no Git repository."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "handoff", (COMMIT,)),

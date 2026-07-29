@@ -3,9 +3,10 @@ using System.Text.Json;
 namespace Harness.Engine;
 
 /// <summary>
-/// Persiste o resultado de cada avaliação em <c>.harness/scores.jsonl</c> (uma linha por
-/// run). Mora na engine porque a serialização AOT-safe depende do <see cref="HarnessJsonContext"/>,
-/// que é interno ao assembly. É o lado "notas" da Telemetria (#7), consumido por relatórios.
+/// Persists each evaluation's result to <c>.harness/scores.jsonl</c> (one line per run).
+/// Lives in the engine because AOT-safe serialization depends on
+/// <see cref="HarnessJsonContext"/>, which is internal to the assembly. It's the "scores"
+/// side of Telemetry (#7), consumed by reports.
 /// </summary>
 public static class ScoreStore
 {
@@ -22,7 +23,7 @@ public static class ScoreStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ScoreStore] falha ao gravar: {ex.Message}");
+            Console.Error.WriteLine($"[ScoreStore] failed to write: {ex.Message}");
         }
     }
 
@@ -41,15 +42,15 @@ public static class ScoreStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ScoreStore] falha ao carregar: {ex.Message}");
+            Console.Error.WriteLine($"[ScoreStore] failed to load: {ex.Message}");
             return [];
         }
     }
 }
 
 /// <summary>
-/// Nota de uma avaliação: o veredito do portão determinístico (0 tokens) e, quando ele
-/// passa, a nota do juiz-LLM. <see cref="JudgeScore"/> = 0 quando o portão reprova.
+/// One evaluation's score: the deterministic gate's verdict (0 tokens) and, when it
+/// passes, the LLM judge's score. <see cref="JudgeScore"/> = 0 when the gate fails.
 /// </summary>
 public record ScoreReport(
     string Timestamp,

@@ -1,1 +1,1 @@
-"""Fluxo de desenvolvimento long-running — porta Python de Flows.Development (.NET)."""
+"""Long-running development flow — Python port of Flows.Development (.NET)."""

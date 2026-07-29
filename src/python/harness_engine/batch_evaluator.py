@@ -1,5 +1,5 @@
-"""Avaliação em lote sobre um golden set: puramente determinística (0 tokens) — compara a
-evidência gravada de cada run contra a expectativa do caso e agrega a taxa de acerto.
+"""Batch evaluation over a golden set: purely deterministic (0 tokens) — compares each
+run's recorded evidence against the case's expectation and aggregates the pass rate.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from harness_engine.trace import TraceEntry
 
 @dataclass(frozen=True)
 class CaseResult:
-    """Notas determinísticas de um caso. `passed` exige acerto pleno nas métricas; `ok` é
-    o veredito da suíte — o caso se comportou como o golden set esperava (um caso negativo
-    intencional é `ok` justamente quando `passed` é falso)."""
+    """Deterministic scores for one case. `passed` requires a full match across metrics;
+    `ok` is the suite's verdict — the case behaved as the golden set expected (an
+    intentional negative case is `ok` precisely when `passed` is false)."""
 
     id: str
     scores: tuple[Score, ...]
@@ -34,7 +34,7 @@ class CaseResult:
 
 @dataclass(frozen=True)
 class BatchResult:
-    """Agregado do lote: fração de casos que se comportaram como esperado (pronto para CI)."""
+    """Batch aggregate: fraction of cases that behaved as expected (CI-ready)."""
 
     cases: tuple[CaseResult, ...]
 

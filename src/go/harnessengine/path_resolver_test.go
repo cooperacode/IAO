@@ -35,13 +35,13 @@ func TestResolvePath_ExistingRelativePath_ResolvesFromCwd(t *testing.T) {
 func TestResolvePath_NonExistentRelativePath_FallsBackToBinaryDir(t *testing.T) {
 	isolate(t)
 
-	resolved := ResolvePath("um-arquivo-que-nao-existe.md")
+	resolved := ResolvePath("a-file-that-does-not-exist.md")
 
 	exeDir, err := filepath.EvalSymlinks(binaryDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := filepath.Join(exeDir, "um-arquivo-que-nao-existe.md")
+	expected := filepath.Join(exeDir, "a-file-that-does-not-exist.md")
 	if resolved != expected {
 		t.Fatalf("unexpected resolved path: %s vs %s", resolved, expected)
 	}

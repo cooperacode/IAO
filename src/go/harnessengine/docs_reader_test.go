@@ -10,7 +10,7 @@ import (
 
 func TestDocs_HasDocs_MissingFolder_False(t *testing.T) {
 	dir := isolate(t)
-	missing := filepath.Join(dir, "nao-existe")
+	missing := filepath.Join(dir, "does-not-exist")
 
 	if HasDocs(missing) {
 		t.Fatal("expected false")
@@ -37,7 +37,7 @@ func TestDocs_HasDocs_IgnoresUnsupportedExtensions(t *testing.T) {
 
 func TestDocs_HasDocs_WithMarkdown_True(t *testing.T) {
 	dir := isolate(t)
-	os.WriteFile(filepath.Join(dir, "spec.md"), []byte("conteúdo"), 0o644)
+	os.WriteFile(filepath.Join(dir, "spec.md"), []byte("content"), 0o644)
 
 	if !HasDocs(dir) {
 		t.Fatal("expected true")
@@ -64,7 +64,7 @@ func TestDocs_Read_ConcatenatesMdAndTxtAlphabetically(t *testing.T) {
 
 func TestDocs_Read_MissingFolder_EmptyNoSources(t *testing.T) {
 	dir := isolate(t)
-	missing := filepath.Join(dir, "nao-existe")
+	missing := filepath.Join(dir, "does-not-exist")
 
 	content, files := ReadDocs(missing)
 

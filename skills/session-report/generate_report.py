@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Gera um relatorio HTML de uso e custo da sessao mais recente de um driver
-(claude/codex/copilot), correlacionando `.harness/trace.jsonl` com o consumo
-real de tokens via scripts/harness_cost_correlate.py. Usa o layout de
-curso/material/relatorio-execucao-harness.html como base visual.
+"""Generates an HTML usage/cost report for a driver's most recent session
+(claude/codex/copilot), correlating `.harness/trace.jsonl` with the driver's
+actual token consumption via scripts/harness_cost_correlate.py. Uses the
+layout of curso/material/relatorio-execucao-harness.html as its visual base.
 
-Fluxo:
-    1. scripts/<driver>_usage.py --json  -> descobre a sessao mais aderente ao
-       trace para este repo (ou usa --session/--session-tree, se informado).
-    2. scripts/harness_cost_correlate.py -> correlaciona os passos do trace
-       do harness com o consumo de tokens daquele escopo de sessoes.
-    3. Renderiza o HTML em report/.
+Flow:
+    1. scripts/<driver>_usage.py --json  -> discovers the session that best
+       fits the trace for this repo (or uses --session/--session-tree, if given).
+    2. scripts/harness_cost_correlate.py -> correlates the harness trace steps
+       with the token consumption of that session scope.
+    3. Renders the HTML in report/.
 
-Uso:
+Usage:
     skills/session-report/generate_report.py --driver claude
     skills/session-report/generate_report.py --driver codex --session <uuid>
     skills/session-report/generate_report.py --driver codex --session-tree <uuid>
@@ -88,11 +88,11 @@ def trace_bounds(trace_file: Path) -> tuple[datetime, datetime] | None:
 
 
 def find_last_session(driver: str, trace_file: Path | None = None) -> str:
-    """Descobre a sessao mais aderente ao trace.
+    """Discovers the session that best fits the trace.
 
-    Para Codex, prefere a sessao cuja vida tem a maior sobreposicao com o
-    trace. Isso evita selecionar a conversa usada posteriormente apenas para
-    gerar o relatorio. Para os demais drivers, preserva a escolha por last_ts.
+    For Codex, prefers the session whose lifetime has the greatest overlap
+    with the trace. This avoids selecting a conversation used later just to
+    generate the report. For the other drivers, keeps the last_ts-based choice.
     """
     data = run_json_script(USAGE_SCRIPT[driver], [], f"{driver}_usage")
     sessions = data.get("per_session", {})
@@ -150,10 +150,11 @@ def run_correlate_by_feature(
     session_id: str,
     session_tree: bool = False,
 ) -> dict:
-    """Custo por feature via .harness/logs/verify-feature-*.log -- so populado
-    para sessoes do fluxo development. Sem --trace-file: as fronteiras vem dos
-    proprios logs de verify, nao dos passos do trace. Sempre retorna JSON
-    valido (com "features": [] se nao houver logs), nunca aborta o relatorio."""
+    """Cost per feature via .harness/logs/verify-feature-*.log -- only
+    populated for development-flow sessions. Without --trace-file: the
+    boundaries come from the verify logs themselves, not from the trace steps.
+    Always returns valid JSON (with "features": [] when there are no logs),
+    never aborts the report."""
     scope_flag = "--session-tree" if session_tree else "--session"
     args = ["--usage-source", driver, scope_flag, session_id, "--by-feature"]
     return run_json_script(CORRELATE_SCRIPT, args, "harness_cost_correlate_features")
@@ -168,7 +169,7 @@ def fmt_int(v: int) -> str:
 
 
 def fmt_tokens(v: int) -> str:
-    """Formata contagem de tokens abreviada (10K, 1.5Mi); abaixo de 1000 usa fmt_int."""
+    """Formats an abbreviated token count (10K, 1.5Mi); below 1000 uses fmt_int."""
     abs_v = abs(v)
     if abs_v < 1000:
         return fmt_int(v)
@@ -176,7 +177,7 @@ def fmt_tokens(v: int) -> str:
     for i, (div, suffix) in enumerate(units):
         if abs_v < div:
             continue
-        # arredondar pode estourar para a proxima unidade (999999 -> 1000K); promove
+        # rounding can overflow into the next unit (999999 -> 1000K); bump up
         bump = i > 0 and round(abs_v / div, 1) >= 1000
         d, suf = units[i - 1][:2] if bump else (div, suffix)
         n = f"{v / d:.1f}".rstrip("0").rstrip(".")
@@ -243,11 +244,11 @@ def load_step_activity(
     steps: list[dict],
     session_tree: bool = False,
 ) -> tuple[list[dict[str, int]], list[str]]:
-    """Conta atividade local do driver nas mesmas janelas de tempo do correlator.
+    """Counts the driver's local activity within the same time windows as the correlator.
 
-    Hoje a contagem de tool calls/eventos de token e suportada para Codex, porque
-    o rollout JSONL local registra `response_item.function_call` e
-    `event_msg.token_count` com timestamps confiaveis.
+    Today, tool call/token event counting is supported for Codex, because the
+    local JSONL rollout records `response_item.function_call` and
+    `event_msg.token_count` with reliable timestamps.
     """
     activity = [empty_activity() for _ in steps]
     notes: list[str] = []
@@ -320,10 +321,10 @@ def load_step_activity(
 def build_features(
     driver: str, feature_correlate: dict
 ) -> tuple[list[dict], dict, list[str]]:
-    """Agrega o resultado de harness_cost_correlate.py --by-feature em linhas
-    prontas para o relatorio. Sempre retorna algo (mesmo lista vazia) -- e
-    normal um driver/sessao nao ter nenhuma fronteira de feature (so o fluxo
-    development gera .harness/logs/verify-feature-*.log)."""
+    """Aggregates the harness_cost_correlate.py --by-feature result into rows
+    ready for the report. Always returns something (even an empty list) -- it's
+    normal for a driver/session to have no feature boundaries (only the
+    development flow generates .harness/logs/verify-feature-*.log)."""
     is_copilot = driver == "copilot"
     features_raw = feature_correlate.get("features", [])
     unattributed = feature_correlate.get("unattributed", {})
@@ -909,7 +910,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     for (let i = 0; i < units.length; i++){
       const [div, suffix] = units[i];
       if (abs < div) continue;
-      // arredondar pode estourar para a proxima unidade (999999 -> 1000K); promove
+      // rounding can overflow into the next unit (999999 -> 1000K); bump up
       const bump = i > 0 && Math.round(abs / div * 10) / 10 >= 1000;
       const [d, suf] = bump ? units[i - 1] : [div, suffix];
       const n = (v / d).toFixed(1).replace(/\.0$/, '');

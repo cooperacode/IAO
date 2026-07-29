@@ -121,7 +121,7 @@ func resolve(
 		effectiveMaxSteps = *maxSteps
 	}
 	if step > effectiveMaxSteps {
-		fmt.Fprintf(os.Stderr, "[harness] limite de %d passos atingido; encerrando.\n", effectiveMaxSteps)
+		fmt.Fprintf(os.Stderr, "[harness] step limit of %d reached; stopping.\n", effectiveMaxSteps)
 		return "stop", TraceOutcome.Budget
 	}
 
@@ -130,7 +130,7 @@ func resolve(
 	// caller's billing metadata — an LLM driver has no way to honestly report them.
 	config := CurrentConfig()
 	if config.MaxInstructionChars > 0 && costChars > config.MaxInstructionChars {
-		fmt.Fprintf(os.Stderr, "[harness] limite de %d chars de instrução atingido (%d); encerrando.\n",
+		fmt.Fprintf(os.Stderr, "[harness] instruction char limit of %d reached (%d); stopping.\n",
 			config.MaxInstructionChars, costChars)
 		return "stop", TraceOutcome.Budget
 	}
@@ -138,12 +138,12 @@ func resolve(
 	// Typed error instead of silent "stop": the model receives the cause and can resend
 	// the right command (corrective loop, not silent termination).
 	if envelope == nil {
-		return errorInstruction("Não foi possível interpretar o JSON recebido.", actions), TraceOutcome.Error
+		return errorInstruction("Could not parse the received JSON.", actions), TraceOutcome.Error
 	}
 
 	action, ok := actions[envelope.Value]
 	if !ok {
-		return errorInstruction(fmt.Sprintf("O comando '%s' não existe.", envelope.Value), actions), TraceOutcome.Error
+		return errorInstruction(fmt.Sprintf("The command '%s' does not exist.", envelope.Value), actions), TraceOutcome.Error
 	}
 
 	// Contextual validation: the command exists, but does the VALUE meet the task's
@@ -152,7 +152,7 @@ func resolve(
 		if validator, ok := validators[envelope.Value]; ok {
 			if rejected := validator(*envelope); !rejected.Ok {
 				return errorInstruction(fmt.Sprintf(
-					"O comando '%s' foi recusado: %s Corrija o conteúdo de 'args' e reenvie o mesmo comando.",
+					"The command '%s' was rejected: %s Fix the 'args' content and resend the same command.",
 					envelope.Value, rejected.Reason), actions), TraceOutcome.Error
 			}
 		}
@@ -208,7 +208,7 @@ func errorInstruction(reason string, actions map[string]Action) string {
 	valid := strings.Join(keys, ", ")
 
 	return fmt.Sprintf(
-		"ERRO no protocolo do harness: %s Comandos válidos: %s. "+
-			"Revise o campo 'value' do seu JSON de resposta (responda apenas com o JSON, "+
-			"sem cercas de código nem comentários) e reenvie o comando.", reason, valid)
+		"HARNESS PROTOCOL ERROR: %s Valid commands: %s. "+
+			"Review the 'value' field in your JSON response (reply with the JSON only, "+
+			"no code fences or commentary) and resend the command.", reason, valid)
 }

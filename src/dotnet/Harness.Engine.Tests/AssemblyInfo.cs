@@ -1,3 +1,3 @@
-// StateStore e TaskRegistry compartilham um arquivo de estado fixo (.harness/state.json),
-// então os testes precisam rodar em série para não corromperem o estado uns dos outros.
+// StateStore and TaskRegistry share a fixed state file (.harness/state.json), so the
+// tests need to run serially to avoid corrupting each other's state.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]

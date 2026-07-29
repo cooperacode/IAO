@@ -1,5 +1,5 @@
-"""Regressões do endurecimento: erro NUNCA pode virar "stop" silencioso, e o teto de
-passos precisa cortar loop infinito (guarda de token)."""
+"""Hardening regressions: an error must NEVER turn into a silent "stop", and the step
+ceiling has to cut off an infinite loop (token guard)."""
 
 from harness_engine import prompt_formatter, state_store, task_registry, trace
 from harness_engine.envelope import Envelope, EnvelopeType
@@ -32,7 +32,7 @@ def test_dispatch_finalize_retorna_stop():
 def test_dispatch_comando_inexistente_retorna_erro_e_nao_stop():
     result = task_registry.dispatch(['{"type":"text","value":"tipo"}'], TASKS)
 
-    assert result.startswith("ERRO")
+    assert result.startswith("HARNESS PROTOCOL ERROR")
     assert result != "stop"
     assert "'tipo'" in result
 
@@ -40,14 +40,14 @@ def test_dispatch_comando_inexistente_retorna_erro_e_nao_stop():
 def test_dispatch_json_malformado_retorna_erro_e_nao_stop():
     result = task_registry.dispatch(['{"type":"text","value":'], TASKS)
 
-    assert result.startswith("ERRO")
+    assert result.startswith("HARNESS PROTOCOL ERROR")
     assert result != "stop"
 
 
 def test_dispatch_sem_argumento_retorna_erro_e_nao_stop():
     result = task_registry.dispatch([], TASKS)
 
-    assert result.startswith("ERRO")
+    assert result.startswith("HARNESS PROTOCOL ERROR")
     assert result != "stop"
 
 
@@ -67,13 +67,13 @@ def test_dispatch_start_reinicia_o_contador_de_passos():
 
     task_registry.dispatch(['{"type":"text","value":"start"}'], TASKS)
 
-    # start reseta e então conta a si mesmo como passo 1.
+    # start resets and then counts itself as step 1.
     assert state_store.load().step == 1
 
 
 def test_dispatch_start_com_should_reset_on_start_falso_nao_trunca_state_nem_trace():
-    # "start" também chega numa RETOMADA (sessão fresca reabrindo um run em andamento) — o
-    # flow sinaliza isso via should_reset_on_start, e o dispatch não pode truncar nada.
+    # "start" also arrives on a RESUME (a fresh session reopening a run in progress) —
+    # the flow signals this via should_reset_on_start, and dispatch must not truncate anything.
     for _ in range(3):
         task_registry.dispatch(['{"type":"tool","value":"classify","args":["x"]}'], TASKS)
     trace.append(99, "handoff", trace.TraceOutcome.INSTRUCTION, 5)
@@ -82,7 +82,7 @@ def test_dispatch_start_com_should_reset_on_start_falso_nao_trunca_state_nem_tra
         ['{"type":"text","value":"start"}'], TASKS, should_reset_on_start=lambda: False
     )
 
-    assert state_store.load().step == 4  # 3 anteriores + o próprio "start", sem reset
+    assert state_store.load().step == 4  # 3 previous + "start" itself, no reset
     assert any(e.step == 99 and e.command == "handoff" for e in trace.load())
 
 
@@ -92,7 +92,7 @@ def test_dispatch_start_sem_predicado_mantem_comportamento_padrao_de_sempre_rese
 
     task_registry.dispatch(['{"type":"text","value":"start"}'], TASKS)
 
-    # retrocompatível: sem predicado, sempre reseta
+    # backward compatible: no predicate, always resets
     assert state_store.load().step == 1
 
 
@@ -105,26 +105,26 @@ def test_dispatch_start_com_context_persiste_no_state_store():
 
 
 def test_dispatch_contexto_sobrevive_ao_start_e_e_reinjetado_via_prompt_formatter():
-    tasks_com_prompt = {
+    tasks_with_prompt = {
         "start": lambda _e: prompt_formatter.format(
-            "instrução", Envelope(EnvelopeType.COMMAND, "plan", ())
+            "instruction", Envelope(EnvelopeType.COMMAND, "plan", ())
         ),
     }
 
     result = task_registry.dispatch(
-        ['{"type":"text","value":"start","context":{"driver":"claude code"}}'], tasks_com_prompt
+        ['{"type":"text","value":"start","context":{"driver":"claude code"}}'], tasks_with_prompt
     )
 
     assert '"context":{"driver":"claude code"}' in result
 
 
 def test_dispatch_ao_exceder_o_teto_forca_stop():
-    # Consome exatamente o teto — todas essas ainda executam normalmente.
+    # Consumes exactly the ceiling — all of these still run normally.
     for _ in range(task_registry.default_max_steps()):
         ok = task_registry.dispatch(['{"type":"tool","value":"classify","args":["x"]}'], TASKS)
         assert ok != "stop"
 
-    # O passo seguinte ultrapassa o teto e é cortado.
+    # The next step goes over the ceiling and gets cut off.
     result = task_registry.dispatch(['{"type":"tool","value":"classify","args":["x"]}'], TASKS)
 
     assert result == "stop"

@@ -1,18 +1,18 @@
-//! Persiste `verify_cmd`/`target_dir` (capturados uma vez pelo `plan`) em
-//! `.harness/run_config.json` — fora de `state.json` de propósito. `task_registry` reseta
-//! `state.json` incondicionalmente a cada `start`, antes de qualquer código de domínio
-//! rodar; um run retomado ainda precisa desses dois valores para `smoke`/`verify`
-//! funcionarem, então eles têm que sobreviver a esse reset.
+//! Persists `verify_cmd`/`target_dir` (captured once by `plan`) in
+//! `.harness/run_config.json` — deliberately outside `state.json`. `task_registry`
+//! unconditionally resets `state.json` on every `start`, before any domain code runs; a
+//! resumed run still needs these two values for `smoke`/`verify` to work, so they must
+//! survive that reset.
 
 use serde::{Deserialize, Serialize};
 
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/run_config.json";
 
-/// Comando de verificação, diretório-alvo e identidade do run (RFC §6.4), todos capturados
-/// uma vez pelo `plan`. `run_id` é gerado só num run genuinamente novo — o mesmo momento em
-/// que `write()` é chamado após `reset()` — e sobrevive a toda retomada porque este arquivo
-/// não é tocado quando `start` decide que há trabalho pendente (ver comentário do módulo).
+/// Verify command, target directory, and run identity (RFC §6.4), all captured once by
+/// `plan`. `run_id` is generated only on a genuinely new run — the same moment `write()`
+/// is called after `reset()` — and survives every resume because this file isn't touched
+/// when `start` decides there's pending work (see the module comment).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunConfig {
     #[serde(rename = "verifyCmd", default)]
@@ -37,11 +37,11 @@ impl Default for RunConfig {
     }
 }
 
-/// Grava a configuração do run — mesmo ciclo de vida da `feature_list.json` (escrita
-/// pelo `plan`, apagada só quando `start` decide que não há run para retomar).
+/// Writes the run configuration — same lifecycle as `feature_list.json` (written by
+/// `plan`, deleted only when `start` decides there's no run to resume).
 pub fn write(config: &RunConfig) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[RunConfigStore] falha ao gravar: {e}");
+        eprintln!("[RunConfigStore] failed to write: {e}");
         return;
     }
     match serde_json::to_string(config) {
@@ -49,14 +49,14 @@ pub fn write(config: &RunConfig) {
             if let Err(e) =
                 crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
             {
-                eprintln!("[RunConfigStore] falha ao gravar: {e}");
+                eprintln!("[RunConfigStore] failed to write: {e}");
             }
         }
-        Err(e) => eprintln!("[RunConfigStore] falha ao gravar: {e}"),
+        Err(e) => eprintln!("[RunConfigStore] failed to write: {e}"),
     }
 }
 
-/// Lê a configuração persistida, ou os defaults se nada foi gravado ainda.
+/// Reads the persisted configuration, or the defaults if nothing has been written yet.
 pub fn load() -> RunConfig {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
@@ -66,18 +66,18 @@ pub fn load() -> RunConfig {
 
         match loaded {
             Ok(config) => return config,
-            Err(e) => eprintln!("[RunConfigStore] falha ao carregar: {e}"),
+            Err(e) => eprintln!("[RunConfigStore] failed to load: {e}"),
         }
     }
     RunConfig::default()
 }
 
-/// Apaga num run genuinamente novo — em par com `feature_store::reset`.
+/// Deletes on a genuinely new run — paired with `feature_store::reset`.
 pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
         if let Err(e) = std::fs::remove_file(p) {
-            eprintln!("[RunConfigStore] falha ao limpar: {e}");
+            eprintln!("[RunConfigStore] failed to clear: {e}");
         }
     }
 }

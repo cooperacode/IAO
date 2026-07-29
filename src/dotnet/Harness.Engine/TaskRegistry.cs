@@ -2,11 +2,11 @@ using System.Text;
 
 namespace Harness.Engine;
 
-/// <summary>Dispatch domain-agnostic: parse do envelope, guarda de iteração e erro tipado.</summary>
+/// <summary>Domain-agnostic dispatch: envelope parsing, iteration guard, and typed error.</summary>
 public static class TaskRegistry
 {
-    // Teto de passos: impede loop infinito que queimaria tokens indefinidamente.
-    // Valor vem do harness.json (ou do default) — ver HarnessConfig.
+    // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
+    // Value comes from harness.json (or its default) — see HarnessConfig.
     public static int MaxSteps => HarnessConfig.Current.MaxSteps;
 
     public static string Dispatch(
@@ -16,8 +16,9 @@ public static class TaskRegistry
         int? maxSteps = null,
         Func<bool>? shouldResetOnStart = null)
     {
-        // Argv presente → transporte clássico (retrocompatível). Argv vazio → lê o envelope
-        // da inbox em arquivo, o transporte que elimina o hang de aspas do shell (ver Inbox).
+        // Argv present → classic transport (backward compatible). Empty argv → reads the
+        // envelope from the file-based inbox, the transport that eliminates the shell-quoting
+        // hang (see Inbox).
         var fromInbox = args.Count == 0;
         var arg0 = args.Count >= 1 ? args[0] : Inbox.Read();
 
@@ -25,33 +26,35 @@ public static class TaskRegistry
             ? null
             : Envelope.Parse(arg0);
 
-        // Só consome a inbox quando o parse deu certo — um JSON quebrado deve gerar o ERRO
-        // corretivo e permanecer disponível para inspeção, não sumir silenciosamente.
+        // Only consumes the inbox when parsing succeeded — a broken JSON must produce the
+        // corrective ERROR and remain available for inspection, not silently disappear.
         if (fromInbox && envelope is not null)
             Inbox.Consume();
 
         if (envelope is not null && envelope.Value == "start")
         {
-            // Novo workflow começa do zero — estado e trace são truncados juntos. Mas um
-            // "start" também chega quando uma sessão fresca (ex.: hard reset por feature do
-            // Development) reabre um run em andamento — nesse caso é RETOMADA, não início, e
-            // truncar aqui apagaria o trace/step acumulados de features anteriores. O flow
-            // decide via shouldResetOnStart (ele sabe se há trabalho pendente); sem predicado,
-            // o padrão é sempre resetar (retrocompatível com flows single-shot).
+            // A new workflow starts from scratch — state and trace are truncated together. But
+            // a "start" also arrives when a fresh session (e.g. a Development per-feature hard
+            // reset) reopens a run in progress — in that case it's a RESUME, not a start, and
+            // truncating here would throw away the trace/step accumulated by previous
+            // features. The flow decides via shouldResetOnStart (it knows whether there's
+            // pending work); with no predicate, the default is to always reset (backward
+            // compatible with single-shot flows).
             if (shouldResetOnStart?.Invoke() ?? true)
             {
                 StateStore.Reset();
                 Trace.Reset();
             }
 
-            // Contexto do driver (ex.: {"driver":"claude code"}) nasce aqui e sobrevive no
-            // StateStore — PromptFormatter o reinjeta em toda saída até o próximo "start".
-            // Independe do reset acima: mesmo numa retomada, o driver atual deve prevalecer.
+            // The driver context (e.g. {"driver":"claude code"}) is born here and survives in
+            // StateStore — PromptFormatter reinjects it into every output until the next
+            // "start". Independent of the reset above: even on a resume, the current driver
+            // must prevail.
             if (envelope.Context is { Count: > 0 } context)
                 StateStore.SetContext(context);
         }
 
-        // Guarda de iteração — hard stop sob a restrição de tokens do time.
+        // Iteration guard — hard stop under the team's token budget.
         var step = StateStore.Increment();
 
         var costChars = StateStore.Load().CostChars;
@@ -59,18 +62,18 @@ public static class TaskRegistry
 
         var (result, outcome) = Resolve(envelope, step, costChars, actions, validators, maxSteps);
 
-        // Octetos UTF-8, não chars .NET (RFC Apêndice B item 1): mede o que de fato atravessa o
-        // transporte, com o mesmo significado que Python (len(bytes)) e Rust (String::len()).
+        // UTF-8 octets, not .NET chars (RFC Appendix B item 1): measures what actually crosses
+        // the transport, with the same meaning as Python (len(bytes)) and Rust (String::len()).
         var resultBytes = Encoding.UTF8.GetByteCount(result);
 
-        // Uma linha por volta do loop: alimenta a Telemetria e o Evaluator de trajetória.
-        // Label é lido de novo (não do snapshot de Load() acima) porque a própria action
-        // pode ter acabado de setá-lo (ex.: Pick() escolhendo a feature deste passo).
+        // One line per loop turn: feeds telemetry and the trajectory evaluator. Label is
+        // re-read (not from the Load() snapshot above) because the action itself may have
+        // just set it (e.g. Pick() choosing this step's feature).
         var label = StateStore.Get(StateStore.TraceLabelKey) ?? "";
         Trace.Append(step, command, outcome, resultBytes, label);
 
-        // O custo da instrução emitida agora só é conhecido aqui — entra no acumulado
-        // que o guard do próximo turno vai checar.
+        // The instruction's cost is only known here now — it feeds the accumulator the next
+        // turn's guard will check.
         StateStore.AddCost(resultBytes);
         return result;
     }
@@ -81,50 +84,51 @@ public static class TaskRegistry
         IReadOnlyDictionary<string, Func<Envelope, ValidationResult>>? validators,
         int? maxSteps = null)
     {
-        // Teto de passos efetivo: o override por invocação (ex.: um flow long-running como o
-        // Development, que precisa de mais folga) tem precedência sobre o global do harness.json.
-        // Sem override, vale o do config — o Refinement/Evaluation seguem inalterados.
+        // Effective step ceiling: a per-call override (e.g. a long-running flow like
+        // Development, which needs more slack) takes precedence over harness.json's global
+        // one. With no override, the config's value applies — Refinement/Evaluation stay
+        // unchanged.
         var effectiveMaxSteps = maxSteps ?? MaxSteps;
         if (step > effectiveMaxSteps)
         {
-            Console.Error.WriteLine($"[harness] limite de {effectiveMaxSteps} passos atingido; encerrando.");
+            Console.Error.WriteLine($"[harness] step limit of {effectiveMaxSteps} reached; stopping.");
             return ("stop", TraceOutcome.Budget);
         }
 
-        // Teto de custo, segundo guard além do de passos. Chars de instrução emitida são
-        // a única medida: é o que a engine atesta sozinha. Token real vive nos metadados
-        // de billing do caller — um driver-LLM não tem como reportá-lo honestamente.
+        // Cost ceiling, a second guard beyond the step one. Emitted-instruction chars are the
+        // only measure: it's what the engine can attest on its own. Real tokens live in the
+        // caller's billing metadata — an LLM driver has no way to honestly report them.
         var config = HarnessConfig.Current;
         if (config.MaxInstructionChars > 0 && costChars > config.MaxInstructionChars)
         {
             Console.Error.WriteLine(
-                $"[harness] limite de {config.MaxInstructionChars} chars de instrução atingido ({costChars}); encerrando.");
+                $"[harness] instruction char limit of {config.MaxInstructionChars} reached ({costChars}); stopping.");
             return ("stop", TraceOutcome.Budget);
         }
 
-        // Erro tipado em vez de "stop" silencioso: o modelo recebe a causa e pode
-        // reenviar o comando correto (loop corretivo, não término mudo).
+        // Typed error instead of silent "stop": the model receives the cause and can resend
+        // the right command (corrective loop, not silent termination).
         if (envelope is null)
-            return (ErrorInstruction("Não foi possível interpretar o JSON recebido.", actions), TraceOutcome.Error);
+            return (ErrorInstruction("Could not parse the received JSON.", actions), TraceOutcome.Error);
 
         if (!actions.TryGetValue(envelope.Value, out var action))
-            return (ErrorInstruction($"O comando '{envelope.Value}' não existe.", actions), TraceOutcome.Error);
+            return (ErrorInstruction($"The command '{envelope.Value}' does not exist.", actions), TraceOutcome.Error);
 
-        // Validação contextual: o comando existe, mas o VALOR atende à expectativa da task?
-        // Falhou → mesmo caminho de erro corretivo dos casos acima; o driver corrige e reenvia.
+        // Contextual validation: the command exists, but does the VALUE meet the task's
+        // expectation? Failed → same corrective-error path as above; the driver fixes and resends.
         if (validators is not null
             && validators.TryGetValue(envelope.Value, out var validator)
             && validator(envelope) is { Ok: false } rejected)
         {
             return (ErrorInstruction(
-                $"O comando '{envelope.Value}' foi recusado: {rejected.Reason} "
-                + "Corrija o conteúdo de 'args' e reenvie o mesmo comando.", actions), TraceOutcome.Error);
+                $"The command '{envelope.Value}' was rejected: {rejected.Reason} "
+                + "Fix the 'args' content and resend the same command.", actions), TraceOutcome.Error);
         }
 
-        // Guarda de tempo: uma task travada (loop infinito na lógica de domínio) prenderia
-        // o processo indefinidamente. RunWithTimeout impõe o teto por passo; o estouro vira
-        // erro tipado, capturado aqui, e segue o mesmo caminho gracioso do corte por Budget:
-        // diagnóstico no stderr + "stop" no stdout (o canal lido pelo cliente IDE).
+        // Time guard: a stuck task (infinite loop in domain logic) would hang the process
+        // indefinitely. RunWithTimeout enforces the per-step ceiling; a timeout becomes a
+        // typed error, caught here, following the same graceful path as the budget cut:
+        // stderr diagnostic + "stop" on stdout (the channel the IDE client reads).
         try
         {
             var result = RunWithTimeout(action, envelope, HarnessConfig.Current.TimeoutMs);
@@ -137,29 +141,30 @@ public static class TaskRegistry
         }
     }
 
-    // A task é um Func síncrono e OPACO — não coopera com CancellationToken. O .NET moderno
-    // não aborta código síncrono travado com segurança (Thread.Abort foi removido), então o
-    // único timeout preemptivo real é rodá-la noutro thread e ABANDONAR o que travar.
-    // Task.Run usa o threadpool (threads background): quando o processo single-shot sai com
-    // "stop", ele encerra mesmo com a task fujona ainda rodando — um new Thread foreground
-    // travaria o encerramento. GetAwaiter().GetResult() (não .Result) re-lança a exceção
-    // original da task sem embrulhá-la em AggregateException, preservando o comportamento atual.
+    // The task is a synchronous, OPAQUE Func — it does not cooperate with CancellationToken.
+    // Modern .NET cannot safely abort stuck synchronous code (Thread.Abort was removed), so
+    // the only real preemptive timeout is to run it on another thread and ABANDON whatever
+    // hangs. Task.Run uses the threadpool (background threads): when the single-shot process
+    // exits with "stop", it terminates even with the runaway task still running — a
+    // foreground new Thread would block termination. GetAwaiter().GetResult() (not .Result)
+    // rethrows the task's original exception without wrapping it in AggregateException,
+    // preserving current behavior.
     private static string RunWithTimeout(Func<Envelope?, string> action, Envelope? envelope, int timeoutMs)
     {
         if (timeoutMs <= 0)
-            return action(envelope); // guarda desligada — sem overhead de thread
+            return action(envelope); // guard disabled — no thread overhead
 
         var task = Task.Run(() => action(envelope));
         if (!task.Wait(timeoutMs))
             throw new HarnessTimeoutException(timeoutMs);
-        return task.GetAwaiter().GetResult(); // task já concluída aqui — não bloqueia; só re-lança
+        return task.GetAwaiter().GetResult(); // task already completed here — doesn't block; only rethrows
     }
 
     private static string ErrorInstruction(string reason, IReadOnlyDictionary<string, Func<Envelope?, string>> actions)
     {
         var valid = string.Join(", ", actions.Keys);
-        return $"ERRO no protocolo do harness: {reason} Comandos válidos: {valid}. "
-            + "Revise o campo 'value' do seu JSON de resposta (responda apenas com o JSON, "
-            + "sem cercas de código nem comentários) e reenvie o comando.";
+        return $"HARNESS PROTOCOL ERROR: {reason} Valid commands: {valid}. "
+            + "Review the 'value' field in your JSON response (reply with the JSON only, "
+            + "no code fences or commentary) and resend the command.";
     }
 }

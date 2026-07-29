@@ -1,6 +1,6 @@
-"""Resolve caminhos relativos ao diretório de trabalho (raiz do repo, de onde o driver
-invoca o harness), com fallback para o diretório do pacote. Compartilhado por quem
-injeta arquivos no prompt (skills, docs).
+"""Resolves paths relative to the working directory (repo root, from where the driver
+invokes the harness), with a fallback to the package directory. Shared by whoever
+injects files into the prompt (skills, docs).
 """
 
 from __future__ import annotations
@@ -24,17 +24,17 @@ def resolve(path: str) -> str:
     if _is_contained(from_base, base_dir):
         return str(from_base)
 
-    # Nem o CWD nem o fallback do pacote contêm o resultado (symlink desviou para fora da
-    # base) — devolve o join original, sem seguir o link; a checagem de existência do
-    # chamador falha naturalmente sobre esse caminho não resolvido. Containment completo
-    # contra uma raiz de política assinada é trabalho de fase futura (capability broker,
-    # RFC §6.9) — isto é só a lista mínima de rejeição por symlink escape do RFC §6.3.
+    # Neither the CWD nor the package fallback contains the result (a symlink escaped
+    # outside the base) — return the original join, without following the link; the
+    # caller's existence check naturally fails on this unresolved path. Full containment
+    # against a signed policy root is future-phase work (capability broker, RFC §6.9) —
+    # this is just the minimal symlink-escape rejection from RFC §6.3.
     return str(base_dir / trimmed)
 
 
 def _is_contained(resolved: Path, base: Path) -> bool:
-    """`resolved` está dentro de `base` por caminho REAL (não por prefixo de string) —
-    segue symlinks (`.resolve()` já fez isso) e compara a árvore final."""
+    """`resolved` is inside `base` by REAL path (not string prefix) — follows symlinks
+    (`.resolve()` already did that) and compares the final tree."""
     try:
         return resolved == base or resolved.is_relative_to(base)
     except ValueError:

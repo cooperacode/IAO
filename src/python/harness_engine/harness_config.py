@@ -1,6 +1,7 @@
-"""Variáveis fixas do harness, externalizadas num `harness.json` na raiz do repo.
-Centralizá-las aqui deixa cada flow/ambiente ajustar os tetos sem alterar código.
-Ausente ou ilegível → cai nos defaults: config é insumo opcional, não pode derrubar o run.
+"""Fixed harness variables, externalized in a `harness.json` at the repo root.
+Centralizing them here lets each flow/environment adjust the ceilings without changing
+code. Absent or unreadable → falls back to the defaults: config is optional input, it
+cannot bring the run down.
 """
 
 from __future__ import annotations
@@ -15,16 +16,16 @@ from harness_engine import path_resolver
 
 _FILE_PATH = "harness.json"
 
-# Teto duro do timeout_ms, independente da fonte (harness.json OU a env var abaixo).
-# harness.json vive no working directory que o próprio agente supervisionado controla: sem
-# este teto, o agente poderia editar o arquivo para se auto-conceder um timeout
-# arbitrariamente alto e nunca ser cortado pela guarda de tempo (ver task_registry).
+# Hard ceiling on timeout_ms, regardless of source (harness.json OR the env var below).
+# harness.json lives in the working directory the supervised agent itself controls:
+# without this ceiling, the agent could edit the file to grant itself an arbitrarily high
+# timeout and never be cut off by the time guard (see task_registry).
 _MAX_ALLOWED_TIMEOUT_MS = 5 * 60_000
 
-# Quando definida, sobrepõe o timeout_ms do harness.json. Ao contrário do arquivo, a env var
-# é definida pelo processo pai que invoca cada passo do harness — fora do working directory
-# que o agente supervisionado controla — então não pode ser auto-editada pelo mesmo agente
-# que o timeout deveria conter.
+# When set, overrides harness.json's timeout_ms. Unlike the file, the env var is set by
+# the parent process that invokes each harness step — outside the working directory the
+# supervised agent controls — so it cannot be self-edited by the same agent the timeout
+# is meant to contain.
 _TIMEOUT_MS_ENV_VAR = "HARNESS_TIMEOUT_MS"
 
 
@@ -46,9 +47,9 @@ class HarnessConfig:
         }
 
 
-# Teto de passos: impede loop infinito que queimaria tokens indefinidamente.
-# max_instruction_chars = 0 desliga o teto de custo (só o de passos vale).
-# timeout_ms = 0 desliga a guarda de tempo por passo (mesma convenção do custo).
+# Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
+# max_instruction_chars = 0 disables the cost ceiling (only the step one applies).
+# timeout_ms = 0 disables the per-step time guard (same convention as the cost one).
 DEFAULT = HarnessConfig(
     max_steps=12,
     max_instruction_chars=0,
@@ -72,8 +73,8 @@ def _normalize(config: HarnessConfig) -> HarnessConfig:
 
 
 def _apply_timeout_env_override(config: HarnessConfig) -> HarnessConfig:
-    """Ver `_TIMEOUT_MS_ENV_VAR`. Ausente/inválida é ignorada silenciosamente — mesma
-    tolerância do resto da config: é insumo opcional, não pode derrubar o run."""
+    """See `_TIMEOUT_MS_ENV_VAR`. Absent/invalid is silently ignored — the same
+    tolerance as the rest of the config: it's optional input, it cannot bring the run down."""
     raw = os.environ.get(_TIMEOUT_MS_ENV_VAR)
     if raw is None:
         return config
@@ -84,7 +85,7 @@ def _apply_timeout_env_override(config: HarnessConfig) -> HarnessConfig:
 
 
 def load() -> HarnessConfig:
-    """Relê o `harness.json` do disco; qualquer falha devolve os defaults."""
+    """Re-reads `harness.json` from disk; any failure returns the defaults."""
     config = DEFAULT
     try:
         path = Path(path_resolver.resolve(_FILE_PATH))
@@ -98,32 +99,32 @@ def load() -> HarnessConfig:
                 timeout_ms=int(payload.get("timeoutMs", 0) or 0),
             )
     except Exception as ex:
-        print(f"[HarnessConfig] falha ao carregar; usando defaults: {ex}", file=sys.stderr)
+        print(f"[HarnessConfig] failed to load; using defaults: {ex}", file=sys.stderr)
         config = DEFAULT
 
     return _normalize(_apply_timeout_env_override(config))
 
 
 def reload() -> HarnessConfig:
-    """Força a releitura do `harness.json` — para testes e drivers de longa vida."""
+    """Forces a re-read of `harness.json` — for tests and long-lived drivers."""
     global _current
     _current = load()
     return _current
 
 
 def reset() -> None:
-    """Limpa o cache sem reler — a próxima `current()` relê sob demanda. Em C# cada
-    invocação do harness é um processo novo (o cache dura naturalmente 1 dispatch); num
-    processo pytest de longa vida isso não vale de graça, então os testes chamam isto
-    (ver conftest.py) para simular a fronteira de processo entre casos."""
+    """Clears the cache without re-reading — the next `current()` re-reads on demand. In
+    C# every harness invocation is a fresh process (the cache naturally lasts 1
+    dispatch); in a long-lived pytest process that doesn't hold for free, so the tests
+    call this (see conftest.py) to simulate the process boundary between cases."""
     global _current
     _current = None
 
 
 def current() -> HarnessConfig:
-    """Carregada uma vez por processo (cada invocação do harness é um processo novo, então
-    'uma vez' = 'por volta do loop'). Leitores estáticos consomem daqui sem precisar
-    receber a config por parâmetro."""
+    """Loaded once per process (every harness invocation is a fresh process, so "once"
+    means "per loop turn"). Static readers consume it from here without needing the
+    config passed as a parameter."""
     global _current
     if _current is None:
         _current = load()

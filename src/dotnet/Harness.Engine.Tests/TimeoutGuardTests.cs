@@ -1,9 +1,9 @@
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Guarda de tempo por passo: uma task que trava (loop infinito na lógica de domínio) é
-/// cortada ao exceder o teto — diagnóstico no stderr + "stop" no stdout, desfecho "timeout"
-/// no trace. Desligada (0) por padrão; ligada via harness.json.
+/// Per-step time guard: a task that hangs (infinite loop in domain logic) is cut off when
+/// it exceeds the ceiling — stderr diagnostic + "stop" on stdout, "timeout" outcome in the
+/// trace. Off (0) by default; enabled via harness.json.
 /// </summary>
 public class TimeoutGuardTests : IDisposable
 {
@@ -58,7 +58,7 @@ public class TimeoutGuardTests : IDisposable
     [Fact]
     public void Dispatch_SemTetoConfigurado_NaoCortaTaskLenta()
     {
-        // Default: timeoutMs=0 → guarda desligada; a task lenta roda até o fim.
+        // Default: timeoutMs=0 → guard disabled; the slow task runs to completion.
         var result = TaskRegistry.Dispatch(["""{"type":"tool","value":"slow"}"""], Tasks);
 
         Assert.Equal("PROMPT_SLOW", result);

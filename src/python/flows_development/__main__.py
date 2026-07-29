@@ -1,5 +1,5 @@
-"""Padrão "long-running agent": inicializador + loop de sessões frescas, uma feature por
-vez. Nenhuma orquestração aqui — dispatch, guardas e transporte vivem em harness_engine.
+"""The "long-running agent" pattern: initializer + loop of fresh sessions, one feature at
+a time. No orchestration here — dispatch, guards, and transport live in harness_engine.
 
     start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 """
@@ -22,32 +22,33 @@ TASKS = {
     "handoff": tasks.handoff,
 }
 
-# Expectativa contextual por comando; recusa vira erro corretivo (o driver corrige e reenvia).
-# `pick` não tem validador — não carrega artefato do driver (a seleção é do harness).
+# Contextual expectation per command; a rejection becomes a corrective error (the driver
+# fixes and resends). `pick` has no validator — it doesn't carry a driver artifact (the
+# selection is the harness's).
 VALIDATORS = {
-    "plan": envelope_validation.not_empty("o array JSON de features [{id,title,priority}]"),
-    "bearings": envelope_validation.not_empty("o resumo curto da orientação (pwd, progress, git log)"),
-    "smoke": envelope_validation.not_empty("o resultado compacto do smoke test (init.sh + caminho do log)"),
-    "implement": envelope_validation.not_empty("o resumo curto do que foi implementado"),
+    "plan": envelope_validation.not_empty("the JSON array of features [{id,title,priority}]"),
+    "bearings": envelope_validation.not_empty("the short bearings summary (pwd, progress, git log)"),
+    "smoke": envelope_validation.not_empty("the compact smoke test result (init.sh + log path)"),
+    "implement": envelope_validation.not_empty("the short summary of what was implemented"),
     "verify": envelope_validation.matches(
         r"^(PASS\b|FAIL\b)",
-        "o veredito compacto do self-verify começando com PASS ou FAIL: motivo",
+        "the compact self-verify verdict starting with PASS or FAIL: reason",
     ),
     "handoff": envelope_validation.matches(
         r"^([0-9a-f]{6,40}\b|NO_GIT:\s+\S.*)$",
-        "o hash do commit ou NO_GIT: motivo quando nao houver repositorio Git",
+        "the commit hash, or NO_GIT: reason when there is no Git repository",
     ),
 }
 
 
 def main(argv: list[str]) -> int:
-    # Snapshots próprios: se este flow dividir o `.harness/` com outros flows (mesmo
-    # workspace), ele NÃO pode sobrescrever o last-run.* que outro flow consome. Congela no
-    # seu próprio caminho.
-    # max_steps: override do teto global (12) — este flow é long-running e precisa de
-    # folga p/ o loop.
-    # should_reset_on_start: um "start" também chega no hard reset por feature (sessão fresca
-    # que reabre um run em andamento) — só é run novo de verdade quando não há feature pendente.
+    # Own snapshots: if this flow shares `.harness/` with other flows (same workspace), it
+    # must NOT overwrite the last-run.* that another flow consumes. Freezes at its own path.
+    # max_steps: override of the global ceiling (12) — this flow is long-running and needs
+    # slack for the loop.
+    # should_reset_on_start: a "start" also arrives on the per-feature hard reset (a fresh
+    # session reopening a run in progress) — it's only a genuinely new run when there's no
+    # pending feature.
     return harness_host.run(
         argv,
         TASKS,

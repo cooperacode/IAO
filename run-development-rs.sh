@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Wrapper de invocação estável do flow de desenvolvimento long-running — porta Rust
-# (paralelo a run-development.sh e run-development-py.sh).
+# Stable invocation wrapper for the long-running development flow — Rust port
+# (parallel to run-development.sh and run-development-py.sh).
 # start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 #
-# Sem artefato publicado, builda o binário sob demanda na primeira chamada
-# (cargo build --release). Diferente do .NET, não há distinção JIT/AOT: o binário do
-# `cargo build --release` já é nativo.
+# With no published artifact, builds the binary on demand on the first call
+# (cargo build --release). Unlike .NET, there's no JIT/AOT distinction: the binary from
+# `cargo build --release` is already native.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$DIR/src/rust"
@@ -18,10 +18,10 @@ fi
 
 if [[ ! -x "$BIN" ]]; then
   command -v cargo >/dev/null 2>&1 || {
-    echo "[harness] cargo não encontrado — instale via https://rustup.rs" >&2
+    echo "[harness] cargo not found — install via https://rustup.rs" >&2
     exit 1
   }
-  echo "[harness] nenhum artefato encontrado — buildando ($WORKSPACE)…" >&2
+  echo "[harness] no artifact found — building ($WORKSPACE)…" >&2
   (cd "$WORKSPACE" && cargo build --release --bin flows_development)
 fi
 

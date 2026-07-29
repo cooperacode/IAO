@@ -16,7 +16,7 @@ def test_format_contexto_persistido_e_reinjetado_no_envelope_de_saida():
     state_store.set_context({"driver": "claude code"})
     output = Envelope(EnvelopeType.COMMAND, "plan", ())
 
-    result = prompt_formatter.format("faça algo", output)
+    result = prompt_formatter.format("do something", output)
 
     assert '"context":{"driver":"claude code"}' in result
 
@@ -24,16 +24,16 @@ def test_format_contexto_persistido_e_reinjetado_no_envelope_de_saida():
 def test_format_sem_contexto_persistido_nao_emite_o_campo():
     output = Envelope(EnvelopeType.COMMAND, "plan", ())
 
-    result = prompt_formatter.format("faça algo", output)
+    result = prompt_formatter.format("do something", output)
 
     assert "context" not in result
 
 
 def test_format_contexto_ja_definido_na_task_nao_e_sobrescrito():
     state_store.set_context({"driver": "claude code"})
-    output = Envelope(EnvelopeType.COMMAND, "plan", (), context={"driver": "explicito"})
+    output = Envelope(EnvelopeType.COMMAND, "plan", (), context={"driver": "explicit"})
 
-    result = prompt_formatter.format("faça algo", output)
+    result = prompt_formatter.format("do something", output)
 
-    assert "explicito" in result
+    assert "explicit" in result
     assert "claude code" not in result

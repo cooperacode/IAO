@@ -4,18 +4,18 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O loop por feature do flow de desenvolvimento: cada task decide o PRÓXIMO comando (padrão
-/// do gate de avaliação). Cobre as ramificações — verify FAIL↺implement, verify PASS→handoff,
-/// handoff→bearings (próxima feature) vs. stop — e a guarda por feature.
+/// The development flow's per-feature loop: each task decides the NEXT command
+/// (evaluation-gate pattern). Covers the branches — verify FAIL↺implement, verify
+/// PASS→handoff, handoff→bearings (next feature) vs. stop — and the per-feature guard.
 /// </summary>
 public class DevelopmentFlowTests : IDisposable
 {
-    // id 1 tem prioridade 2; id 2 tem prioridade 1 → a de maior prioridade é a id 2.
+    // id 1 has priority 2; id 2 has priority 1 → the highest-priority one is id 2.
     private const string FeaturesJson =
         """[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]""";
 
-    // Pasta "docs" relativa ao CWD do processo de teste (mesma que HarnessConfig.DocsFolder usa
-    // por padrão) — só os testes de brief a populam; criada/apagada por eles mesmos.
+    // "docs" folder relative to the test process's CWD (the same one HarnessConfig.DocsFolder
+    // uses by default) — only the brief tests populate it; created/deleted by them.
     private static readonly string DocsDir = Path.Combine(Directory.GetCurrentDirectory(), "docs");
 
     private readonly string _targetDir;
@@ -51,9 +51,9 @@ public class DevelopmentFlowTests : IDisposable
         File.WriteAllText(Path.Combine(DocsDir, "brief.md"), content);
     }
 
-    // Espelha a fiação real de Flows.Development/Program.cs: só reseta StateStore/Trace no
-    // "start" quando não há feature pendente — sessão fresca do hard reset por feature deve
-    // RETOMAR, não apagar a trajetória/step acumulados das features anteriores.
+    // Mirrors Flows.Development/Program.cs's real wiring: only resets StateStore/Trace on
+    // "start" when there's no pending feature — a fresh session from the per-feature hard
+    // reset must RESUME, not erase the trajectory/step accumulated by previous features.
     private static readonly Dictionary<string, Func<Envelope?, string>> DispatchTasks = new()
     {
         ["start"] = _ => DevelopmentTasks.Start(),
@@ -92,7 +92,7 @@ public class DevelopmentFlowTests : IDisposable
     private string Plan() =>
         DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", _targetDir));
 
-    /// <summary>Leva o flow até deixar uma feature escolhida e implementada (pronta p/ verify).</summary>
+    /// <summary>Advances the flow until a feature is chosen and implemented (ready for verify).</summary>
     private void AdvanceToVerify()
     {
         Plan();
@@ -114,7 +114,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Start_SemFeaturePendente_ResetaFeatureListERunConfig()
     {
-        // Um run anterior terminou (tudo passando) - "start" pode começar de verdade do zero.
+        // A previous run finished (everything passing) - "start" can genuinely begin from scratch.
         Plan();
         foreach (var f in FeatureStore.Load())
             FeatureStore.MarkPassed(f.Id);
@@ -129,39 +129,40 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Start_ComFeaturePendente_RetomaViaBearingsEmVezDeResetar()
     {
-        // Uma sessão anterior (talvez outro driver) morreu no meio da feature "B" (id 2, ainda
-        // pendente). "start" não pode apagar nada - deve rotear direto para bearings.
-        AdvanceToVerify(); // ...→ implement, sessão "morre" aqui, antes do verify
+        // A previous session (maybe another driver) died mid-feature "B" (id 2, still
+        // pending). "start" must not erase anything - it should route straight to bearings.
+        AdvanceToVerify(); // ...→ implement, session "dies" here, before verify
 
         var result = DevelopmentTasks.Start();
 
-        Assert.Contains("NOVA SESSÃO", result); // bearings_prompt, não o inicializador
-        Assert.Equal(2, FeatureStore.Load().Count); // intacta
-        Assert.Equal(2, FeatureStore.PendingCount()); // nenhuma marcada como passando
-        Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd); // intacto
+        Assert.Contains("NEW SESSION", result); // bearings_prompt, not the initializer
+        Assert.Equal(2, FeatureStore.Load().Count); // untouched
+        Assert.Equal(2, FeatureStore.PendingCount()); // none marked as passing
+        Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd); // untouched
         Assert.Equal(_targetDir, RunConfigStore.Load().TargetDir);
     }
 
     [Fact]
     public void Dispatch_StartComFeaturePendente_NaoTruncaTraceNemStep()
     {
-        // Reproduz o hard reset por feature: uma feature ainda pendente ("B") e um trace/step
-        // já acumulados por features anteriores, quando a sessão fresca reabre com "start".
-        AdvanceToVerify(); // deixa a feature "B" pendente, sessão "morre" antes do verify
-        Trace.Append(41, "handoff", TraceOutcome.Instruction, 10); // trajetória de features passadas
-        var stepAntesDoStart = StateStore.Load().Step;
+        // Reproduces the per-feature hard reset: a feature still pending ("B") and a
+        // trace/step already accumulated by previous features, when the fresh session
+        // reopens with "start".
+        AdvanceToVerify(); // leaves feature "B" pending, session "dies" before verify
+        Trace.Append(41, "handoff", TraceOutcome.Instruction, 10); // trajectory from past features
+        var stepBeforeStart = StateStore.Load().Step;
 
         var result = DispatchJson("""{"type":"text","value":"start"}""");
 
-        Assert.Contains("NOVA SESSÃO", result); // retomou via bearings, não reiniciou
-        Assert.Contains(Trace.Load(), e => e is { Step: 41, Command: "handoff" }); // trace preservado
-        Assert.Equal(stepAntesDoStart + 1, StateStore.Load().Step); // contador continuou, não voltou a 1
+        Assert.Contains("NEW SESSION", result); // resumed via bearings, didn't restart
+        Assert.Contains(Trace.Load(), e => e is { Step: 41, Command: "handoff" }); // trace preserved
+        Assert.Equal(stepBeforeStart + 1, StateStore.Load().Step); // counter continued, didn't go back to 1
     }
 
     [Fact]
     public void Dispatch_StartSemFeaturePendente_TruncaTraceEStep()
     {
-        // Sem run em andamento, "start" É um início de verdade e deve truncar trace/step.
+        // With no run in progress, "start" IS a genuine beginning and must truncate trace/step.
         Plan();
         foreach (var f in FeatureStore.Load())
             FeatureStore.MarkPassed(f.Id);
@@ -181,7 +182,7 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Equal(2, FeatureStore.Load().Count);
         Assert.Equal("npm test", RunConfigStore.Load().VerifyCmd);
         Assert.Equal("web", RunConfigStore.Load().TargetDir);
-        Assert.Contains("NOVA SESSÃO", result);
+        Assert.Contains("NEW SESSION", result);
         Assert.Contains("\"value\":\"bearings\"", result);
     }
 
@@ -199,28 +200,28 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Start_ComFeaturePendente_PreservaORunIdDoPlanAnterior()
     {
-        AdvanceToVerify(); // ...→ implement, sessão "morre" aqui, antes do verify
-        var runIdAntesDoStart = RunConfigStore.Load().RunId;
-        Assert.False(string.IsNullOrWhiteSpace(runIdAntesDoStart));
+        AdvanceToVerify(); // ...→ implement, session "dies" here, before verify
+        var runIdBeforeStart = RunConfigStore.Load().RunId;
+        Assert.False(string.IsNullOrWhiteSpace(runIdBeforeStart));
 
         DevelopmentTasks.Start();
 
-        // Retomada não gera um novo run - a identidade do run tem que sobreviver ao "start".
-        Assert.Equal(runIdAntesDoStart, RunConfigStore.Load().RunId);
+        // Resuming doesn't generate a new run - run identity has to survive "start".
+        Assert.Equal(runIdBeforeStart, RunConfigStore.Load().RunId);
     }
 
-    // --- brief: persistência em Start() e reinjeção em bearings/implement --------------
+    // --- brief: persistence in Start() and reinjection in bearings/implement --------------
 
     [Fact]
     public void Start_ComDocsPopulados_PersisteOBriefNoArtifactStore()
     {
-        GivenDocsBrief("# Brief\n\nConstrua um app de tarefas.");
+        GivenDocsBrief("# Brief\n\nBuild a task-management app.");
 
         DevelopmentTasks.Start();
 
-        // DocsReader.Read antepõe um cabeçalho "## <arquivo>" antes do conteúdo — Contains, não
-        // igualdade exata (mesmo padrão de DocsReaderTests para o conteúdo consolidado).
-        Assert.Contains("Construa um app de tarefas.", ArtifactStore.Read("brief"));
+        // DocsReader.Read prepends a "## <file>" heading before the content — Contains, not
+        // exact equality (same pattern as DocsReaderTests for the consolidated content).
+        Assert.Contains("Build a task-management app.", ArtifactStore.Read("brief"));
     }
 
     [Fact]
@@ -234,10 +235,11 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Start_NovoRunSemDocs_ApagaBriefDoRunAnterior()
     {
-        // Um segundo run com o MESMO docs/ já se autocorrigiria via overwrite (não prova nada
-        // sobre o Reset()); o caso que só o ArtifactStore.Reset() resolve é docs→interativo: o
-        // modo interativo nunca chama Write, então sem o Reset() o brief antigo vazaria.
-        GivenDocsBrief("brief do tópico A");
+        // A second run with the SAME docs/ would already self-correct via overwrite (it
+        // doesn't prove anything about Reset()); the case only ArtifactStore.Reset() solves
+        // is docs→interactive: interactive mode never calls Write, so without Reset() the
+        // old brief would leak through.
+        GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
         Plan();
         foreach (var f in FeatureStore.Load())
@@ -252,18 +254,18 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Plan_RetornaBearingsComOBriefReinjetado()
     {
-        GivenDocsBrief("brief do tópico A");
+        GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
 
         var result = Plan();
 
-        Assert.Contains("brief do tópico A", result);
+        Assert.Contains("topic A brief", result);
     }
 
     [Fact]
     public void Pick_RetornaImplementComOBriefReinjetado()
     {
-        GivenDocsBrief("brief do tópico A");
+        GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
         Plan();
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
@@ -271,13 +273,13 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Pick(Cmd("pick"));
 
-        Assert.Contains("brief do tópico A", result);
+        Assert.Contains("topic A brief", result);
     }
 
     [Fact]
     public void BearingsEImplement_SemBriefPersistido_NaoTemTagBrief()
     {
-        // Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
+        // No docs/: interactive mode, no persisted brief — the block disappears, not empty.
         var bearings = Plan();
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
         DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
@@ -297,14 +299,14 @@ public class DevelopmentFlowTests : IDisposable
         DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
         DevelopmentTasks.Pick(Cmd("pick")); // escolhe "B" (prioridade 1), sem description/references
         DevelopmentTasks.Implement(Cmd("implement", "feito"));
-        DevelopmentTasks.Verify(Cmd("verify", "PASS")); // completa "B", avança automaticamente
+        DevelopmentTasks.Verify(Cmd("verify", "PASS")); // completes "B", auto-advances
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
         DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
 
         var result = DevelopmentTasks.Pick(Cmd("pick")); // agora escolhe "A"
 
-        Assert.Contains("Descrição: faz X", result);
-        Assert.Contains("Referências do brief: RF-003", result);
+        Assert.Contains("Description: faz X", result);
+        Assert.Contains("Brief references: RF-003", result);
     }
 
     [Fact]
@@ -316,19 +318,19 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Pick(Cmd("pick"));
 
-        Assert.DoesNotContain("Descrição:", result);
-        Assert.DoesNotContain("Referências do brief:", result);
+        Assert.DoesNotContain("Description:", result);
+        Assert.DoesNotContain("Brief references:", result);
     }
 
     [Fact]
     public void Plan_FeaturesInvalidas_ReemiteOPlano()
     {
-        var result = DevelopmentTasks.Plan(Cmd("plan", "não é json", "dotnet test", "."));
+        var result = DevelopmentTasks.Plan(Cmd("plan", "not json", "dotnet test", "."));
 
         Assert.Empty(FeatureStore.Load());
         Assert.Equal(new RunConfig(), RunConfigStore.Load()); // nada persistido
         Assert.Contains("\"value\":\"plan\"", result);
-        Assert.DoesNotContain("NOVA SESSÃO", result);
+        Assert.DoesNotContain("NEW SESSION", result);
     }
 
     [Fact]
@@ -353,7 +355,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Verify(Cmd("verify", "FAIL: testes vermelhos"));
 
-        Assert.Contains("FALHOU", result);
+        Assert.Contains("FAILED", result);
         Assert.Contains("\"value\":\"implement\"", result);
     }
 
@@ -364,7 +366,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
 
-        Assert.Contains("NOVA SESSÃO", result); // ainda falta a id 1
+        Assert.Contains("NEW SESSION", result); // ainda falta a id 1
         Assert.DoesNotContain("\"value\":\"handoff\"", result);
         Assert.Equal(1, FeatureStore.PendingCount());
         Assert.Contains("Feature #2", File.ReadAllText(Path.Combine(_targetDir, "progress.txt")));
@@ -386,7 +388,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
 
-        Assert.Contains("NOVA SESSÃO", result);
+        Assert.Contains("NEW SESSION", result);
         Assert.DoesNotContain("\"value\":\"verify\"", result);
         Assert.Equal(1, FeatureStore.PendingCount());
         var progress = File.ReadAllText(Path.Combine(_targetDir, "progress.txt"));
@@ -414,7 +416,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
 
-        Assert.Contains("FALHOU", result);
+        Assert.Contains("FAILED", result);
         Assert.Contains("feature 2 quebrou", result);
         Assert.Contains(".harness/logs/verify-feature-2.log", result);
         Assert.DoesNotContain("LINHA DETALHADA QUE FICA SO NO LOG", result);
@@ -435,7 +437,7 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.Contains("\"value\":\"verify\"", result);
         Assert.DoesNotContain("\"value\":\"handoff\"", result);
-        Assert.Contains("não começou", result);
+        Assert.Contains("did not start", result);
     }
 
     [Fact]
@@ -456,7 +458,7 @@ public class DevelopmentFlowTests : IDisposable
         AdvanceToVerify();
         var afterFirst = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
 
-        Assert.Contains("NOVA SESSÃO", afterFirst); // ainda falta a id 1
+        Assert.Contains("NEW SESSION", afterFirst); // ainda falta a id 1
         Assert.Equal(1, FeatureStore.PendingCount());
 
         // 2ª feature (id 1)
@@ -477,7 +479,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Handoff(Cmd("handoff", "abc123"));
 
-        Assert.Contains("NOVA SESSÃO", result);
+        Assert.Contains("NEW SESSION", result);
         Assert.Equal(1, FeatureStore.PendingCount());
     }
 
@@ -501,7 +503,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Verify(Cmd("verify", "PASS: tudo verde"));
 
-        Assert.Contains("NOVA SESSÃO", result);
+        Assert.Contains("NEW SESSION", result);
         var committedFiles = Git(repo, "show", "--name-only", "--format=", "HEAD");
         Assert.Contains("app/progress.txt", committedFiles);
         Assert.DoesNotContain("outside.txt", committedFiles);
@@ -515,7 +517,7 @@ public class DevelopmentFlowTests : IDisposable
         DevelopmentTasks.Bearings(Cmd("bearings", "ok")); // zera para 1
         StateStore.Set("feature_steps", DevelopmentTasks.StepsPerFeature.ToString()); // no limite
 
-        var result = DevelopmentTasks.Smoke(Cmd("smoke", "ok")); // próximo bump ultrapassa
+        var result = DevelopmentTasks.Smoke(Cmd("smoke", "ok")); // next bump goes over
 
         Assert.Equal("stop", result);
     }
@@ -530,7 +532,7 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Empty(FeatureStore.Load());
         Assert.Equal(new RunConfig(), RunConfigStore.Load());
         Assert.Contains("\"value\":\"plan\"", result);
-        Assert.DoesNotContain("NOVA SESSÃO", result);
+        Assert.DoesNotContain("NEW SESSION", result);
     }
 
     [Fact]
@@ -542,15 +544,15 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.Empty(FeatureStore.Load());
         Assert.Contains("\"value\":\"plan\"", result);
-        Assert.DoesNotContain("NOVA SESSÃO", result);
+        Assert.DoesNotContain("NEW SESSION", result);
     }
 
     [Fact]
     public void Plan_CorteMaxFeatures_RemoveDependenciaParaIdCortado()
     {
         // id 1 (prioridade 1, a melhor) sobrevive ao corte; depende do id 2, cuja prioridade
-        // (1000) é a pior de todas — garantidamente cortado pelo Take(MaxFeatures). Os "extras"
-        // preenchem as vagas restantes com prioridades intermediárias.
+        // (1000) is the worst of all — guaranteed to be cut by Take(MaxFeatures). The "extras"
+        // fill the remaining slots with intermediate priorities.
         var extrasJson = string.Join(",", Enumerable.Range(3, DevelopmentTasks.MaxFeatures - 1)
             .Select(i => $$"""{"id":{{i}},"title":"extra{{i}}","priority":{{i}}}"""));
         var json = """[{"id":1,"title":"sobrevivente","priority":1,"dependsOn":[2]},{"id":2,"title":"cortada","priority":1000},"""
@@ -560,14 +562,14 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.DoesNotContain(2, FeatureStore.Load().Select(f => f.Id)); // id 2 foi de fato cortado
         var survivor = FeatureStore.Load().Single(f => f.Id == 1);
-        Assert.DoesNotContain(2, survivor.Deps); // ...e a dependência não pode sobrar
+        Assert.DoesNotContain(2, survivor.Deps); // ...and the dependency can't survive either
     }
 
     [Fact]
     public void Pick_RespeitaDependencia_EscolheDependenciaAntesDaDependente()
     {
         // f1: prioridade pior, sem deps. f2: prioridade melhor, mas depende de f1.
-        var json = """[{"id":1,"title":"fundação","priority":2},{"id":2,"title":"depende","priority":1,"dependsOn":[1]}]""";
+        var json = """[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"depends","priority":1,"dependsOn":[1]}]""";
         DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", "."));
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
         DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
@@ -580,8 +582,8 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Pick_SemFeatureProntaMasComPendencia_EncerraSemReportarConcluido()
     {
-        // Grafo bloqueado gravado direto via Write (bypassando a validação de Parse).
-        Plan(); // popula RunConfig; a lista será sobrescrita a seguir
+        // Blocked graph written directly via Write (bypassing Parse's validation).
+        Plan(); // populates RunConfig; the list will be overwritten next
         FeatureStore.Write([
             new Feature(1, "A", 1, false, [2]),
             new Feature(2, "B", 2, false, [1]),

@@ -1,26 +1,26 @@
 ---
 name: dev-verify
-description: "self-verify da feature como um usuário faria"
+description: "E2E self-verify of the feature as a user would"
 ---
 
 # SKILL: E2E self-verify
 
-Verifique a feature **como um usuário faria**, não só que o código compila. O objetivo é
-provar o comportamento ponta a ponta antes de dar a feature por concluída.
+Verify the feature **as a user would**, not just that the code compiles. The goal is to prove
+the behavior end-to-end before declaring the feature done.
 
-- Se houver `verify-feature.sh` no diretório-alvo, rode `./verify-feature.sh <id-da-feature>`;
-  ele é o wrapper preferencial do harness e pode executar a suite completa. Quando rodar
-  manualmente, redirecione a saída completa para `.harness/logs/verify-<id>.log`.
-- Se não houver wrapper, rode o comando de verificação do projeto (`$VERIFY_CMD`) no
-  diretório-alvo e observe o resultado real — não presuma que passou. Também redirecione a
-  saída completa para `.harness/logs/verify-<id>.log`.
-- Leia no contexto só o trecho necessário do log (`tail -n 80`, primeira falha, stack trace
-  relevante). Não cole logs inteiros.
-- Quando fizer sentido, exercite o caminho do usuário de verdade (a rota, a tela, a chamada),
-  não apenas o teste unitário.
-- Seja honesto: um falso "passou" só empurra o problema para a próxima sessão, que começa sem
-  o seu contexto e terá mais dificuldade de achar a causa.
+- If there's a `verify-feature.sh` in the target directory, run
+  `./verify-feature.sh <feature-id>`; it's the harness's preferred wrapper and may run the full
+  suite. When running it manually, redirect full output to `.harness/logs/verify-<id>.log`.
+- If there's no wrapper, run the project's verification command (`$VERIFY_CMD`) in the target
+  directory and observe the actual result — don't assume it passed. Also redirect full output
+  to `.harness/logs/verify-<id>.log`.
+- Read only the necessary excerpt of the log into context (`tail -n 80`, first failure,
+  relevant stack trace). Don't paste whole logs.
+- When it makes sense, exercise the actual user path (the route, the screen, the call), not
+  just the unit test.
+- Be honest: a false "passed" only pushes the problem to the next session, which starts
+  without your context and will have a harder time finding the cause.
 
-Responda em `$RESULT` começando com:
-- `PASS: <resumo curto>. Log: <caminho>` — tudo verde, comportamento confirmado; ou
-- `FAIL: <motivo curto>. Log: <caminho>` — o que falhou (será o gancho para a correção).
+Answer in `$RESULT` starting with:
+- `PASS: <short summary>. Log: <path>` — everything green, behavior confirmed; or
+- `FAIL: <short reason>. Log: <path>` — what failed (this becomes the hook for the fix).

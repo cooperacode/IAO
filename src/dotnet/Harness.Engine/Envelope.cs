@@ -4,33 +4,34 @@ using System.Text.Json.Serialization;
 namespace Harness.Engine;
 
 /// <summary>
-/// Contrato de dados trafegado entre o driver (agente) e a máquina de estados.
-/// O modelo devolve este envelope como JSON; a engine faz o dispatch por <see cref="Value"/>.
+/// Data contract exchanged between the driver (agent) and the state machine.
+/// The model returns this envelope as JSON; the engine dispatches by <see cref="Value"/>.
 ///
-/// Não há campo de tokens: o driver típico é um LLM sem acesso ao <c>usage</c> da própria
-/// requisição, então qualquer contagem auto-reportada seria confabulada. O teto de custo
-/// usa apenas medidas que a engine atesta sozinha (passos e chars de instrução — ver
-/// <see cref="TaskRegistry"/>); tokens reais vivem nos metadados de billing do caller.
+/// There is no token field: the typical driver is an LLM with no access to its own
+/// request's <c>usage</c>, so any self-reported count would be confabulated. The cost
+/// ceiling only uses measures the engine can attest on its own (steps and instruction
+/// chars — see <see cref="TaskRegistry"/>); real tokens live in the caller's billing
+/// metadata.
 /// </summary>
 public record Envelope(
     string Type,
     string Value,
     string[]? Args)
 {
-    // Propriedade `init` (não posicional) para não quebrar os `new Envelope(Type, Value,
-    // Args)` já espalhados pelos flows — mesmo motivo do HarnessState.CostChars. Nasce no
-    // envelope `start` (ver TaskRegistry) e é reinjetada em toda saída por PromptFormatter,
-    // sem que cada task precise repassá-la.
+    // `init` property (non-positional) so it doesn't break the `new Envelope(Type, Value,
+    // Args)` calls already spread across the flows — same reason as HarnessState.CostChars.
+    // Born in the `start` envelope (see TaskRegistry) and reinjected into every output by
+    // PromptFormatter, without every task needing to pass it along.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string>? Context { get; init; }
 
     public string ToJson() => Serialize(this);
 
-    /// <summary>Parse tolerante: aceita cercas markdown e texto ao redor do objeto JSON.</summary>
+    /// <summary>Tolerant parse: accepts markdown fences and surrounding text around the JSON object.</summary>
     public static Envelope? Parse(string value) => TryParse(value);
 
-    // `record` promete semântica de valor, mas arrays são comparados por referência —
-    // sem isto, dois envelopes de conteúdo idêntico não seriam iguais.
+    // `record` promises value semantics, but arrays are compared by reference — without
+    // this, two envelopes with identical content would not be equal.
     public virtual bool Equals(Envelope? other) =>
         other is not null
         && Type == other.Type
@@ -54,8 +55,8 @@ public record Envelope(
         foreach (var arg in Args ?? [])
             hash.Add(arg);
 
-        // Order-independent: Equals ignora a ordem dos pares, então o hash precisa
-        // combinar sem depender dela (senão dois envelopes "iguais" teriam hashes diferentes).
+        // Order-independent: Equals ignores the pairs' order, so the hash needs to combine
+        // without depending on it (otherwise two "equal" envelopes would have different hashes).
         var contextHash = 0;
         foreach (var kv in Context ?? [])
             contextHash ^= HashCode.Combine(kv.Key, kv.Value);
@@ -64,7 +65,7 @@ public record Envelope(
         return hash.ToHashCode();
     }
 
-    // Source-generated: tipo anônimo + reflexão não sobrevivem ao Native AOT.
+    // Source-generated: anonymous type + reflection don't survive Native AOT.
     private static string Serialize(Envelope envelope) =>
         JsonSerializer.Serialize(envelope, HarnessJsonContext.Default.Envelope);
 
@@ -108,15 +109,15 @@ public record Envelope(
         }
         catch (Exception ex)
         {
-            // Diagnóstico vai para stderr — stdout é o canal de transporte do harness
-            // (o driver lê stdout como a próxima instrução) e não pode ser poluído.
+            // Diagnostics go to stderr — stdout is the harness's transport channel (the
+            // driver reads stdout as the next instruction) and must not be polluted.
             Console.Error.WriteLine(ex);
             return null;
         }
     }
 
-    // Modelos frequentemente embrulham o JSON em cercas markdown (```json … ```)
-    // ou adicionam texto ao redor. Normaliza para o objeto JSON bruto antes do parse.
+    // Models frequently wrap the JSON in markdown fences (```json … ```) or add
+    // surrounding text. Normalizes to the raw JSON object before parsing.
     private static string Sanitize(string value)
     {
         var v = value.Trim();

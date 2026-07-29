@@ -23,7 +23,7 @@ public class PromptFormatterTests : IDisposable
         StateStore.SetContext(new Dictionary<string, string> { ["driver"] = "claude code" });
         var output = new Envelope(EnvelopeType.Command, "plan", []);
 
-        var result = PromptFormatter.Format("faça algo", output);
+        var result = PromptFormatter.Format("do something", output);
 
         Assert.Contains("\"context\":{\"driver\":\"claude code\"}", result);
     }
@@ -33,7 +33,7 @@ public class PromptFormatterTests : IDisposable
     {
         var output = new Envelope(EnvelopeType.Command, "plan", []);
 
-        var result = PromptFormatter.Format("faça algo", output);
+        var result = PromptFormatter.Format("do something", output);
 
         Assert.DoesNotContain("context", result);
     }
@@ -44,12 +44,12 @@ public class PromptFormatterTests : IDisposable
         StateStore.SetContext(new Dictionary<string, string> { ["driver"] = "claude code" });
         var output = new Envelope(EnvelopeType.Command, "plan", [])
         {
-            Context = new Dictionary<string, string> { ["driver"] = "explicito" },
+            Context = new Dictionary<string, string> { ["driver"] = "explicit" },
         };
 
-        var result = PromptFormatter.Format("faça algo", output);
+        var result = PromptFormatter.Format("do something", output);
 
-        Assert.Contains("explicito", result);
+        Assert.Contains("explicit", result);
         Assert.DoesNotContain("claude code", result);
     }
 }

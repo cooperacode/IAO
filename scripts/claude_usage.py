@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Extrai consumo real de tokens e custo estimado dos transcripts locais do
-Claude Code para este projeto (~/.claude/projects/<projeto-codificado>/).
+"""Extracts actual token usage and estimated cost from the local Claude Code
+transcripts for this project (~/.claude/projects/<encoded-project>/).
 
-Soma diretamente os arquivos .jsonl de cada sessao e dos seus sub-agentes
-(subagents/agent-*.jsonl, recursivo) em vez de confiar no roll-up
-`toolUseResult.totalTokens` que o Claude Code grava no arquivo pai para
-chamadas de Task -- esse roll-up reflete so o snapshot da ultima turn do
-sub-agente, nao a soma real, e pode subestimar o consumo em ordens de
+Sums the .jsonl files of each session and its sub-agents directly
+(subagents/agent-*.jsonl, recursively) instead of relying on the roll-up
+`toolUseResult.totalTokens` that Claude Code writes to the parent file for
+Task calls -- that roll-up only reflects the snapshot of the sub-agent's
+last turn, not the real sum, and can underestimate usage by orders of
 magnitude.
 
-Uso:
+Usage:
     scripts/claude_usage.py
     scripts/claude_usage.py --by-session
     scripts/claude_usage.py --session "$CLAUDE_CODE_SESSION_ID"
@@ -39,11 +39,11 @@ class ModelPrice:
 
 
 # ---------------------------------------------------------------------------
-# TABELA DE PRECOS -- USD por 1.000.000 de tokens. Editar a mao quando a
-# Anthropic mudar os precos; nada mais no script precisa mudar.
-# Fonte: platform.claude.com/docs/en/pricing, conferido em 2026-07-19.
-# claude-sonnet-5 esta em preco promocional ($2/$10) ate 2026-08-31 --
-# trocar pela linha comentada (preco padrao $3/$15) depois dessa data.
+# PRICING TABLE -- USD per 1,000,000 tokens. Update by hand whenever
+# Anthropic changes prices; nothing else in the script needs to change.
+# Source: platform.claude.com/docs/en/pricing, checked on 2026-07-19.
+# claude-sonnet-5 is at promotional pricing ($2/$10) until 2026-08-31 --
+# swap in the commented-out line (standard price $3/$15) after that date.
 # ---------------------------------------------------------------------------
 PRICING: dict[str, ModelPrice] = {
     "claude-fable-5": ModelPrice(
@@ -95,14 +95,14 @@ PRICING: dict[str, ModelPrice] = {
         cache_write_1h=10.00,
         cache_read=0.50,
     ),
-    "claude-opus-4-1": ModelPrice(  # deprecated, retira 2026-08-05
+    "claude-opus-4-1": ModelPrice(  # deprecated, removed 2026-08-05
         input=15.00,
         output=75.00,
         cache_write_5m=18.75,
         cache_write_1h=30.00,
         cache_read=1.50,
     ),
-    "claude-opus-4-1-20250805": ModelPrice(  # deprecated, retira 2026-08-05
+    "claude-opus-4-1-20250805": ModelPrice(  # deprecated, removed 2026-08-05
         input=15.00,
         output=75.00,
         cache_write_5m=18.75,
@@ -116,7 +116,7 @@ PRICING: dict[str, ModelPrice] = {
         cache_write_1h=4.00,
         cache_read=0.20,
     ),
-    # "claude-sonnet-5": ModelPrice(input=3.00, output=15.00, cache_write_5m=3.75, cache_write_1h=6.00, cache_read=0.30),  # padrao, pos 2026-08-31
+    # "claude-sonnet-5": ModelPrice(input=3.00, output=15.00, cache_write_5m=3.75, cache_write_1h=6.00, cache_read=0.30),  # standard, after 2026-08-31
     "claude-sonnet-4-6": ModelPrice(
         input=3.00,
         output=15.00,
@@ -152,7 +152,7 @@ PRICING: dict[str, ModelPrice] = {
         cache_write_1h=2.00,
         cache_read=0.10,
     ),
-    "claude-3-5-haiku-20241022": ModelPrice(  # retirado 2026-02-19, so referencia p/ sessoes antigas
+    "claude-3-5-haiku-20241022": ModelPrice(  # removed 2026-02-19, kept only for reference in old sessions
         input=0.80,
         output=4.00,
         cache_write_5m=1.00,
@@ -259,12 +259,13 @@ def iter_usage_events(
     until: str | None = None,
     warnings: list[str] | None = None,
 ):
-    """Percorre toda turn assistant (sessao principal + sub-agentes, recursivo) e gera
-    eventos crus por linha: (session_id, agent_label, model, usage, timestamp).
+    """Walks every assistant turn (main session + sub-agents, recursively) and yields
+    raw per-line events: (session_id, agent_label, model, usage, timestamp).
 
-    Inclui eventos do modelo <synthetic> -- quem consome decide se filtra. Extraido de
-    `collect` para ser reaproveitado por ferramentas que precisam do timestamp por linha
-    (ex.: scripts/harness_cost_correlate.py), nao so do total agregado.
+    Includes events for the <synthetic> model -- it's up to the consumer to filter
+    them out. Extracted from `collect` so it can be reused by tools that need the
+    per-line timestamp (e.g. scripts/harness_cost_correlate.py), not just the
+    aggregate total.
     """
     for path, session_id, role, agent_label in walk_transcripts(project_dir):
         if session_filter and session_id != session_filter:
@@ -274,7 +275,7 @@ def iter_usage_events(
             lines = path.read_text().splitlines()
         except OSError as exc:
             if warnings is not None:
-                warnings.append(f"nao foi possivel ler {path}: {exc}")
+                warnings.append(f"could not read {path}: {exc}")
             continue
 
         for line in lines:
@@ -297,7 +298,7 @@ def iter_usage_events(
                 continue
 
             if warnings is not None and any("compact" in k.lower() for k in obj.keys()):
-                msg = f"chave relacionada a compactacao vista em {path.name} -- conferir possivel dupla contagem"
+                msg = f"compaction-related key seen in {path.name} -- check for possible double counting"
                 if msg not in warnings:
                     warnings.append(msg)
 
@@ -395,7 +396,7 @@ def render_model_table(totals: dict) -> None:
         "Cache Write",
         "Cache Read",
         "Total",
-        "Custo",
+        "Cost",
     ]
     print_table(rows, headers)
     grand_cost = sum(
@@ -405,12 +406,12 @@ def render_model_table(totals: dict) -> None:
     )
     unpriced = [m for m in by_model if by_model[m].cost(m) is None]
     print(
-        f"\nTotal geral: {grand.total_tokens:,} tokens, {fmt_cost(grand_cost)}"
-        + (" (parcial -- ha modelos sem preco)" if unpriced else "")
+        f"\nGrand total: {grand.total_tokens:,} tokens, {fmt_cost(grand_cost)}"
+        + (" (partial -- some models have no pricing)" if unpriced else "")
     )
     if unpriced:
         print(
-            f"Aviso: sem preco cadastrado para: {', '.join(sorted(unpriced))}",
+            f"Warning: no pricing registered for: {', '.join(sorted(unpriced))}",
             file=sys.stderr,
         )
 
@@ -433,7 +434,7 @@ def render_session_table(totals: dict, show_subagents: bool) -> None:
                 fmt_cost(cost),
             ]
         )
-    headers = ["Session", "Primeira turn", "Ultima turn", "Total", "Custo"]
+    headers = ["Session", "First turn", "Last turn", "Total", "Cost"]
     print_table(rows, headers)
 
     if show_subagents:
@@ -465,11 +466,11 @@ def to_jsonable(usage: UsageTotals, model: str | None = None) -> dict:
         "output_tokens": usage.output_tokens,
         "cache_creation_input_tokens": usage.cache_creation_input_tokens,
         "cache_read_input_tokens": usage.cache_read_input_tokens,
-        # Aliases no formato usado por codex_usage.py -- consumidores como
-        # skills/session-report/generate_report.py leem TOKEN_FIELDS por esses
-        # nomes independente do driver. Na API da Anthropic, input_tokens ja
-        # exclui cache (sao contadores irmaos, nao sobrepostos), entao
-        # non_cached_input_tokens == input_tokens.
+        # Aliases in the format used by codex_usage.py -- consumers such as
+        # skills/session-report/generate_report.py read TOKEN_FIELDS by these
+        # names regardless of driver. In the Anthropic API, input_tokens
+        # already excludes cache (they're sibling counters, not overlapping),
+        # so non_cached_input_tokens == input_tokens.
         "cached_input_tokens": usage.cache_read_input_tokens,
         "cache_write_input_tokens": usage.cache_creation_input_tokens,
         "non_cached_input_tokens": usage.input_tokens,
@@ -516,27 +517,27 @@ def main() -> None:
         "--project-dir",
         type=Path,
         default=None,
-        help="Override do diretorio de sessoes (default: calculado a partir da raiz do repo)",
+        help="Override the sessions directory (default: derived from the repo root)",
     )
     parser.add_argument(
-        "--session", default=None, help="Filtra por um session id especifico"
+        "--session", default=None, help="Filter by a specific session id"
     )
-    parser.add_argument("--since", default=None, help="Data minima (YYYY-MM-DD)")
-    parser.add_argument("--until", default=None, help="Data maxima (YYYY-MM-DD)")
+    parser.add_argument("--since", default=None, help="Minimum date (YYYY-MM-DD)")
+    parser.add_argument("--until", default=None, help="Maximum date (YYYY-MM-DD)")
     parser.add_argument(
-        "--by-session", action="store_true", help="Mostra tabela por sessao"
+        "--by-session", action="store_true", help="Show table grouped by session"
     )
     parser.add_argument(
         "--show-subagents",
         action="store_true",
-        help="Detalha sub-agentes (implica --by-session)",
+        help="Break down sub-agents (implies --by-session)",
     )
-    parser.add_argument("--json", action="store_true", help="Saida em JSON")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 
     project_dir = args.project_dir or default_project_dir()
     if not project_dir.is_dir():
-        print(f"Diretorio de sessoes nao encontrado: {project_dir}", file=sys.stderr)
+        print(f"Sessions directory not found: {project_dir}", file=sys.stderr)
         sys.exit(1)
 
     totals, synthetic, warnings = collect(
@@ -547,7 +548,7 @@ def main() -> None:
     )
 
     for w in warnings:
-        print(f"Aviso: {w}", file=sys.stderr)
+        print(f"Warning: {w}", file=sys.stderr)
 
     if args.json:
         render_json(totals, synthetic, warnings)

@@ -3,8 +3,8 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// Regressões do endurecimento: erro NUNCA pode virar "stop" silencioso, e o teto de
-/// passos precisa cortar loop infinito (guarda de token).
+/// Hardening regressions: an error must NEVER turn into a silent "stop", and the step
+/// ceiling has to cut off an infinite loop (token guard).
 /// </summary>
 public class TaskRegistryTests : IDisposable
 {
@@ -56,7 +56,7 @@ public class TaskRegistryTests : IDisposable
     {
         var result = TaskRegistry.Dispatch(["""{"type":"text","value":"tipo"}"""], Tasks);
 
-        Assert.StartsWith("ERRO", result);
+        Assert.StartsWith("HARNESS PROTOCOL ERROR", result);
         Assert.NotEqual("stop", result);
         Assert.Contains("'tipo'", result);
     }
@@ -66,7 +66,7 @@ public class TaskRegistryTests : IDisposable
     {
         var result = TaskRegistry.Dispatch(["""{"type":"text","value":"""], Tasks);
 
-        Assert.StartsWith("ERRO", result);
+        Assert.StartsWith("HARNESS PROTOCOL ERROR", result);
         Assert.NotEqual("stop", result);
     }
 
@@ -75,7 +75,7 @@ public class TaskRegistryTests : IDisposable
     {
         var result = TaskRegistry.Dispatch([], Tasks);
 
-        Assert.StartsWith("ERRO", result);
+        Assert.StartsWith("HARNESS PROTOCOL ERROR", result);
         Assert.NotEqual("stop", result);
     }
 
@@ -99,22 +99,22 @@ public class TaskRegistryTests : IDisposable
 
         TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks);
 
-        // start reseta e então conta a si mesmo como passo 1.
+        // start resets and then counts itself as step 1.
         Assert.Equal(1, StateStore.Load().Step);
     }
 
     [Fact]
     public void Dispatch_Start_ComShouldResetOnStartFalso_NaoTruncaStateNemTrace()
     {
-        // "start" também chega numa RETOMADA (sessão fresca reabrindo um run em andamento) —
-        // o flow sinaliza isso via shouldResetOnStart, e o Dispatch não pode truncar nada.
+        // "start" also arrives on a RESUME (a fresh session reopening a run in progress) —
+        // the flow signals this via shouldResetOnStart, and Dispatch must not truncate anything.
         for (var i = 0; i < 3; i++)
             TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
         Trace.Append(99, "handoff", TraceOutcome.Instruction, 5);
 
         TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks, shouldResetOnStart: () => false);
 
-        Assert.Equal(4, StateStore.Load().Step); // 3 anteriores + o próprio "start", sem reset
+        Assert.Equal(4, StateStore.Load().Step); // 3 previous + "start" itself, no reset
         Assert.Contains(Trace.Load(), e => e is { Step: 99, Command: "handoff" });
     }
 
@@ -126,7 +126,7 @@ public class TaskRegistryTests : IDisposable
 
         TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks);
 
-        Assert.Equal(1, StateStore.Load().Step); // retrocompatível: sem predicado, sempre reseta
+        Assert.Equal(1, StateStore.Load().Step); // backward compatible: no predicate, always resets
     }
 
     [Fact]
@@ -141,14 +141,14 @@ public class TaskRegistryTests : IDisposable
     [Fact]
     public void Dispatch_ContextoSobreviveAoStart_EEReinjetadoViaPromptFormatter()
     {
-        var tasksComPrompt = new Dictionary<string, Func<Envelope?, string>>
+        var tasksWithPrompt = new Dictionary<string, Func<Envelope?, string>>
         {
             ["start"] = _ => PromptFormatter.Format(
-                "instrução", new Envelope(EnvelopeType.Command, "plan", [])),
+                "instruction", new Envelope(EnvelopeType.Command, "plan", [])),
         };
 
         var result = TaskRegistry.Dispatch(
-            ["""{"type":"text","value":"start","context":{"driver":"claude code"}}"""], tasksComPrompt);
+            ["""{"type":"text","value":"start","context":{"driver":"claude code"}}"""], tasksWithPrompt);
 
         Assert.Contains("\"context\":{\"driver\":\"claude code\"}", result);
     }
@@ -156,14 +156,14 @@ public class TaskRegistryTests : IDisposable
     [Fact]
     public void Dispatch_AoExcederOTeto_ForcaStop()
     {
-        // Consome exatamente o teto — todas essas ainda executam normalmente.
+        // Consumes exactly the ceiling — all of these still run normally.
         for (var i = 0; i < TaskRegistry.MaxSteps; i++)
         {
             var ok = TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
             Assert.NotEqual("stop", ok);
         }
 
-        // O passo seguinte ultrapassa o teto e é cortado.
+        // The next step goes over the ceiling and gets cut off.
         var result = TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
 
         Assert.Equal("stop", result);

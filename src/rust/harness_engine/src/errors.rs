@@ -1,11 +1,10 @@
-//! Erros tipados do harness.
+//! Typed harness errors.
 
-/// Estourou o timeout de execução de um passo (ver `harness_config::timeout_ms`). Lançado
-/// e capturado dentro de `task_registry`: vira diagnóstico no stderr + `"stop"` no stdout
-/// — o mesmo contrato de encerramento gracioso das demais guardas (teto de passos e de
-/// custo).
+/// A step's execution timeout was exceeded (see `harness_config::timeout_ms`). Raised and
+/// caught inside `task_registry`: becomes a diagnostic on stderr + `"stop"` on stdout — the
+/// same graceful-shutdown contract as the other guards (step ceiling and cost ceiling).
 #[derive(Debug, thiserror::Error)]
-#[error("timeout de {timeout_ms}ms excedido na execução da task; encerrando.")]
+#[error("task execution exceeded the {timeout_ms}ms timeout; stopping.")]
 pub struct HarnessTimeoutError {
     pub timeout_ms: i32,
 }

@@ -1,5 +1,6 @@
-"""Config externa (`harness.json`): ausente ou inválida NUNCA derruba o run — cai nos
-defaults; parcial preenche só o que veio (zero = desligado apenas nos tetos de custo)."""
+"""External config (`harness.json`): missing or invalid NEVER brings down the run — falls
+back to defaults; partial only fills in what came in (zero = disabled, only for the
+cost ceilings)."""
 
 import os
 from pathlib import Path
@@ -23,8 +24,8 @@ def test_load_sem_arquivo_usa_defaults():
 
     assert config == harness_config.DEFAULT
     assert config.max_steps == 12
-    assert config.max_instruction_chars == 0  # teto de custo desligado por padrão
-    assert config.timeout_ms == 0  # guarda de tempo desligada por padrão
+    assert config.max_instruction_chars == 0  # cost ceiling disabled by default
+    assert config.timeout_ms == 0  # time guard disabled by default
 
 
 def test_load_com_timeout_le_e_normaliza():
@@ -32,7 +33,7 @@ def test_load_com_timeout_le_e_normaliza():
 
     assert harness_config.load().timeout_ms == 30000
 
-    # Valor negativo é normalizado para 0 (desligado), como o teto de custo.
+    # A negative value is normalized to 0 (disabled), like the cost ceiling.
     Path(CONFIG_PATH).write_text('{"timeoutMs":-5}')
     assert harness_config.load().timeout_ms == 0
 
@@ -62,7 +63,7 @@ def test_load_arquivo_parcial_completa_com_defaults():
 
 
 def test_load_arquivo_invalido_cai_nos_defaults_sem_lancar():
-    Path(CONFIG_PATH).write_text("{ isso não é json ")
+    Path(CONFIG_PATH).write_text("{ this is not json ")
 
     config = harness_config.load()
 
@@ -70,8 +71,8 @@ def test_load_arquivo_invalido_cai_nos_defaults_sem_lancar():
 
 
 def test_load_timeout_acima_do_teto_clampa_no_maximo_permitido():
-    # harness.json vive no working directory do agente supervisionado: mesmo que ele edite
-    # o arquivo para se auto-conceder um timeout enorme, o teto duro prevalece.
+    # harness.json lives in the supervised agent's working directory: even if it edits
+    # the file to grant itself a huge timeout, the hard ceiling prevails.
     Path(CONFIG_PATH).write_text('{"timeoutMs":99999999}')
 
     assert harness_config.load().timeout_ms == 5 * 60_000
@@ -92,6 +93,6 @@ def test_load_env_var_tambem_respeita_o_teto():
 
 def test_load_env_var_invalida_e_ignorada():
     Path(CONFIG_PATH).write_text('{"timeoutMs":1000}')
-    os.environ["HARNESS_TIMEOUT_MS"] = "não é número"
+    os.environ["HARNESS_TIMEOUT_MS"] = "not a number"
 
     assert harness_config.load().timeout_ms == 1000

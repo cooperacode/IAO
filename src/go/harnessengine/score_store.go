@@ -24,22 +24,22 @@ type ScoreReport struct {
 // AppendScore appends a score report.
 func AppendScore(report ScoreReport) {
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[ScoreStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[ScoreStore] failed to write: %s\n", err)
 		return
 	}
 	line, err := json.Marshal(report)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ScoreStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[ScoreStore] failed to write: %s\n", err)
 		return
 	}
 	f, err := os.OpenFile(scoreFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ScoreStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[ScoreStore] failed to write: %s\n", err)
 		return
 	}
 	defer f.Close()
 	if _, err := f.WriteString(string(line) + "\n"); err != nil {
-		fmt.Fprintf(os.Stderr, "[ScoreStore] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[ScoreStore] failed to write: %s\n", err)
 	}
 }
 
@@ -50,7 +50,7 @@ func LoadScores() []ScoreReport {
 	}
 	data, err := os.ReadFile(scoreFilePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ScoreStore] falha ao carregar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[ScoreStore] failed to load: %s\n", err)
 		return []ScoreReport{}
 	}
 	reports := []ScoreReport{}

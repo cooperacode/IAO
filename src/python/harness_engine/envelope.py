@@ -1,11 +1,11 @@
-"""Contrato de dados trafegado entre o driver (agente) e a máquina de estados.
+"""Data contract exchanged between the driver (agent) and the state machine.
 
-O modelo devolve este envelope como JSON; a engine faz o dispatch por `value`.
+The model returns this envelope as JSON; the engine dispatches by `value`.
 
-Não há campo de tokens: o driver típico é um LLM sem acesso ao `usage` da própria
-requisição, então qualquer contagem auto-reportada seria confabulada. O teto de custo
-usa apenas medidas que a engine atesta sozinha (passos e chars de instrução — ver
-`task_registry`); tokens reais vivem nos metadados de billing do caller.
+There is no tokens field: the typical driver is an LLM with no access to its own
+request's `usage`, so any self-reported count would be confabulated. The cost ceiling
+only uses measures the engine attests itself (steps and instruction chars — see
+`task_registry`); real tokens live in the caller's billing metadata.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 
 class EnvelopeType:
-    """Sinais de protocolo carregados em `Envelope.type`."""
+    """Protocol signals carried in `Envelope.type`."""
 
     TEXT = "text"
     TOOL = "tool"
@@ -28,8 +28,8 @@ class EnvelopeType:
 class Envelope:
     type: str
     value: str
-    # Tupla (não lista): imutável e comparável por valor de graça — o C# precisa de
-    # Equals/GetHashCode manuais porque array é comparado por referência; aqui não.
+    # Tuple (not list): immutable and comparable by value for free — C# needs manual
+    # Equals/GetHashCode because arrays compare by reference; not the case here.
     args: tuple[str, ...] = ()
     context: dict[str, str] | None = None
 
@@ -45,23 +45,23 @@ class Envelope:
 
     @staticmethod
     def parse(value: str) -> "Envelope | None":
-        """Parse tolerante: aceita cercas markdown e texto ao redor do objeto JSON."""
+        """Tolerant parse: accepts markdown fences and surrounding text around the JSON object."""
         return Envelope._try_parse(value)
 
     @staticmethod
     def _try_parse(value: str) -> "Envelope | None":
         try:
             if value is None or not value.strip():
-                raise ValueError("O envelope JSON não pode ser nulo ou vazio.")
+                raise ValueError("The JSON envelope cannot be null or empty.")
 
             root = json.loads(Envelope._sanitize(value))
             if not isinstance(root, dict):
-                raise ValueError("O payload do envelope deve ser um objeto JSON.")
+                raise ValueError("The envelope payload must be a JSON object.")
 
             type_ = root.get("type") or ""
             envelope_value = root.get("value") or ""
             if not isinstance(type_, str) or not isinstance(envelope_value, str):
-                raise TypeError("'type' e 'value' devem ser strings.")
+                raise TypeError("'type' and 'value' must be strings.")
 
             args_raw = root.get("args")
             args: tuple[str, ...] = ()
@@ -69,7 +69,7 @@ class Envelope:
                 collected: list[str] = []
                 for item in args_raw:
                     if not isinstance(item, str):
-                        raise TypeError("cada item de 'args' deve ser uma string.")
+                        raise TypeError("each item in 'args' must be a string.")
                     if item.strip():
                         collected.append(item)
                 args = tuple(collected)
@@ -80,18 +80,18 @@ class Envelope:
                 context = {}
                 for key, val in context_raw.items():
                     if not isinstance(val, str):
-                        raise TypeError("cada valor de 'context' deve ser uma string.")
+                        raise TypeError("each value in 'context' must be a string.")
                     context[str(key)] = val
 
             return Envelope(type_, envelope_value, args, context)
         except Exception as ex:
-            # Diagnóstico vai para stderr — stdout é o canal de transporte do harness
-            # (o driver lê stdout como a próxima instrução) e não pode ser poluído.
+            # Diagnostics go to stderr — stdout is the harness transport channel (the
+            # driver reads stdout as the next instruction) and must not be polluted.
             print(ex, file=sys.stderr)
             return None
 
-    # Modelos frequentemente embrulham o JSON em cercas markdown (```json … ```)
-    # ou adicionam texto ao redor. Normaliza para o objeto JSON bruto antes do parse.
+    # Models frequently wrap the JSON in markdown fences (```json … ```) or add
+    # surrounding text. Normalize to the raw JSON object before parsing.
     @staticmethod
     def _sanitize(value: str) -> str:
         v = value.strip()

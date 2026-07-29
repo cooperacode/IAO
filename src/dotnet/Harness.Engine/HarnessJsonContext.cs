@@ -3,9 +3,9 @@ using System.Text.Json.Serialization;
 namespace Harness.Engine;
 
 /// <summary>
-/// Metadados de serialização gerados em tempo de compilação. Native AOT não permite a
-/// reflexão que o JsonSerializer usa por padrão — o source generator resolve isso e
-/// elimina os warnings de trimming.
+/// Compile-time-generated serialization metadata. Native AOT doesn't allow the reflection
+/// JsonSerializer uses by default — the source generator resolves this and eliminates
+/// the trimming warnings.
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(Envelope))]
@@ -18,13 +18,13 @@ namespace Harness.Engine;
 [JsonSerializable(typeof(Feature))]
 [JsonSerializable(typeof(FeatureList))]
 [JsonSerializable(typeof(RunConfig))]
-// Array cru p/ desserializar o que o driver devolve no `plan` (`[{id,title,priority}, ...]`).
+// Raw array to deserialize what the driver returns in `plan` (`[{id,title,priority}, ...]`).
 [JsonSerializable(typeof(Feature[]), TypeInfoPropertyName = "FeatureArray")]
 internal partial class HarnessJsonContext : JsonSerializerContext;
 
 /// <summary>
-/// Contexto dedicado à visão persistida das features. Mantê-lo separado evita alterar a
-/// serialização compacta dos demais stores e dos eventos JSONL.
+/// Context dedicated to the persisted view of features. Keeping it separate avoids
+/// altering the compact serialization of the other stores and the JSONL events.
 /// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

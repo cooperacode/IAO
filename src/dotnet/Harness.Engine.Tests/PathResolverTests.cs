@@ -3,10 +3,10 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// PathResolver é a única porta de entrada para docs/skills relativos ao CWD; um symlink
-/// que desvia o alvo para fora da base autorizada é o cenário adversarial que o
-/// containment (RFC §6.3) precisa fechar sem quebrar o uso legítimo (arquivo comum, dentro
-/// da mesma pasta).
+/// PathResolver is the sole entry point for docs/skills relative to the CWD; a symlink
+/// that steers the target outside the authorized base is the adversarial scenario the
+/// containment (RFC §6.3) needs to close without breaking legitimate use (a regular file,
+/// inside the same folder).
 /// </summary>
 public class PathResolverTests : IDisposable
 {
@@ -36,7 +36,7 @@ public class PathResolverTests : IDisposable
     public void Resolve_ArquivoComumDentroDoCwd_Resolve()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(Path.Combine(_dir, "a.txt"), "conteúdo");
+        File.WriteAllText(Path.Combine(_dir, "a.txt"), "content");
         Directory.SetCurrentDirectory(_dir);
 
         var resolved = PathResolver.Resolve("a.txt");
@@ -48,7 +48,7 @@ public class PathResolverTests : IDisposable
     public void Resolve_SymlinkQueEscapaDoCwd_NaoSeguoLink()
     {
         if (OperatingSystem.IsWindows())
-            return; // criar symlink no CI Windows exige privilégio elevado; cenário coberto nos outros dois engines.
+            return; // creating a symlink on Windows CI requires elevated privileges; scenario covered by the other two engines.
 
         var workDir = Path.Combine(_dir, "work");
         var outsideDir = Path.Combine(_dir, "outside");
@@ -56,17 +56,17 @@ public class PathResolverTests : IDisposable
         Directory.CreateDirectory(outsideDir);
 
         var secretFile = Path.Combine(outsideDir, "secret.txt");
-        File.WriteAllText(secretFile, "fora da base autorizada");
+        File.WriteAllText(secretFile, "outside the authorized base");
 
-        var linkPath = Path.Combine(workDir, "desviado.txt");
+        var linkPath = Path.Combine(workDir, "diverted.txt");
         File.CreateSymbolicLink(linkPath, secretFile);
 
         Directory.SetCurrentDirectory(workDir);
 
-        var resolved = PathResolver.Resolve("desviado.txt");
+        var resolved = PathResolver.Resolve("diverted.txt");
 
-        // Nunca deve devolver o alvo real fora da base — mesmo que o link exista e aponte
-        // para um arquivo válido, o containment tem que barrar o desvio.
+        // Must never return the real target outside the base — even if the link exists
+        // and points to a valid file, containment has to block the diversion.
         Assert.NotEqual(Path.GetFullPath(secretFile), Path.GetFullPath(resolved));
     }
 }

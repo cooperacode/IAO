@@ -70,14 +70,14 @@ func ResetTrace() {
 		return
 	}
 	if err := os.Remove(traceFilePath); err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao limpar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to clear: %s\n", err)
 	}
 }
 
 // AppendTrace appends a labeled trace entry.
 func AppendTrace(step int, command, outcome string, instructionChars int, label string) {
 	if err := ensureDir(traceDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to write: %s\n", err)
 		return
 	}
 
@@ -93,13 +93,13 @@ func AppendTrace(step int, command, outcome string, instructionChars int, label 
 
 	line, err := json.Marshal(entry)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to write: %s\n", err)
 		return
 	}
 
 	f, err := os.OpenFile(traceFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to write: %s\n", err)
 		return
 	}
 	defer f.Close()
@@ -107,7 +107,7 @@ func AppendTrace(step int, command, outcome string, instructionChars int, label 
 	// Single write for the whole line (JSON + newline already assembled) — the guarantee
 	// that the event is atomic at the file level.
 	if _, err := f.WriteString(string(line) + "\n"); err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao gravar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to write: %s\n", err)
 	}
 }
 
@@ -148,11 +148,11 @@ func SnapshotTrace(destination string) {
 		return
 	}
 	if err := ensureDir(traceDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao congelar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to freeze: %s\n", err)
 		return
 	}
 	if err := copyAtomic(traceFilePath, destination); err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao congelar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to freeze: %s\n", err)
 	}
 }
 
@@ -169,7 +169,7 @@ func LoadTraceFrom(path string) []TraceEntry {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[Trace] falha ao carregar: %s\n", err)
+		fmt.Fprintf(os.Stderr, "[Trace] failed to load: %s\n", err)
 		return []TraceEntry{}
 	}
 	defer f.Close()

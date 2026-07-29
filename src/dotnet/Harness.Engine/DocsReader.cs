@@ -3,25 +3,25 @@ using System.Text;
 namespace Harness.Engine;
 
 /// <summary>
-/// Lê um conjunto de documentos (`*.md` e `*.txt`) de uma pasta para injetar no prompt.
-/// É a entrada alternativa ao input interativo: o flow lê o material já existente
-/// (specs, notas, transcrições) e o modelo sintetiza um brief a partir dele.
+/// Reads a set of documents (`*.md` and `*.txt`) from a folder to inject into the prompt.
+/// It's the alternative input to the interactive one: the flow reads existing material
+/// (specs, notes, transcripts) and the model synthesizes a brief from it.
 ///
-/// Análogo a como <see cref="PromptFormatter"/> injeta skills — a leitura é determinística
-/// (feita em código), só a síntese fica com o modelo.
+/// Analogous to how <see cref="PromptFormatter"/> injects skills — the reading is
+/// deterministic (done in code), only the synthesis is left to the model.
 /// </summary>
 public static class DocsReader
 {
-    // Teto de octetos UTF-8 (RFC Apêndice B item 1: medir em bytes, não em chars .NET, para
-    // que o teto tenha o mesmo significado entre engines .NET/Python/Rust): injetar docs
-    // gigantes queima tokens de forma silenciosa, e o repo mede tokens (ver bench/). Ao
-    // exceder, trunca em fronteira de byte líder válida e avisa no stderr. O nome do campo
-    // (DocsMaxChars, vindo do harness.json/HarnessConfig) não muda — só a unidade medida.
+    // UTF-8 octet ceiling (RFC Appendix B item 1: measure in bytes, not .NET chars, so the
+    // ceiling has the same meaning across the .NET/Python/Rust engines): injecting giant
+    // docs silently burns tokens, and the repo measures tokens (see bench/). On overflow,
+    // truncates at a valid leading-byte boundary and warns on stderr. The field name
+    // (DocsMaxChars, from harness.json/HarnessConfig) doesn't change — only the measured unit.
     private static int MaxChars => HarnessConfig.Current.DocsMaxChars;
 
     private static readonly string[] Extensions = [".md", ".txt"];
 
-    /// <summary>Existe a pasta e há ao menos um arquivo `*.md`/`*.txt`?</summary>
+    /// <summary>Does the folder exist and hold at least one `*.md`/`*.txt` file?</summary>
     public static bool HasDocs(string folder)
     {
         var dir = PathResolver.Resolve(folder);
@@ -29,8 +29,8 @@ public static class DocsReader
     }
 
     /// <summary>
-    /// Concatena os documentos em ordem alfabética, cada um sob um cabeçalho
-    /// `## &lt;nome-do-arquivo&gt;`, e devolve também a lista de nomes (para citar as fontes).
+    /// Concatenates the documents in alphabetical order, each under a
+    /// `## &lt;file-name&gt;` heading, and also returns the list of names (to cite the sources).
     /// </summary>
     public static (string Content, string[] Files) Read(string folder)
     {
@@ -52,7 +52,7 @@ public static class DocsReader
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[DocsReader] falha ao ler {name}: {ex.Message}");
+                Console.Error.WriteLine($"[DocsReader] failed to read {name}: {ex.Message}");
                 continue;
             }
 
@@ -62,7 +62,7 @@ public static class DocsReader
             if (Encoding.UTF8.GetByteCount(sb.ToString()) > MaxChars)
             {
                 Console.Error.WriteLine(
-                    $"[DocsReader] conteúdo excedeu {MaxChars} bytes (UTF-8); truncando em {name}.");
+                    $"[DocsReader] content exceeded {MaxChars} bytes (UTF-8); truncating at {name}.");
                 var truncated = TruncateUtf8Bytes(sb.ToString(), MaxChars);
                 sb.Clear().Append(truncated);
                 break;
@@ -73,9 +73,10 @@ public static class DocsReader
     }
 
     /// <summary>
-    /// Corta <paramref name="text"/> em no máximo <paramref name="maxBytes"/> octetos UTF-8,
-    /// recuando até uma fronteira de byte líder válida — nunca parte um caractere multibyte
-    /// (acento, emoji) ao meio, o que produziria bytes inválidos/replacement characters.
+    /// Cuts <paramref name="text"/> at no more than <paramref name="maxBytes"/> UTF-8
+    /// octets, backing off to a valid leading-byte boundary — never splits a multi-byte
+    /// character (accent, emoji) in half, which would produce invalid bytes/replacement
+    /// characters.
     /// </summary>
     private static string TruncateUtf8Bytes(string text, int maxBytes)
     {
@@ -84,8 +85,9 @@ public static class DocsReader
             return text;
 
         var cut = maxBytes;
-        // Byte de continuação UTF-8 tem os dois bits mais significativos "10" (0x80..0xBF);
-        // recuar até um byte que NÃO é continuação garante que [0, cut) é uma sequência completa.
+        // A UTF-8 continuation byte has its two most significant bits as "10" (0x80..0xBF);
+        // backing off until a byte that is NOT a continuation guarantees [0, cut) is a
+        // complete sequence.
         while (cut > 0 && (bytes[cut] & 0xC0) == 0x80)
             cut--;
 

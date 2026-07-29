@@ -3,42 +3,46 @@ using Harness.Engine;
 namespace Flows.Development;
 
 /// <summary>
-/// Flow de desenvolvimento long-running (padrão "Effective harnesses for long-running agents",
-/// Anthropic). Um inicializador (session 0) expande o brief numa lista priorizada de features;
-/// depois um loop de sessões de contexto fresco implementa UMA feature por vez:
+/// Long-running development flow ("Effective harnesses for long-running agents" pattern,
+/// Anthropic). An initializer (session 0) expands the brief into a prioritized feature
+/// list; then a loop of fresh-context sessions implements ONE feature at a time:
 ///
 ///   start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
 ///
-/// O estado que atravessa os hard resets vive em artefatos persistentes: a
-/// <see cref="FeatureStore"/> (feature_list.json, do harness) e o progress.txt + git
-/// (do diretório-alvo). Cada task só faz efeitos e decide o PRÓXIMO comando (o <c>output</c> Envelope)
-/// — a orquestração (dispatch, guardas globais, transporte) fica em Harness.Engine.
+/// The state that survives the hard resets lives in persistent artifacts: the
+/// <see cref="FeatureStore"/> (feature_list.json, the harness's) and progress.txt + git
+/// (the target directory's). Each task only performs effects and decides the NEXT
+/// command (the <c>output</c> Envelope) — orchestration (dispatch, global guards, transport)
+/// lives in Harness.Engine.
 ///
-/// Prompts em <c>DevelopmentTasks.Prompt.cs</c> (partial).
+/// Prompts live in <c>DevelopmentTasks.Prompt.cs</c> (partial).
 /// </summary>
 public static partial class DevelopmentTasks
 {
-    // Guardas locais deste flow (o teto global do harness.json, 12, é curto demais p/ um loop).
-    // Poucas features + teto de passos POR feature: barra o loop implement↔verify que nunca fecha.
+    // Local guards for this flow (harness.json's global ceiling, 12, is too short for a
+    // loop). Few features + a per-feature step ceiling: bars the implement↔verify loop
+    // that never closes.
     public const int MaxFeatures = 10;
     public const int StepsPerFeature = 8;
 
-    // Teto de passos efetivo passado ao HarnessHost (override do global): folga p/ o pior caso
-    // de MaxFeatures features gastando StepsPerFeature cada, mais o start/plan e as fronteiras.
+    // Effective step ceiling passed to HarnessHost (override of the global one): slack for
+    // the worst case of MaxFeatures features spending StepsPerFeature each, plus
+    // start/plan and the boundaries.
     public const int StepBudget = MaxFeatures * StepsPerFeature + 8;
 
-    // Chaves do StateStore.Data usadas pelos arquivos parciais deste flow (Handoff/Prompt/
-    // Verify) — const em vez de string literal repetida, para que um typo em qualquer um
-    // dos arquivos vire erro de compilação em vez de uma chave nunca lida.
+    // StateStore.Data keys used by this flow's partial files (Handoff/Prompt/Verify) — a
+    // const instead of a repeated string literal, so a typo in any of these files becomes
+    // a compile error instead of a key that's never read.
     private const string CurrentFeatureIdKey = "current_feature_id";
     private const string CurrentFeatureTitleKey = "current_feature_title";
     private const string CurrentFeatureSummaryKey = "current_feature_summary";
     private const string CurrentFeatureVerifyKey = "current_feature_verify";
     private const string FeatureStepsKey = "feature_steps";
 
-    // Nome do artefato do brief no ArtifactStore (.harness/brief.md) — persistido em Start()
-    // para poder ser reinjetado em bearings/implement (DevelopmentTasks.Prompt.cs), já que o
-    // conteúdo lido de docs/ hoje só existia como variável local do turno do inicializador.
+    // Name of the brief artifact in ArtifactStore (.harness/brief.md) — persisted in
+    // Start() so it can be reinjected into bearings/implement (DevelopmentTasks.Prompt.cs),
+    // since the content read from docs/ used to exist only as a local variable of the
+    // initializer's turn.
     private const string BriefArtifactName = "brief";
 
     private static string State(string key) => StateStore.Get(key) ?? "";
@@ -46,34 +50,36 @@ public static partial class DevelopmentTasks
 
     public static string Start()
     {
-        // Uma sessão anterior (talvez de outro driver — os tokens acabaram numa IDE e outra
-        // assume) pode ter morrido no meio de uma feature. Reiniciar jogaria fora trabalho em
-        // andamento; retomar é seguro e determinístico: Bearings é reentrante por construção
-        // (só rearma a guarda por feature) e o próximo Pick() reseleciona a mesma feature,
-        // ainda pendente — sem precisar saber exatamente onde a sessão anterior parou.
+        // A previous session (maybe from another driver — tokens ran out in one IDE and
+        // another takes over) may have died mid-feature. Restarting would throw away work
+        // in progress; resuming is safe and deterministic: Bearings is reentrant by
+        // construction (it only rearms the per-feature guard) and the next Pick()
+        // reselects the same feature, still pending — without needing to know exactly
+        // where the previous session stopped.
         if (FeatureStore.PendingCount() > 0)
         {
             Console.Error.WriteLine(
-                "[dev] run em andamento detectado (feature pendente); retomando via bearings em vez de resetar.");
+                "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.");
             return BearingsPrompt();
         }
 
-        // Flow PRODUTOR da feature_list: novo run apaga a do run anterior.
+        // Flow that PRODUCES feature_list: a new run erases the previous run's.
         FeatureStore.Reset();
         RunConfigStore.Reset();
-        // Sem isto, um run novo no modo interativo (sem docs/) herdaria silenciosamente o
-        // brief.md de um run anterior — o modo interativo nunca chama ArtifactStore.Write,
-        // então só este Reset garante que nenhum brief de um tópico antigo sobrevive.
+        // Without this, a new run in interactive mode (no docs/) would silently inherit
+        // the brief.md from a previous run — interactive mode never calls
+        // ArtifactStore.Write, so only this Reset guarantees no brief from an old topic
+        // survives.
         ArtifactStore.Reset();
 
-        // Brief (o que construir) vem de docs/ ou, sem docs, do modo interativo.
+        // Brief (what to build) comes from docs/ or, without docs, from interactive mode.
         if (!DocsReader.HasDocs(DocsFolder))
             return InitializerInteractive();
 
         var (content, files) = DocsReader.Read(DocsFolder);
-        // Persistido para ser reinjetado em bearings/implement (DevelopmentTasks.Prompt.cs) —
-        // antes desta feature, "content" era só uma variável local deste turno, descartada
-        // assim que o inicializador terminava.
+        // Persisted so it can be reinjected into bearings/implement
+        // (DevelopmentTasks.Prompt.cs) — before this feature, "content" was only a local
+        // variable of this turn, discarded as soon as the initializer finished.
         ArtifactStore.Write(BriefArtifactName, content);
         StateStore.Set("origem", "docs");
         return InitializerPrompt(content, files);
@@ -83,25 +89,27 @@ public static partial class DevelopmentTasks
     {
         var features = FeatureStore.Parse(Arg(envelope));
         if (features.Count == 0)
-            return PlanRetryPrompt(); // não interpretou → re-pede (loop corretivo)
+            return PlanRetryPrompt(); // couldn't parse → re-request (corrective loop)
 
-        // Teto de features: fica com as de maior prioridade (menor número).
+        // Feature ceiling: keeps the highest-priority ones (lowest number).
         var capped = features.OrderBy(f => f.Priority).ThenBy(f => f.Id).Take(MaxFeatures).ToList();
 
-        // Higieniza DependsOn: uma feature sobrevivente pode depender de um id cortado acima,
-        // o que a bloquearia para sempre (nunca "pronta") sem que o driver tenha como saber —
-        // quem cortou foi o harness, não ele. Cortar nós de um grafo já acíclico (validado em
-        // FeatureStore.Parse) não pode criar ciclo, então só a limpeza de dangling é necessária.
+        // Sanitize DependsOn: a surviving feature may depend on an id cut above, which
+        // would block it forever (never "ready") with no way for the driver to know — the
+        // harness did the cutting, not it. Cutting nodes from an already-acyclic graph
+        // (validated in FeatureStore.Parse) can't create a cycle, so only cleaning up
+        // dangling references is needed.
         var cappedIds = capped.Select(f => f.Id).ToHashSet();
         capped = [.. capped.Select(f => f with { DependsOn = f.Deps.Where(cappedIds.Contains).ToArray() })];
 
         FeatureStore.Write(capped);
 
-        // Comando de verificação, diretório-alvo e identidade do run: reidratados a cada passo
-        // de smoke/verify. Fora de state.json de propósito - ver RunConfigStore. RunId nasce
-        // aqui (mesmo instante em que Start() decidiu que este é um run novo, não retomado) e
-        // sobrevive a toda sessão seguinte sem precisar aparecer no Envelope trocado com o
-        // modelo (RFC §6.4 — identidade do run é concern do control plane, não do contrato).
+        // Verify command, target directory, and run identity: rehydrated on every
+        // smoke/verify step. Kept out of state.json on purpose - see RunConfigStore. RunId
+        // is born here (the same instant Start() decided this is a new run, not a resumed
+        // one) and survives every subsequent session without needing to appear in the
+        // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
+        // concern, not part of the contract).
         RunConfigStore.Write(new RunConfig(
             ArgAt(envelope, 1, "dotnet test"),
             ArgAt(envelope, 2, "."),
@@ -112,36 +120,38 @@ public static partial class DevelopmentTasks
 
     public static string Bearings(Envelope? envelope)
     {
-        // Nova sessão (uma feature): zera o contador da guarda por feature.
+        // New session (one feature): resets the per-feature guard counter.
         StateStore.Set(FeatureStepsKey, "1");
         return SmokePrompt();
     }
 
     public static string Smoke(Envelope? envelope) =>
-        OverFeatureBudget() ? Stop("guarda por feature") : PickPrompt();
+        OverFeatureBudget() ? Stop("per-feature guard") : PickPrompt();
 
     public static string Pick(Envelope? envelope)
     {
         if (OverFeatureBudget())
-            return Stop("guarda por feature");
+            return Stop("per-feature guard");
 
-        // Seleção DETERMINÍSTICA: maior prioridade entre as prontas (dependências satisfeitas).
-        // O harness escolhe, não o LLM.
+        // DETERMINISTIC selection: highest priority among the ready ones (dependencies
+        // satisfied). The harness chooses, not the LLM.
         var next = FeatureStore.NextPending();
         if (next is null)
         {
-            // PendingCount() == 0 é o caso normal (handoff já teria fechado antes). Pendência
-            // > 0 só é alcançável por um feature_list.json editado à mão fora do grafo validado
-            // no plan (Write/MarkPassed não revalidam) — não finge sucesso nesse caso.
+            // PendingCount() == 0 is the normal case (handoff would already have closed it
+            // before). A pending count > 0 is only reachable via a feature_list.json
+            // hand-edited outside the graph validated in plan (Write/MarkPassed don't
+            // revalidate) — doesn't fake success in that case.
             return FeatureStore.PendingCount() == 0
                 ? Done()
-                : Stop("dependências bloqueadas — nenhuma feature pendente está pronta");
+                : Stop("blocked dependencies — no pending feature is ready");
         }
 
         StateStore.Set(CurrentFeatureIdKey, next.Id.ToString());
         StateStore.Set(CurrentFeatureTitleKey, next.Title);
-        // Etiqueta o trace com a feature corrente (ver TraceEntry.Label) — sem isso, cada
-        // linha do trace.jsonl só tem o Step global, sem dizer a qual feature ele pertence.
+        // Tags the trace with the current feature (see TraceEntry.Label) — without this,
+        // every trace.jsonl line only has the global Step, without saying which feature it
+        // belongs to.
         StateStore.Set(StateStore.TraceLabelKey, $"feature:{next.Id}");
         return ImplementPrompt(next);
     }
@@ -149,7 +159,7 @@ public static partial class DevelopmentTasks
     public static string Implement(Envelope? envelope)
     {
         if (OverFeatureBudget())
-            return Stop("guarda por feature");
+            return Stop("per-feature guard");
 
         var summary = Arg(envelope).Trim();
         if (!string.IsNullOrWhiteSpace(summary))
@@ -170,11 +180,12 @@ public static partial class DevelopmentTasks
     public static string Verify(Envelope? envelope)
     {
         if (OverFeatureBudget())
-            return Stop("guarda por feature");
+            return Stop("per-feature guard");
 
-        // FALHOU → volta a implementar a MESMA feature (loop de correção, limitado pela guarda).
-        // PASSOU → o harness faz o handoff determinístico (progress + git) sem gastar um
-        // turno do modelo; se falhar, cai no prompt legado de reparo manual.
+        // FAILED → back to implementing the SAME feature (correction loop, bounded by the
+        // guard). PASSED → the harness does the deterministic handoff (progress + git)
+        // without spending a model turn; if it fails, falls back to the legacy
+        // manual-repair prompt.
         var result = Arg(envelope).Trim();
         if (result.StartsWith("FAIL", StringComparison.OrdinalIgnoreCase))
             return FixPrompt(result);
@@ -196,13 +207,13 @@ public static partial class DevelopmentTasks
         if (int.TryParse(State(CurrentFeatureIdKey), out var id))
             FeatureStore.MarkPassed(id);
 
-        // Alguma feature ainda pendente? Sim → próxima sessão (bearings). Não → fim.
+        // Any feature still pending? Yes → next session (bearings). No → done.
         return FeatureStore.AllPassing() ? Done() : BearingsPrompt();
     }
 
-    // --- guardas e término -------------------------------------------------
+    // --- guards and termination -------------------------------------------------
 
-    /// <summary>Incrementa o contador da sessão e sinaliza estouro do teto por feature.</summary>
+    /// <summary>Increments the session counter and signals a per-feature ceiling overrun.</summary>
     private static bool OverFeatureBudget()
     {
         var steps = (int.TryParse(State(FeatureStepsKey), out var s) ? s : 0) + 1;
@@ -211,23 +222,23 @@ public static partial class DevelopmentTasks
         if (steps > StepsPerFeature)
         {
             Console.Error.WriteLine(
-                $"[dev] feature '{State(CurrentFeatureTitleKey)}' excedeu {StepsPerFeature} passos; encerrando.");
+                $"[dev] feature '{State(CurrentFeatureTitleKey)}' exceeded {StepsPerFeature} steps; stopping.");
             return true;
         }
         return false;
     }
 
-    private static string Stop(string motivo)
+    private static string Stop(string reason)
     {
-        Console.Error.WriteLine($"[dev] encerrado por {motivo}. feature_list em .harness/feature_list.json");
+        Console.Error.WriteLine($"[dev] stopped due to {reason}. feature_list in .harness/feature_list.json");
         return "stop";
     }
 
     private static string Done()
     {
         Console.Error.WriteLine(
-            $"[dev] todas as {FeatureStore.Load().Count} features passam; concluído. "
-            + "Estado em .harness/feature_list.json");
+            $"[dev] all {FeatureStore.Load().Count} features pass; done. "
+            + "State in .harness/feature_list.json");
         return "stop";
     }
 

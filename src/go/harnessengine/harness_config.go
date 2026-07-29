@@ -89,11 +89,11 @@ func LoadConfig() HarnessConfig {
 			if err := json.Unmarshal(data, &parsed); err == nil {
 				config = parsed
 			} else {
-				fmt.Fprintf(os.Stderr, "[HarnessConfig] falha ao carregar; usando defaults: %s\n", err)
+				fmt.Fprintf(os.Stderr, "[HarnessConfig] failed to load; using defaults: %s\n", err)
 				config = DefaultHarnessConfig()
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "[HarnessConfig] falha ao carregar; usando defaults: %s\n", err)
+			fmt.Fprintf(os.Stderr, "[HarnessConfig] failed to load; using defaults: %s\n", err)
 		}
 	}
 

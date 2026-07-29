@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Extrai uso de tokens e custo estimado dos rollouts locais do Codex.
+"""Extracts token usage and estimated cost from the local Codex rollouts.
 
-Codex grava sessoes em:
+Codex writes sessions to:
 
     $CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl
     $CODEX_HOME/archived_sessions/rollout-*.jsonl
 
-Este script le eventos `event_msg` com `payload.type == "token_count"`.
-Para evitar dupla contagem quando Codex repete um evento apenas para atualizar
-rate limits, os totais sao calculados por delta positivo de
-`payload.info.total_token_usage`, nao pela soma cega de `last_token_usage`.
+This script reads `event_msg` events with `payload.type == "token_count"`.
+To avoid double counting when Codex repeats an event just to update rate
+limits, totals are computed from the positive delta of
+`payload.info.total_token_usage` rather than blindly summing
+`last_token_usage`.
 
-Uso:
+Usage:
     scripts/codex_usage.py
     scripts/codex_usage.py --by-session
     scripts/codex_usage.py --session <uuid> --json
@@ -31,10 +32,10 @@ from pathlib import Path
 from typing import Iterable
 
 UNKNOWN_MODEL = "<unknown>"
-# Fonte: paginas de modelo em https://developers.openai.com/api/docs/models/*
-# (gpt-5.4, gpt-5.4-pro, gpt-5.5, gpt-5.6-sol/terra/luna), conferido em
+# Source: model pages at https://developers.openai.com/api/docs/models/*
+# (gpt-5.4, gpt-5.4-pro, gpt-5.5, gpt-5.6-sol/terra/luna), checked on
 # 2026-07-22: "prompts with >272K input tokens are priced at 2x input and
-# 1.5x output". A tabela de pricing nao mostra esse numero explicitamente.
+# 1.5x output". The pricing table does not show this number explicitly.
 LONG_CONTEXT_THRESHOLD = 272_000
 
 
@@ -47,13 +48,13 @@ class ModelPrice:
 
 
 # ---------------------------------------------------------------------------
-# TABELA DE PRECOS -- USD por 1.000.000 de tokens.
-# Fonte: https://developers.openai.com/api/docs/pricing, conferido em
-# 2026-07-20. Edite quando a OpenAI alterar os precos.
+# PRICING TABLE -- USD per 1,000,000 tokens.
+# Source: https://developers.openai.com/api/docs/pricing, checked on
+# 2026-07-20. Update whenever OpenAI changes prices.
 #
-# Para sessoes autenticadas via ChatGPT, isto e uma estimativa API-like, nao
-# uma recuperacao de custo faturado real. Modelos sem preco publico ficam como
-# "n/a".
+# For sessions authenticated via ChatGPT, this is an API-like estimate, not
+# an actual billed-cost reconciliation. Models with no public pricing are
+# shown as "n/a".
 # ---------------------------------------------------------------------------
 PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
     "standard": {
@@ -314,7 +315,7 @@ def load_rollout_events(
     try:
         lines = path.read_text().splitlines()
     except OSError as exc:
-        session.warnings.append(f"nao foi possivel ler {path}: {exc}")
+        session.warnings.append(f"could not read {path}: {exc}")
         return session, events
 
     for line in lines:
@@ -364,7 +365,7 @@ def load_rollout_events(
         previous_total = current_total
         if reset:
             session.warnings.append(
-                f"contador de tokens reiniciou em {path.name}; somando novo acumulado"
+                f"token counter reset in {path.name}; summing new cumulative total"
             )
 
         if since and ts and ts < since:
@@ -430,7 +431,7 @@ def session_matches_repo(session: SessionUsage, repo: Path | None) -> bool:
 
 
 def session_parent_id(session: SessionUsage) -> str | None:
-    """Retorna o parent thread gravado pelo Codex para sessoes de subagente."""
+    """Returns the parent thread recorded by Codex for sub-agent sessions."""
     source = session.source
     if not isinstance(source, dict):
         return None
@@ -448,7 +449,7 @@ def session_tree_ids(
     sessions: Iterable[SessionUsage],
     root_session_id: str,
 ) -> set[str]:
-    """Seleciona a raiz e todos os descendentes, em qualquer profundidade."""
+    """Selects the root and all descendants, at any depth."""
     sessions_list = list(sessions)
     known_ids = {session.session_id for session in sessions_list}
     if root_session_id not in known_ids:
@@ -478,7 +479,7 @@ def _filter_sessions_by_scope(
     warnings: list[str],
 ) -> list[SessionUsage]:
     if session_filter and session_tree:
-        raise ValueError("session_filter e session_tree sao mutuamente exclusivos")
+        raise ValueError("session_filter and session_tree are mutually exclusive")
     if session_filter:
         return [session for session in sessions if session.session_id == session_filter]
     if not session_tree:
@@ -486,7 +487,7 @@ def _filter_sessions_by_scope(
 
     selected_ids = session_tree_ids(sessions, session_tree)
     if not selected_ids:
-        warnings.append(f"raiz da arvore de sessoes nao encontrada: {session_tree}")
+        warnings.append(f"session tree root not found: {session_tree}")
         return []
     return [session for session in sessions if session.session_id in selected_ids]
 
@@ -529,7 +530,7 @@ def collect_sessions(
             if current_key > previous_key:
                 by_id[session.session_id] = session
             warnings.append(
-                "sessao duplicada ignorada: "
+                "duplicate session ignored: "
                 f"{session.session_id} ({previous.path} / {session.path})"
             )
         sessions = list(by_id.values())
@@ -555,11 +556,11 @@ def iter_usage_events(
     dedupe: bool = True,
     warnings: list[str] | None = None,
 ):
-    """Gera eventos crus de uso: (session_id, model, usage, timestamp, context_window).
+    """Yields raw usage events: (session_id, model, usage, timestamp, context_window).
 
-    `usage` ja e o delta positivo entre snapshots acumulados do rollout. Isso
-    permite correlacionar consumo por janelas externas de tempo sem reimplementar
-    o parser de Codex em outros scripts.
+    `usage` is already the positive delta between cumulative rollout snapshots.
+    This lets other scripts correlate usage against external time windows
+    without reimplementing the Codex parser.
     """
     candidates: list[tuple[SessionUsage, list[UsageEvent]]] = []
     for path in walk_rollouts(home, include_archived):
@@ -592,7 +593,7 @@ def iter_usage_events(
                 by_id[session.session_id] = (session, events)
             if warnings is not None:
                 warnings.append(
-                    "sessao duplicada ignorada: "
+                    "duplicate session ignored: "
                     f"{session.session_id} ({previous_session.path} / {session.path})"
                 )
         candidates = list(by_id.values())
@@ -753,16 +754,16 @@ def render_model_table(
             "Output",
             "Reasoning",
             "Total",
-            "Custo",
+            "Cost",
         ],
     )
     print(
-        f"\nTotal geral: {grand.total_tokens:,} tokens, {fmt_cost(grand_cost)}"
-        + (" (parcial -- ha modelos sem preco)" if unpriced else "")
+        f"\nGrand total: {grand.total_tokens:,} tokens, {fmt_cost(grand_cost)}"
+        + (" (partial -- some models have no pricing)" if unpriced else "")
     )
     if unpriced:
         print(
-            f"Aviso: sem preco cadastrado para: {', '.join(sorted(unpriced))}",
+            f"Warning: no pricing registered for: {', '.join(sorted(unpriced))}",
             file=sys.stderr,
         )
 
@@ -792,13 +793,13 @@ def render_session_table(
             row.append(str(session.path))
         rows.append(row)
 
-    headers = ["Session", "Primeira turn", "Ultima turn", "Modelos", "Total", "Custo"]
+    headers = ["Session", "First turn", "Last turn", "Models", "Total", "Cost"]
     if show_path:
-        headers.append("Arquivo")
+        headers.append("File")
     print_table(rows, headers)
     if unpriced_seen:
         print(
-            f"Aviso: sem preco cadastrado para: {', '.join(sorted(unpriced_seen))}",
+            f"Warning: no pricing registered for: {', '.join(sorted(unpriced_seen))}",
             file=sys.stderr,
         )
 
@@ -882,66 +883,66 @@ def main() -> None:
         "--codex-home",
         type=Path,
         default=None,
-        help="Override do CODEX_HOME (default: $CODEX_HOME ou ~/.codex)",
+        help="Override CODEX_HOME (default: $CODEX_HOME or ~/.codex)",
     )
     parser.add_argument(
         "--repo",
         type=Path,
         default=None,
-        help="Filtra sessoes cujo cwd esta dentro deste repo (default: repo atual)",
+        help="Filter sessions whose cwd is inside this repo (default: current repo)",
     )
     parser.add_argument(
         "--all-repos",
         action="store_true",
-        help="Nao filtra por repo/cwd",
+        help="Do not filter by repo/cwd",
     )
     session_scope = parser.add_mutually_exclusive_group()
-    session_scope.add_argument("--session", default=None, help="Filtra por session id")
+    session_scope.add_argument("--session", default=None, help="Filter by session id")
     session_scope.add_argument(
         "--session-tree",
         default=None,
-        help="Filtra pela sessao raiz e todos os seus subagentes descendentes",
+        help="Filter by the root session and all of its descendant sub-agents",
     )
-    parser.add_argument("--since", default=None, help="Data minima ISO ou YYYY-MM-DD")
-    parser.add_argument("--until", default=None, help="Data maxima ISO ou YYYY-MM-DD")
+    parser.add_argument("--since", default=None, help="Minimum date, ISO or YYYY-MM-DD")
+    parser.add_argument("--until", default=None, help="Maximum date, ISO or YYYY-MM-DD")
     parser.add_argument(
         "--no-archived",
         action="store_true",
-        help="Ignora $CODEX_HOME/archived_sessions",
+        help="Ignore $CODEX_HOME/archived_sessions",
     )
     parser.add_argument(
         "--no-dedupe",
         action="store_true",
-        help="Nao remove rollouts duplicados com o mesmo session id",
+        help="Do not remove duplicate rollouts with the same session id",
     )
     parser.add_argument(
         "--pricing-tier",
         choices=sorted(PRICING),
         default="standard",
-        help="Tabela de preco API usada na estimativa",
+        help="API pricing table used for the estimate",
     )
     parser.add_argument(
         "--context-rate",
         choices=["auto", "short", "long"],
         default="auto",
-        help="Escolhe preco short/long context; auto usa model_context_window > 272k",
+        help="Choose short/long context pricing; auto uses model_context_window > 272k",
     )
     parser.add_argument(
         "--by-session",
         action="store_true",
-        help="Mostra tabela por sessao",
+        help="Show table grouped by session",
     )
     parser.add_argument(
         "--show-path",
         action="store_true",
-        help="Inclui arquivo rollout na tabela por sessao",
+        help="Include the rollout file in the per-session table",
     )
-    parser.add_argument("--json", action="store_true", help="Saida em JSON")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 
     home = args.codex_home or codex_home()
     if not home.is_dir():
-        print(f"CODEX_HOME nao encontrado: {home}", file=sys.stderr)
+        print(f"CODEX_HOME not found: {home}", file=sys.stderr)
         sys.exit(1)
 
     repo = None if args.all_repos else _resolve(args.repo or repo_root())
@@ -957,7 +958,7 @@ def main() -> None:
     )
 
     for warning in warnings:
-        print(f"Aviso: {warning}", file=sys.stderr)
+        print(f"Warning: {warning}", file=sys.stderr)
 
     if args.json:
         render_json(

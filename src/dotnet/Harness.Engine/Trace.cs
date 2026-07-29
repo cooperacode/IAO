@@ -5,12 +5,12 @@ using System.Text.Json;
 namespace Harness.Engine;
 
 /// <summary>
-/// Grava uma linha por volta do loop em <c>.harness/trace.jsonl</c>. É a base tanto da
-/// Telemetria (#7 do diagrama) quanto do Evaluator de trajetória (#6): o <see cref="StateStore"/>
-/// guarda só o estado final — sobrescreve o <c>Data</c> a cada passo —, então sem esta
-/// sequência gravada não há como avaliar o caminho que o agente percorreu.
+/// Writes one line per loop turn to <c>.harness/trace.jsonl</c>. It's the foundation for
+/// both Telemetry (diagram #7) and the trajectory Evaluator (#6): <see cref="StateStore"/>
+/// keeps only the final state — it overwrites <c>Data</c> on every step —, so without this
+/// recorded sequence there's no way to evaluate the path the agent took.
 ///
-/// Custo: zero token e uma escrita append por invocação.
+/// Cost: zero tokens and one append write per invocation.
 /// </summary>
 public static class Trace
 {
@@ -18,22 +18,21 @@ public static class Trace
     private const string FilePath = ".harness/trace.jsonl";
 
     /// <summary>
-    /// Trajetória congelada do último refinamento que terminou em <c>stop</c>. O
-    /// <see cref="HarnessHost"/> grava aqui ao concluir o flow produtor, para que outro flow
-    /// (a avaliação) leia a evidência mesmo depois de resetar o <c>trace.jsonl</c> vivo no
-    /// próprio <c>start</c>.
+    /// Frozen trajectory of the last refinement that ended in <c>stop</c>. <see cref="HarnessHost"/>
+    /// writes here when the producing flow completes, so another flow (evaluation) can read
+    /// the evidence even after its own <c>start</c> resets the live <c>trace.jsonl</c>.
     /// </summary>
     public const string LastRunPath = ".harness/last-run.trace.jsonl";
 
     /// <summary>
-    /// Trajetória congelada do último run de <b>avaliação</b>. Caminho próprio para que a
-    /// avaliação (que também termina em <c>stop</c>) não sobrescreva a evidência do
-    /// refinamento em <see cref="LastRunPath"/> — do contrário, uma reavaliação leria o
-    /// trace da avaliação anterior e reprovaria a trajetória espuriamente.
+    /// Frozen trajectory of the last <b>evaluation</b> run. Its own path so that evaluation
+    /// (which also ends in <c>stop</c>) doesn't overwrite refinement's evidence at
+    /// <see cref="LastRunPath"/> — otherwise, a re-evaluation would read the previous
+    /// evaluation's trace and spuriously fail the trajectory.
     /// </summary>
     public const string LastEvaluationPath = ".harness/last-evaluation.trace.jsonl";
 
-    /// <summary>Trunca o trace no início de um novo workflow (junto do <see cref="StateStore.Reset"/>).</summary>
+    /// <summary>Truncates the trace at the start of a new workflow (alongside <see cref="StateStore.Reset"/>).</summary>
     public static void Reset()
     {
         try
@@ -43,7 +42,7 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] falha ao limpar: {ex.Message}");
+            Console.Error.WriteLine($"[Trace] failed to clear: {ex.Message}");
         }
     }
 
@@ -55,21 +54,22 @@ public static class Trace
             var prevHash = ComputePrevHash();
             var entry = new TraceEntry(step, command, outcome, instructionChars, DateTimeOffset.UtcNow, prevHash, label);
             var line = JsonSerializer.Serialize(entry, HarnessJsonContext.Default.TraceEntry);
-            // Uma única chamada de append para a linha inteira (já com prevHash embutido) —
-            // é o que garante atomicidade do evento no nível do arquivo.
+            // A single append call for the whole line (already with prevHash embedded) — this
+            // is what guarantees the event's atomicity at the file level.
             File.AppendAllText(FilePath, line + "\n");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] falha ao gravar: {ex.Message}");
+            Console.Error.WriteLine($"[Trace] failed to write: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Hash-chain (RFC §6.13): cada linha referencia o SHA-256 hex-lowercase da linha anterior
-    /// (exatamente como ela foi gravada, byte a byte), tornando qualquer edição/remoção
-    /// retroativa do trace detectável — a cadeia quebra a partir do ponto alterado. Gênese
-    /// (primeira entrada do arquivo, inclusive logo após um <see cref="Reset"/>) usa 64 zeros.
+    /// Hash chain (RFC §6.13): each line references the SHA-256 hex-lowercase of the
+    /// previous line (exactly as it was written, byte for byte), making any retroactive
+    /// edit/removal of the trace detectable — the chain breaks from the altered point on.
+    /// Genesis (the file's first entry, including right after a <see cref="Reset"/>) uses
+    /// 64 zeros.
     /// </summary>
     private static string ComputePrevHash()
     {
@@ -86,8 +86,8 @@ public static class Trace
         if (!File.Exists(FilePath))
             return null;
 
-        // trace.jsonl é append-only e limitado ao teto de passos de um run — ler tudo é
-        // aceitável aqui; não há necessidade de otimizar para leitura reversa por bloco.
+        // trace.jsonl is append-only and bounded by a run's step ceiling — reading it all
+        // is acceptable here; no need to optimize for reverse block reads.
         var lines = File.ReadAllLines(FilePath);
         for (var i = lines.Length - 1; i >= 0; i--)
         {
@@ -98,7 +98,7 @@ public static class Trace
         return null;
     }
 
-    /// <summary>Congela o trace vivo no caminho de destino — a evidência do run concluído.</summary>
+    /// <summary>Freezes the live trace at the destination path — the evidence of the completed run.</summary>
     public static void Snapshot(string destination)
     {
         try
@@ -111,14 +111,14 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] falha ao congelar: {ex.Message}");
+            Console.Error.WriteLine($"[Trace] failed to freeze: {ex.Message}");
         }
     }
 
-    /// <summary>Relê o trace vivo na ordem em que foi gravado.</summary>
+    /// <summary>Re-reads the live trace in the order it was written.</summary>
     public static IReadOnlyList<TraceEntry> Load() => LoadFrom(FilePath);
 
-    /// <summary>Relê um trace de um caminho arbitrário — insumo dos evaluators (ex.: o snapshot).</summary>
+    /// <summary>Re-reads a trace from an arbitrary path — input for the evaluators (e.g. the snapshot).</summary>
     public static IReadOnlyList<TraceEntry> LoadFrom(string path)
     {
         try
@@ -134,44 +134,45 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] falha ao carregar: {ex.Message}");
+            Console.Error.WriteLine($"[Trace] failed to load: {ex.Message}");
             return [];
         }
     }
 }
 
 /// <summary>
-/// Uma volta do loop: passo, comando recebido, desfecho, custo (octetos UTF-8 da instrução
-/// emitida), horário de gravação e <see cref="PrevHash"/> — o SHA-256 hex-lowercase da linha
-/// anterior do trace, formando a hash-chain (RFC §6.13) que torna edição/remoção retroativa
-/// detectável. O timestamp não é dado de token — é só quando o passo aconteceu, mesma
-/// categoria de <see cref="Step"/>/<see cref="Outcome"/> — mas dá a chave temporal que falta
-/// para correlacionar cada passo com os tokens reais que o driver gastou decidindo-o
-/// (ver scripts/harness_cost_correlate.py), sem o harness precisar auto-relatar tokens.
+/// One loop turn: step, received command, outcome, cost (UTF-8 octets of the emitted
+/// instruction), write timestamp, and <see cref="PrevHash"/> — the SHA-256 hex-lowercase
+/// of the trace's previous line, forming the hash chain (RFC §6.13) that makes retroactive
+/// edit/removal detectable. The timestamp isn't token data — it's just when the step
+/// happened, same category as <see cref="Step"/>/<see cref="Outcome"/> — but it supplies
+/// the missing time key to correlate each step with the real tokens the driver spent
+/// deciding it (see scripts/harness_cost_correlate.py), without the harness having to
+/// self-report tokens.
 ///
-/// <see cref="Label"/> é a etiqueta opcional e agnóstica de domínio (ex.: "feature:3") que
-/// resolve a mesma dor do <see cref="StateStore"/>: <see cref="Step"/> é um contador global do
-/// run inteiro, não identifica a QUE unidade de trabalho o passo pertence. A engine só
-/// carrega o valor — quem decide o que ele significa é o flow (ver DevelopmentTasks.Pick).
+/// <see cref="Label"/> is the optional, domain-agnostic tag (e.g. "feature:3") that solves
+/// the same pain point as <see cref="StateStore"/>: <see cref="Step"/> is a global counter
+/// for the whole run, it doesn't identify WHICH unit of work the step belongs to. The
+/// engine only carries the value — the flow decides what it means (see DevelopmentTasks.Pick).
 /// </summary>
 ///
 /// <remarks>
-/// <see cref="PrevHash"/> e <see cref="Label"/> são os últimos campos posicionais, ambos com
-/// default <c>""</c> de propósito: preserva os call-sites posicionais existentes (testes que
-/// constroem <c>TraceEntry</c> diretamente, sem se importar com a cadeia ou a etiqueta) e
-/// permite ler um <c>trace.jsonl</c> legado, gravado antes destas mudanças, sem lançar na
-/// desserialização.
+/// <see cref="PrevHash"/> and <see cref="Label"/> are the last positional fields, both
+/// defaulting to <c>""</c> on purpose: this preserves existing positional call sites
+/// (tests that construct <c>TraceEntry</c> directly, without caring about the chain or the
+/// label) and allows reading a legacy <c>trace.jsonl</c>, written before these changes,
+/// without throwing during deserialization.
 /// </remarks>
 public record TraceEntry(
     int Step, string Command, string Outcome, int InstructionChars, DateTimeOffset Timestamp,
     string PrevHash = "", string Label = "");
 
-/// <summary>Desfechos possíveis de um passo, gravados em <see cref="TraceEntry.Outcome"/>.</summary>
+/// <summary>Possible outcomes of a step, recorded in <see cref="TraceEntry.Outcome"/>.</summary>
 public static class TraceOutcome
 {
-    public const string Instruction = "instruction"; // seguiu para o próximo passo
-    public const string Stop = "stop";               // término normal do flow
-    public const string Error = "error";             // erro tipado devolvido ao driver
-    public const string Budget = "budget";           // corte pelo teto de passos
-    public const string Timeout = "timeout";          // corte pelo teto de tempo por passo
+    public const string Instruction = "instruction"; // moved on to the next step
+    public const string Stop = "stop";               // normal end of the flow
+    public const string Error = "error";             // typed error returned to the driver
+    public const string Budget = "budget";           // cut off by the step ceiling
+    public const string Timeout = "timeout";          // cut off by the per-step time ceiling
 }

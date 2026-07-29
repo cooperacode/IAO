@@ -26,11 +26,11 @@ func failedHandoff(failure string) handoffResult { return handoffResult{Failure:
 func completeVerifiedFeature(verifyResult string) string {
 	handoff := tryAutomatedHandoff(verifyResult)
 	if !handoff.Success {
-		fmt.Fprintf(os.Stderr, "[dev] handoff automatico falhou: %s\n", handoff.Failure)
+		fmt.Fprintf(os.Stderr, "[dev] automatic handoff failed: %s\n", handoff.Failure)
 		return HandoffPrompt(handoff.Failure)
 	}
 
-	fmt.Fprintf(os.Stderr, "[dev] handoff automatico concluido: %s\n", handoff.Confirmation)
+	fmt.Fprintf(os.Stderr, "[dev] automatic handoff completed: %s\n", handoff.Confirmation)
 	if id, err := strconv.Atoi(state(currentFeatureIdKey)); err == nil {
 		engine.MarkFeaturePassed(id)
 	}
@@ -44,7 +44,7 @@ func completeVerifiedFeature(verifyResult string) string {
 func tryAutomatedHandoff(verifyResult string) handoffResult {
 	featureId, err := strconv.Atoi(state(currentFeatureIdKey))
 	if err != nil {
-		return failedHandoff("feature atual ausente no state.json")
+		return failedHandoff("current feature missing from state.json")
 	}
 
 	title := state(currentFeatureTitleKey)
@@ -61,24 +61,24 @@ func tryAutomatedHandoff(verifyResult string) handoffResult {
 	config := engine.LoadRunConfig()
 	targetDir, err := resolveTargetDir(config.TargetDir)
 	if err != nil {
-		return failedHandoff(fmt.Sprintf("target_dir invalido: %s", err))
+		return failedHandoff(fmt.Sprintf("invalid target directory: %s", err))
 	}
 
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return failedHandoff(fmt.Sprintf("falha ao atualizar progress.txt: %s", err))
+		return failedHandoff(fmt.Sprintf("failed to update progress.txt: %s", err))
 	}
 	if err := appendProgress(targetDir, featureId, title, config.VerifyCmd, verifyResult); err != nil {
-		return failedHandoff(fmt.Sprintf("falha ao atualizar progress.txt: %s", err))
+		return failedHandoff(fmt.Sprintf("failed to update progress.txt: %s", err))
 	}
 
 	revParse := engine.RunGitCommand(targetDir, "rev-parse", "--show-toplevel")
 	if revParse.ExitCode != 0 {
-		return okHandoff(fmt.Sprintf("NO_GIT: %s", oneLine(revParse.Error, "diretorio-alvo fora de um repositorio Git")))
+		return okHandoff(fmt.Sprintf("NO_GIT: %s", oneLine(revParse.Error, "target directory is outside a Git repository")))
 	}
 
 	add := engine.RunGitCommand(targetDir, "add", "-A", "--", ".", ":(exclude).harness")
 	if add.ExitCode != 0 {
-		return failedHandoff(fmt.Sprintf("git add falhou: %s", oneLine(add.Error, add.Output)))
+		return failedHandoff(fmt.Sprintf("git add failed: %s", oneLine(add.Error, add.Output)))
 	}
 
 	diff := engine.RunGitCommand(targetDir, "diff", "--cached", "--quiet", "--", ".", ":(exclude).harness")
@@ -90,27 +90,27 @@ func tryAutomatedHandoff(verifyResult string) handoffResult {
 		return okHandoff("NO_CHANGES")
 	}
 	if diff.ExitCode > 1 {
-		return failedHandoff(fmt.Sprintf("git diff --cached falhou: %s", oneLine(diff.Error, diff.Output)))
+		return failedHandoff(fmt.Sprintf("git diff --cached failed: %s", oneLine(diff.Error, diff.Output)))
 	}
 
 	commit := engine.RunGitCommand(targetDir, "commit", "-m", commitMessage(featureId, title), "--", ".", ":(exclude).harness")
 	if commit.ExitCode != 0 {
-		return failedHandoff(fmt.Sprintf("git commit falhou: %s", oneLine(commit.Error, commit.Output)))
+		return failedHandoff(fmt.Sprintf("git commit failed: %s", oneLine(commit.Error, commit.Output)))
 	}
 
 	status := engine.RunGitCommand(targetDir, "status", "--short", "--", ".", ":(exclude).harness")
 	if status.ExitCode != 0 {
-		return failedHandoff(fmt.Sprintf("git status falhou: %s", oneLine(status.Error, status.Output)))
+		return failedHandoff(fmt.Sprintf("git status failed: %s", oneLine(status.Error, status.Output)))
 	}
 	if strings.TrimSpace(status.Output) != "" {
-		return failedHandoff(fmt.Sprintf("diretorio-alvo ainda sujo apos commit: %s", oneLine(status.Output, "")))
+		return failedHandoff(fmt.Sprintf("target directory still dirty after commit: %s", oneLine(status.Output, "")))
 	}
 
 	hash := engine.RunGitCommand(targetDir, "rev-parse", "--short", "HEAD")
 	if hash.ExitCode == 0 {
 		return okHandoff(oneLine(hash.Output, "COMMIT_CREATED"))
 	}
-	return failedHandoff(fmt.Sprintf("commit criado, mas hash nao foi lido: %s", oneLine(hash.Error, hash.Output)))
+	return failedHandoff(fmt.Sprintf("commit created, but the hash could not be read: %s", oneLine(hash.Error, hash.Output)))
 }
 
 // resolveTargetDir applies the minimal containment (RFC §6.3): rejects targets that should
@@ -120,29 +120,29 @@ func tryAutomatedHandoff(verifyResult string) handoffResult {
 // (capability broker); this is just the RFC's minimal rejection list.
 func resolveTargetDir(targetDir string) (string, error) {
 	if strings.TrimSpace(targetDir) == "" {
-		return "", fmt.Errorf("target_dir vazio/whitespace nao e um diretorio-alvo valido.")
+		return "", fmt.Errorf("target_dir empty/whitespace is not a valid target directory.")
 	}
 
 	resolved, err := filepath.Abs(targetDir)
 	if err != nil {
-		return "", fmt.Errorf("target_dir invalido: %s", err)
+		return "", fmt.Errorf("invalid target directory: %s", err)
 	}
 
 	caseInsensitive := runtime.GOOS == "windows"
 
 	root := filepath.VolumeName(resolved) + string(filepath.Separator)
 	if pathsEqual(resolved, root, caseInsensitive) {
-		return "", fmt.Errorf("target_dir resolve para a raiz do sistema de arquivos ('%s').", resolved)
+		return "", fmt.Errorf("target_dir resolves to the filesystem root ('%s').", resolved)
 	}
 
 	if home, err := os.UserHomeDir(); err == nil {
 		if normalizedHome := normalizedOrEmpty(home); normalizedHome != "" && pathsEqual(normalized(resolved), normalizedHome, caseInsensitive) {
-			return "", fmt.Errorf("target_dir resolve para o diretorio home do usuario ('%s').", resolved)
+			return "", fmt.Errorf("target_dir resolves to the user's home directory ('%s').", resolved)
 		}
 	}
 
 	if harnessBase := normalizedOrEmpty(binaryDirLocal()); harnessBase != "" && pathsEqual(normalized(resolved), harnessBase, caseInsensitive) {
-		return "", fmt.Errorf("target_dir resolve para o diretorio de instalacao do harness ('%s').", resolved)
+		return "", fmt.Errorf("target_dir resolves to the harness install directory ('%s').", resolved)
 	}
 
 	return resolved, nil
@@ -179,13 +179,13 @@ func pathsEqual(a, b string, caseInsensitive bool) bool {
 }
 
 func appendProgress(targetDir string, featureId int, title, verifyCmd, verifyResult string) error {
-	summary := oneLine(state(currentFeatureSummaryKey), "implementacao concluida")
+	summary := oneLine(state(currentFeatureSummaryKey), "implementation completed")
 	verify := oneLine(verifyResult, "PASS")
 	command := verifyCmd
 	if strings.TrimSpace(command) == "" {
-		command = "comando de verificacao do projeto"
+		command = "the project's verify command"
 	}
-	line := fmt.Sprintf("[%s UTC] Feature #%d - %s: %s. Verificar com: %s. Resultado: %s\n",
+	line := fmt.Sprintf("[%s UTC] Feature #%d - %s: %s. Verify with: %s. Result: %s\n",
 		time.Now().UTC().Format("2006-01-02 15:04"), featureId, oneLine(title, ""), summary, oneLine(command, ""), verify)
 
 	f, err := os.OpenFile(filepath.Join(targetDir, "progress.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

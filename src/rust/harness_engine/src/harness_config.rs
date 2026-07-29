@@ -1,7 +1,7 @@
-//! Variáveis fixas do harness, externalizadas num `harness.json` na raiz do repo.
-//! Centralizá-las aqui deixa cada flow/ambiente ajustar os tetos sem recompilar. Ausente
-//! ou ilegível → cai nos defaults (mesma tolerância do `StateStore`: config é insumo
-//! opcional, não pode derrubar o run).
+//! Fixed harness settings, externalized in a `harness.json` at the repo root. Centralizing
+//! them here lets each flow/environment tune the ceilings without a recompile. Missing or
+//! unreadable → falls back to the defaults (same tolerance as `StateStore`: config is
+//! optional input, it must not bring down the run).
 
 use std::sync::Mutex;
 
@@ -11,16 +11,16 @@ use crate::path_resolver;
 
 const FILE_PATH: &str = "harness.json";
 
-// Teto duro do timeout_ms, independente da fonte (harness.json OU a env var abaixo).
-// harness.json vive no working directory que o próprio agente supervisionado controla:
-// sem este teto, o agente poderia editar o arquivo para se auto-conceder um timeout
-// arbitrariamente alto e nunca ser cortado pela guarda de tempo (ver task_registry).
+// Hard ceiling on timeout_ms, regardless of source (harness.json OR the env var below).
+// harness.json lives in the working directory that the supervised agent itself controls:
+// without this ceiling, the agent could edit the file to grant itself an arbitrarily high
+// timeout and never get cut off by the time guard (see task_registry).
 const MAX_ALLOWED_TIMEOUT_MS: i32 = 5 * 60_000;
 
-// Quando definida, sobrepõe o timeout_ms do harness.json. Ao contrário do arquivo, a env
-// var é definida pelo processo pai que invoca cada passo do harness — fora do working
-// directory que o agente supervisionado controla — então não pode ser auto-editada pelo
-// mesmo agente que o timeout deveria conter.
+// When set, overrides harness.json's timeout_ms. Unlike the file, the env var is set by
+// the parent process that invokes each harness step — outside the working directory the
+// supervised agent controls — so it can't be self-edited by the very agent the timeout is
+// meant to contain.
 const TIMEOUT_MS_ENV_VAR: &str = "HARNESS_TIMEOUT_MS";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,11 +37,11 @@ pub struct HarnessConfig {
     pub timeout_ms: i32,
 }
 
-// Teto de passos: impede loop infinito que queimaria tokens indefinidamente.
-// max_instruction_chars = 0 desliga o teto de custo (só o de passos vale).
-// timeout_ms = 0 desliga a guarda de tempo por passo (mesma convenção do custo). O valor
-// ligado vive no harness.json shipado, NÃO aqui: se o default fosse > 0, um harness.json
-// que omitisse o campo (deserializa 0) nunca conseguiria significar "desligado".
+// Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
+// max_instruction_chars = 0 turns off the cost ceiling (only the step one applies).
+// timeout_ms = 0 turns off the per-step time guard (same convention as the cost one). The
+// enabled value lives in the shipped harness.json, NOT here: if the default were > 0, a
+// harness.json that omitted the field (deserializes to 0) could never mean "off".
 pub fn default_config() -> HarnessConfig {
     HarnessConfig {
         max_steps: 12,
@@ -54,7 +54,7 @@ pub fn default_config() -> HarnessConfig {
 
 static CURRENT: Mutex<Option<HarnessConfig>> = Mutex::new(None);
 
-/// Relê o `harness.json` do disco; qualquer falha devolve os defaults.
+/// Re-reads `harness.json` from disk; any failure returns the defaults.
 pub fn load() -> HarnessConfig {
     let mut config = default_config();
 
@@ -70,7 +70,7 @@ pub fn load() -> HarnessConfig {
         match loaded {
             Ok(parsed) => config = parsed,
             Err(e) => {
-                eprintln!("[HarnessConfig] falha ao carregar; usando defaults: {e}");
+                eprintln!("[HarnessConfig] failed to load; using defaults: {e}");
                 config = default_config();
             }
         }
@@ -79,21 +79,21 @@ pub fn load() -> HarnessConfig {
     normalize(apply_timeout_env_override(config))
 }
 
-/// Força a releitura do `harness.json` — para testes e drivers de longa vida.
+/// Forces a re-read of `harness.json` — for tests and long-lived drivers.
 pub fn reload() -> HarnessConfig {
     let config = load();
     *CURRENT.lock().unwrap() = Some(config.clone());
     config
 }
 
-/// Limpa o cache sem reler — a próxima `current()` relê sob demanda.
+/// Clears the cache without re-reading — the next `current()` reads it on demand.
 pub fn reset() {
     *CURRENT.lock().unwrap() = None;
 }
 
-/// Carregada uma vez por processo (cada invocação do harness é um processo novo, então
-/// "uma vez" = "por volta do loop"). Leitores estáticos consomem daqui sem precisar
-/// receber a config por parâmetro.
+/// Loaded once per process (each harness invocation is a new process, so "once" =
+/// "per loop iteration"). Static readers consume it from here without needing to
+/// receive the config as a parameter.
 pub fn current() -> HarnessConfig {
     let mut guard = CURRENT.lock().unwrap();
     if guard.is_none() {
@@ -102,8 +102,8 @@ pub fn current() -> HarnessConfig {
     guard.clone().unwrap()
 }
 
-// Ver TIMEOUT_MS_ENV_VAR. Ausente/inválida é ignorada silenciosamente — mesma
-// tolerância do resto da config: é insumo opcional, não pode derrubar o run.
+// See TIMEOUT_MS_ENV_VAR. Missing/invalid is silently ignored — same tolerance as the
+// rest of the config: it's optional input, it must not bring down the run.
 fn apply_timeout_env_override(config: HarnessConfig) -> HarnessConfig {
     match std::env::var(TIMEOUT_MS_ENV_VAR) {
         Ok(raw) => match raw.trim().parse::<i32>() {
@@ -117,9 +117,8 @@ fn apply_timeout_env_override(config: HarnessConfig) -> HarnessConfig {
     }
 }
 
-// Um harness.json parcial deserializa os campos ausentes como 0/"" (`#[serde(default)]`).
-// Zero é válido só onde significa "desligado" (tetos de custo); nos demais, campo
-// ausente = default.
+// A partial harness.json deserializes missing fields as 0/"" (`#[serde(default)]`). Zero
+// is valid only where it means "off" (cost ceilings); elsewhere, a missing field = default.
 fn normalize(config: HarnessConfig) -> HarnessConfig {
     let default = default_config();
     HarnessConfig {
@@ -158,8 +157,8 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let previous = std::env::current_dir().unwrap();
             std::env::set_current_dir(dir.path()).unwrap();
-            // SAFETY: serializado por `lock_cwd()` — nenhuma outra thread lê/escreve env
-            // vars enquanto este teste roda.
+            // SAFETY: serialized by `lock_cwd()` — no other thread reads/writes env
+            // vars while this test runs.
             unsafe { std::env::remove_var(TIMEOUT_MS_ENV_VAR) };
             Self {
                 _dir: dir,
@@ -170,7 +169,7 @@ mod tests {
 
     impl Drop for Isolated {
         fn drop(&mut self) {
-            // SAFETY: ver `Isolated::new`.
+            // SAFETY: see `Isolated::new`.
             unsafe { std::env::remove_var(TIMEOUT_MS_ENV_VAR) };
             let _ = std::env::set_current_dir(&self.previous);
         }
@@ -197,7 +196,7 @@ mod tests {
         std::fs::write("harness.json", r#"{"timeoutMs":30000}"#).unwrap();
         assert_eq!(load().timeout_ms, 30000);
 
-        // Valor negativo é normalizado para 0 (desligado), como o teto de custo.
+        // A negative value is normalized to 0 (off), like the cost ceiling.
         std::fs::write("harness.json", r#"{"timeoutMs":-5}"#).unwrap();
         assert_eq!(load().timeout_ms, 0);
     }
@@ -241,7 +240,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        std::fs::write("harness.json", "{ isso não é json ").unwrap();
+        std::fs::write("harness.json", "{ this is not json ").unwrap();
 
         assert_eq!(load(), default_config());
     }
@@ -251,8 +250,8 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        // harness.json vive no working directory do agente supervisionado: mesmo que ele
-        // edite o arquivo para se auto-conceder um timeout enorme, o teto duro prevalece.
+        // harness.json lives in the supervised agent's working directory: even if it
+        // edits the file to grant itself a huge timeout, the hard ceiling prevails.
         std::fs::write("harness.json", r#"{"timeoutMs":99999999}"#).unwrap();
 
         assert_eq!(load().timeout_ms, 5 * 60_000);
@@ -288,7 +287,7 @@ mod tests {
 
         std::fs::write("harness.json", r#"{"timeoutMs":1000}"#).unwrap();
         // SAFETY: ver `Isolated::new`.
-        unsafe { std::env::set_var(TIMEOUT_MS_ENV_VAR, "não é número") };
+        unsafe { std::env::set_var(TIMEOUT_MS_ENV_VAR, "not a number") };
 
         assert_eq!(load().timeout_ms, 1000);
     }

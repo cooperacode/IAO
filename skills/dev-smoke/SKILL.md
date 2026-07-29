@@ -1,19 +1,19 @@
 ---
 name: dev-smoke
-description: "smoke test do baseline antes de implementar"
+description: "smoke test the baseline before implementing"
 ---
 
 # SKILL: smoke test
 
-Antes de mexer em qualquer feature, confirme que o baseline está saudável — assim, se algo
-quebrar depois, você sabe que foi a sua mudança e não um estado herdado quebrado.
+Before touching any feature, confirm the baseline is healthy — that way, if something breaks
+later, you know it was your change and not an inherited broken state.
 
-- Rode `./init.sh` no diretório-alvo com saída completa redirecionada para
-  `.harness/logs/smoke.log` (crie a pasta se necessário).
-- Verifique que o app sobe/builda sem erro (o mínimo que deveria funcionar, funciona).
-- Se falhar, leia só o trecho relevante do log (ex.: primeira falha, `tail -n 80`, arquivo
-  citado pela stack trace). Não cole o log inteiro no contexto.
+- Run `./init.sh` in the target directory with full output redirected to
+  `.harness/logs/smoke.log` (create the folder if needed).
+- Verify the app comes up/builds without error (the bare minimum that should work, works).
+- If it fails, read only the relevant excerpt of the log (e.g. the first failure, `tail -n 80`,
+  the file cited by the stack trace). Don't paste the whole log into context.
 
-Se o smoke **falhar**, o baseline está quebrado: conserte isso primeiro — não empilhe uma
-feature nova sobre um chão instável. Relate o resultado em `$SMOKE` como `ok` ou
-`FAIL: <erro principal>. Log: <caminho>`.
+If the smoke test **fails**, the baseline is broken: fix that first — don't stack a new
+feature on unstable ground. Report the result in `$SMOKE` as `ok` or
+`FAIL: <main error>. Log: <path>`.

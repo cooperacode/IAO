@@ -1,16 +1,16 @@
-//! Predicados determinísticos e baratos para validar se o valor devolvido pelo driver
-//! atende à expectativa da task — ANTES de persisti-lo e seguir o flow. Falhou → o
-//! `TaskRegistry` devolve um erro corretivo tipado e o driver reenvia (loop corretivo,
-//! não término mudo).
+//! Cheap, deterministic predicates that validate whether the value returned by the driver
+//! meets the task's expectation — BEFORE persisting it and moving the flow forward. On
+//! failure, `TaskRegistry` returns a typed corrective error and the driver resends (a
+//! corrective loop, not a silent stall).
 //!
-//! Validação semântica profunda continua sendo trabalho do juiz-LLM na avaliação; aqui
-//! mora só o que é checável em código, com zero token.
+//! Deep semantic validation is still the LLM judge's job at evaluation time; what lives
+//! here is only what's checkable in code, at zero token cost.
 
 use regex::RegexBuilder;
 
 use crate::envelope::Envelope;
 
-/// Resultado de uma validação contextual: ok, ou a razão da recusa (para o erro corretivo).
+/// Result of a contextual validation: ok, or the reason for rejection (for the corrective error).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationResult {
     pub ok: bool,
@@ -35,7 +35,7 @@ impl ValidationResult {
 
 pub type Validator = Box<dyn Fn(&Envelope) -> ValidationResult + Send + Sync>;
 
-/// O primeiro arg existe e não é vazio/whitespace.
+/// The first arg exists and is not empty/whitespace.
 pub fn not_empty(expectation: &str) -> Validator {
     let expectation = expectation.to_string();
     Box::new(move |envelope| {
@@ -43,13 +43,13 @@ pub fn not_empty(expectation: &str) -> Validator {
             ValidationResult::pass()
         } else {
             ValidationResult::fail(format!(
-                "O argumento esperado veio vazio. Esperado: {expectation}."
+                "The expected argument came back empty. Expected: {expectation}."
             ))
         }
     })
 }
 
-/// O primeiro arg tem ao menos `count` linhas não vazias (contando `\n` literais).
+/// The first arg has at least `count` non-empty lines (counting literal `\n`).
 pub fn min_lines(count: usize, expectation: &str) -> Validator {
     let expectation = expectation.to_string();
     Box::new(move |envelope| {
@@ -58,13 +58,13 @@ pub fn min_lines(count: usize, expectation: &str) -> Validator {
             ValidationResult::pass()
         } else {
             ValidationResult::fail(format!(
-                "O argumento tem {lines} linha(s) úteis, mas a task espera ao menos {count}. Esperado: {expectation}."
+                "The argument has {lines} non-empty line(s), but the task expects at least {count}. Expected: {expectation}."
             ))
         }
     })
 }
 
-/// O primeiro arg contém ao menos um número.
+/// The first arg contains at least one number.
 pub fn contains_number(expectation: &str) -> Validator {
     let expectation = expectation.to_string();
     Box::new(move |envelope| {
@@ -72,31 +72,31 @@ pub fn contains_number(expectation: &str) -> Validator {
             ValidationResult::pass()
         } else {
             ValidationResult::fail(format!(
-                "O argumento não contém nenhum número. Esperado: {expectation}."
+                "The argument does not contain any number. Expected: {expectation}."
             ))
         }
     })
 }
 
-/// O primeiro arg casa com o padrão (case-insensitive).
+/// The first arg matches the pattern (case-insensitive).
 pub fn matches(pattern: &str, expectation: &str) -> Validator {
     let regex = RegexBuilder::new(pattern)
         .case_insensitive(true)
         .build()
-        .unwrap_or_else(|e| panic!("padrão de validação inválido {pattern:?}: {e}"));
+        .unwrap_or_else(|e| panic!("invalid validation pattern {pattern:?}: {e}"));
     let expectation = expectation.to_string();
     Box::new(move |envelope| {
         if regex.is_match(&first_arg(envelope)) {
             ValidationResult::pass()
         } else {
             ValidationResult::fail(format!(
-                "O argumento não atende ao formato esperado. Esperado: {expectation}."
+                "The argument does not match the expected format. Expected: {expectation}."
             ))
         }
     })
 }
 
-/// Composição: todos os predicados precisam passar; o primeiro que falhar dá a razão.
+/// Composition: every predicate must pass; the first one that fails supplies the reason.
 pub fn all_of(validators: Vec<Validator>) -> Validator {
     Box::new(move |envelope| {
         for validator in &validators {
@@ -117,8 +117,8 @@ fn first_arg(envelope: &Envelope) -> String {
         .unwrap_or_default()
 }
 
-// Artefatos trafegam como string JSON de uma linha com `\n` literais (ver o aviso
-// "Compact" dos flows) — conta tanto quebras reais quanto escapadas.
+// Artifacts travel as a single-line JSON string with literal `\n` (see the flows'
+// "Compact" note) — counts both real and escaped line breaks.
 fn count_lines(value: &str) -> usize {
     value
         .split("\\n")
@@ -133,9 +133,9 @@ mod tests {
 
     #[test]
     fn min_lines_conta_quebras_literais_e_escapadas() {
-        let validator = min_lines(2, "lista de histórias");
+        let validator = min_lines(2, "list of stories");
 
-        // Artefatos trafegam como string de uma linha com \n literais (aviso "Compact").
+        // Artifacts travel as a single-line string with literal \n ("Compact" note).
         let escaped = Envelope::new("tool", "acceptance", vec![r"1. a\n2. b".to_string()]);
         let real = Envelope::new("tool", "acceptance", vec!["1. a\n2. b".to_string()]);
         let single = Envelope::new("tool", "acceptance", vec!["1. a".to_string()]);
@@ -147,13 +147,13 @@ mod tests {
 
     #[test]
     fn contains_number_exige_ao_menos_um_digito() {
-        let validator = contains_number("estimativas");
+        let validator = contains_number("estimates");
 
         assert!(
             validator(&Envelope::new(
                 "tool",
                 "risks",
-                vec!["5 pontos".to_string()]
+                vec!["5 points".to_string()]
             ))
             .ok
         );
@@ -161,7 +161,7 @@ mod tests {
             !validator(&Envelope::new(
                 "tool",
                 "risks",
-                vec!["sem pontos".to_string()]
+                vec!["no points".to_string()]
             ))
             .ok
         );
@@ -169,13 +169,13 @@ mod tests {
 
     #[test]
     fn matches_casa_sem_diferenciar_maiusculas() {
-        let validator = matches("READY|NOT READY", "veredito do DoR");
+        let validator = matches("READY|NOT READY", "DoR verdict");
 
         assert!(
             validator(&Envelope::new(
                 "tool",
                 "finalize",
-                vec!["Veredito: ready com ressalva".to_string()]
+                vec!["Verdict: ready with caveat".to_string()]
             ))
             .ok
         );
@@ -183,7 +183,7 @@ mod tests {
             !validator(&Envelope::new(
                 "tool",
                 "finalize",
-                vec!["aprovado".to_string()]
+                vec!["approved".to_string()]
             ))
             .ok
         );
@@ -191,13 +191,13 @@ mod tests {
 
     #[test]
     fn matches_com_padrao_ancorado_rejeita_conteudo_que_apenas_contem_o_prefixo() {
-        let validator = matches(r"^(PASS\b|FAIL\b)", "veredito");
+        let validator = matches(r"^(PASS\b|FAIL\b)", "verdict");
 
         assert!(
             validator(&Envelope::new(
                 "command",
                 "verify",
-                vec!["PASS: testes verdes".to_string()]
+                vec!["PASS: tests green".to_string()]
             ))
             .ok
         );
@@ -205,7 +205,7 @@ mod tests {
             validator(&Envelope::new(
                 "command",
                 "verify",
-                vec!["FAIL: testes vermelhos".to_string()]
+                vec!["FAIL: tests red".to_string()]
             ))
             .ok
         );
@@ -213,7 +213,7 @@ mod tests {
             !validator(&Envelope::new(
                 "command",
                 "verify",
-                vec!["rodei os testes e deu PASS".to_string()]
+                vec!["ran the tests and got PASS".to_string()]
             ))
             .ok
         );
@@ -222,17 +222,17 @@ mod tests {
     #[test]
     fn all_of_falha_na_primeira_razao() {
         let validator = all_of(vec![
-            not_empty("estimativas"),
-            contains_number("estimativas com pontos"),
+            not_empty("estimates"),
+            contains_number("estimates with points"),
         ]);
 
         let result = validator(&Envelope::new(
             "tool",
             "risks",
-            vec!["sem numeros".to_string()],
+            vec!["no numbers".to_string()],
         ));
 
         assert!(!result.ok);
-        assert!(result.reason.contains("número"));
+        assert!(result.reason.contains("number"));
     }
 }

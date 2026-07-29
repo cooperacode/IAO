@@ -1,5 +1,5 @@
-"""docs_reader é a entrada alternativa ao input interativo: lê os documentos da pasta
-(determinístico, em código) para que o modelo só precise sintetizar o brief."""
+"""docs_reader is the alternative input to the interactive one: it reads the folder's
+documents (deterministic, in code) so the model only needs to synthesize the brief."""
 
 from pathlib import Path
 
@@ -22,8 +22,8 @@ def test_has_docs_pasta_vazia_false(tmp_path):
 def test_has_docs_ignora_extensoes_nao_suportadas(tmp_path):
     d = tmp_path / "docs"
     d.mkdir()
-    (d / "imagem.png").write_text("x")
-    (d / "dados.json").write_text("{}")
+    (d / "image.png").write_text("x")
+    (d / "data.json").write_text("{}")
 
     assert not docs_reader.has_docs(str(d))
 
@@ -31,7 +31,7 @@ def test_has_docs_ignora_extensoes_nao_suportadas(tmp_path):
 def test_has_docs_com_markdown_true(tmp_path):
     d = tmp_path / "docs"
     d.mkdir()
-    (d / "spec.md").write_text("conteúdo")
+    (d / "spec.md").write_text("content")
 
     assert docs_reader.has_docs(str(d))
 
@@ -39,7 +39,7 @@ def test_has_docs_com_markdown_true(tmp_path):
 def test_read_concatena_md_e_txt_em_ordem_alfabetica(tmp_path):
     d = tmp_path / "docs"
     d.mkdir()
-    (d / "b-notas.txt").write_text("notas")
+    (d / "b-notas.txt").write_text("notes")
     (d / "a-spec.md").write_text("spec")
 
     content, files = docs_reader.read(str(d))
@@ -60,8 +60,8 @@ def test_read_pasta_inexistente_vazio_sem_fontes(tmp_path):
 
 
 def test_read_conteudo_com_acento_e_emoji_nao_quebra_caractere_multibyte(tmp_path):
-    # "café ☕" tem "é" (2 bytes) e "☕" (3 bytes) em UTF-8 — um corte ingênuo por posição
-    # de byte no meio de qualquer um deles produziria uma sequência inválida.
+    # "café ☕" has "é" (2 bytes) and "☕" (3 bytes) in UTF-8 — a naive cut by byte
+    # position in the middle of either would produce an invalid sequence.
     d = tmp_path / "docs"
     d.mkdir()
     (d / "a.md").write_text("café ☕ café ☕ café ☕")
@@ -69,7 +69,7 @@ def test_read_conteudo_com_acento_e_emoji_nao_quebra_caractere_multibyte(tmp_pat
     content, _ = docs_reader.read(str(d))
 
     assert "café ☕" in content
-    # content já é um `str` Python válido (decode bem-sucedido) — se o corte tivesse
-    # partido um caractere multibyte, decode(errors="ignore") já teria descartado o
-    # fragmento inválido silenciosamente, então testamos que nada sobrou corrompido.
+    # content is already a valid Python `str` (successful decode) — if the cut had split
+    # a multi-byte character, decode(errors="ignore") would have already silently
+    # discarded the invalid fragment, so we test that nothing corrupted was left over.
     assert "�" not in content

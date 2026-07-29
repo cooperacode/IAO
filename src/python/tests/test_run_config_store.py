@@ -1,6 +1,6 @@
-"""verify_cmd/target_dir vivem fora de state.json de propósito: precisam sobreviver ao
-reset incondicional que task_registry.dispatch faz em state.json a cada "start", para que
-um run retomado (feature pendente) ainda funcione em smoke/verify sem precisar de um novo
+"""verify_cmd/target_dir live outside state.json on purpose: they need to survive the
+unconditional reset task_registry.dispatch does to state.json on every "start", so a
+resumed run (pending feature) still works in smoke/verify without needing a new
 "plan"."""
 
 from harness_engine import run_config_store
@@ -40,4 +40,4 @@ def test_reset_apaga_o_arquivo():
 
 
 def test_reset_sem_arquivo_nao_lanca():
-    run_config_store.reset()  # no-op, não deve lançar
+    run_config_store.reset()  # no-op, must not throw

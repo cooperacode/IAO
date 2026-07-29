@@ -5,8 +5,8 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// O trace é a sequência de comandos que o StateStore não guarda (ele sobrescreve o
-/// estado). Sem ele não há Trajectory Evaluation nem Telemetria de custo por passo.
+/// The trace is the sequence of commands that StateStore doesn't keep (it overwrites the
+/// state). Without it there's no Trajectory Evaluation or per-step cost Telemetry.
 /// </summary>
 public class TraceTests : IDisposable
 {
