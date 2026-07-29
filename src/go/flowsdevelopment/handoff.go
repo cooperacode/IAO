@@ -187,8 +187,17 @@ func appendProgress(targetDir string, featureId int, title, verifyCmd, verifyRes
 	}
 	line := fmt.Sprintf("[%s UTC] Feature #%d - %s: %s. Verify with: %s. Result: %s\n",
 		time.Now().UTC().Format("2006-01-02 15:04"), featureId, oneLine(title, ""), summary, oneLine(command, ""), verify)
+	progressPath := filepath.Join(targetDir, "progress.txt")
+	if existing, err := os.ReadFile(progressPath); err == nil {
+		prefix := fmt.Sprintf("Feature #%d - %s:", featureId, oneLine(title, ""))
+		for _, previous := range strings.Split(string(existing), "\n") {
+			if strings.Contains(previous, prefix) && strings.Contains(previous, "Result:") {
+				return nil
+			}
+		}
+	}
 
-	f, err := os.OpenFile(filepath.Join(targetDir, "progress.txt"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(progressPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}

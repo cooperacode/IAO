@@ -125,28 +125,31 @@ def bearings_prompt() -> str:
     input_text = f"""=== NEW SESSION (clean context) ===
 You are a coding agent starting a FRESH session. Do not assume anything from the
 previous session — all state lives in the persistent artifacts.
-{brief}Get your bearings with short output: run `pwd`, read only the tail of `progress.txt` and the
-recent `git log --oneline` to understand what has already been done. Do not paste long
-logs; if you need to preserve detail, save it in `.harness/logs/`.
+{brief}The harness already captured bounded bearings (working directory, progress tail, and recent
+git history). Continue with the smoke step; do not return a bearings note.
 
-Summarize what you found in '""" + NOTE + "' in 2-4 lines."
+The harness already captured bounded bearings. Continue with the smoke step; do not return a bearings note."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "bearings", (NOTE,)),
+        Envelope(EnvelopeType.COMMAND, "bearings", ()),
         prompt_formatter.skills("dev-bearings"),
     )
 
 
 def smoke_prompt() -> str:
-    input_text = f"""Smoke test: run `./init.sh` in the target directory ({run_config_store.load().target_dir}) and confirm
-that the baseline comes up/builds without error before touching any feature. Save the
-full output to `.harness/logs/smoke.log` and report in '{SMOKE}' just `ok` or the
-main error and the log path."""
+    input_text = f"""The harness runs `./init.sh` deterministically in the target directory ({run_config_store.load().target_dir}) and confirms
+that the baseline comes up/builds without error before touching any feature. The harness
+saves the full output to `.harness/logs/smoke.log`; proceed without a smoke verdict."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "smoke", (SMOKE,)),
+        Envelope(EnvelopeType.COMMAND, "smoke", ()),
         prompt_formatter.skills("dev-smoke"),
     )
+
+
+def smoke_fix_prompt(failure: str) -> str:
+    input_text = f"Smoke failed deterministically: {failure}\nFix the target setup, then return `smoke` without arguments."
+    return prompt_formatter.format(input_text, Envelope(EnvelopeType.COMMAND, "smoke", ()), prompt_formatter.skills("dev-smoke"))
 
 
 def pick_prompt() -> str:
@@ -162,40 +165,36 @@ def implement_prompt(feature: Feature) -> str:
 it:
 {brief}Feature #{feature.id} (priority {feature.priority}): {feature.title}
 {context}Work in the target directory ({run_config_store.load().target_dir}). If you run commands with
-long output, save it to `.harness/logs/` and do not paste logs into the summary. When done,
-summarize what you implemented in '{SUMMARY}' in one short sentence."""
+long output, save it to `.harness/logs/`. Return `implement` without arguments when done;
+the harness derives the summary from the actual Git diff."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "implement", (SUMMARY,)),
+        Envelope(EnvelopeType.COMMAND, "implement", ()),
         prompt_formatter.skills("dev-implement"),
     )
 
 
 def verify_prompt() -> str:
-    input_text = f"""The harness did not find `verify-feature.sh` in the target directory, so do a
-manual self-verify of feature #{_state(state_keys.CURRENT_FEATURE_ID)} ({_state(state_keys.CURRENT_FEATURE_TITLE)})
-the way a user would: run `{run_config_store.load().verify_cmd}` in the target directory
-({run_config_store.load().target_dir}) and confirm the behavior end to end. Save the
-full output to `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
+    input_text = f"""The deterministic verifier could not be started for feature #{_state(state_keys.CURRENT_FEATURE_ID)}
+({_state(state_keys.CURRENT_FEATURE_TITLE)}). Repair the verification setup in the target directory
+({run_config_store.load().target_dir}).
 
-Respond in '{RESULT}' starting with `PASS` or `FAIL: <reason>`, including only the
-main error and the log path."""
+Return `implement` without arguments. A model-authored PASS/FAIL is never accepted."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "verify", (RESULT,)),
+        Envelope(EnvelopeType.COMMAND, "implement", ()),
         prompt_formatter.skills("dev-verify"),
     )
 
 
 def verify_retry_prompt() -> str:
-    input_text = f"""The self-verify verdict did not start with `PASS` or `FAIL`. Re-run, if
-needed, `{run_config_store.load().verify_cmd}` in the target directory ({run_config_store.load().target_dir})
-saving the full output to `.harness/logs/verify-{_state(state_keys.CURRENT_FEATURE_ID)}.log`.
-Respond in '{RESULT}' starting exactly with `PASS` or `FAIL: <reason>`, without pasting
-long logs."""
+    input_text = f"""The deterministic verifier is unavailable for feature #{_state(state_keys.CURRENT_FEATURE_ID)}
+({_state(state_keys.CURRENT_FEATURE_TITLE)}). Repair or create it in the target directory
+({run_config_store.load().target_dir}).
+Repair the setup and return `implement` without arguments for another harness-controlled attempt."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "verify", (RESULT,)),
+        Envelope(EnvelopeType.COMMAND, "implement", ()),
         prompt_formatter.skills("dev-verify"),
     )
 
@@ -208,11 +207,11 @@ def fix_prompt(verify_failure: str | None = None) -> str:
 """
     input_text = f"""Verification FAILED on feature #{_state(state_keys.CURRENT_FEATURE_ID)}
 ({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Fix the implementation (still ONLY this feature).
-If you check logs, read only the relevant excerpt. Summarize the fix in '{SUMMARY}' — we'll
-verify again next."""
+If you check logs, read only the relevant excerpt. Return `implement` without arguments; the
+harness derives the new summary from Git."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "implement", (SUMMARY,)),
+        Envelope(EnvelopeType.COMMAND, "implement", ()),
         prompt_formatter.skills("dev-implement"),
     )
 
@@ -223,24 +222,20 @@ def handoff_prompt(automatic_failure: str | None = None) -> str:
         failure = f"""Automatic handoff failed: {automatic_failure}
 
 """
-    input_text = f"""{failure}Leave the state CLEAN for the next session:
-1. `git commit` with a descriptive message referencing feature #{_state(state_keys.CURRENT_FEATURE_ID)}. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.
-2. Append a line to `progress.txt` in this exact format (same as the automatic handoff, so entries stay consistent): `[YYYY-MM-DD HH:MM UTC] Feature #<id> - <title>: <what was done>. Verify with: <command>. Result: <result>`.
-
-Confirm with the commit hash or `NO_GIT: <reason>` in '{COMMIT}'."""
+    input_text = f"""{failure}Automatic handoff requires a deterministic PASS. Return `handoff` without
+arguments so the harness can retry the real progress/git operation."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "handoff", (COMMIT,)),
+        Envelope(EnvelopeType.COMMAND, "handoff", ()),
         prompt_formatter.skills("dev-handoff"),
     )
 
 
 def handoff_retry_prompt() -> str:
     input_text = f"""The handoff confirmation came back empty. Update `progress.txt` in the target directory
-({run_config_store.load().target_dir}) and respond in '{COMMIT}' with the commit hash or
-`NO_GIT: <reason>` when there is no Git repository."""
+({run_config_store.load().target_dir}). Return `handoff` without arguments after a deterministic PASS."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "handoff", (COMMIT,)),
+        Envelope(EnvelopeType.COMMAND, "handoff", ()),
         prompt_formatter.skills("dev-handoff"),
     )

@@ -97,21 +97,31 @@ pub fn parse(json: &str) -> Vec<Feature> {
         return Vec::new();
     }
 
-    // Reindex first: dependsOn only makes sense referencing final ids, not the raw
-    // (possibly missing/duplicated) ones that came from the driver.
+    let explicit: Vec<i32> = parsed.iter().filter(|f| f.id > 0).map(|f| f.id).collect();
+    let explicit_set: HashSet<i32> = explicit.iter().copied().collect();
+    if explicit.len() != explicit_set.len() {
+        eprintln!("[FeatureStore] failed to parse features: duplicate explicit feature id");
+        return Vec::new();
+    }
+    let mut used = explicit_set;
+    let mut next_id = 1;
     let reindexed: Vec<Feature> = parsed
         .into_iter()
         .enumerate()
-        .map(|(i, f)| Feature {
-            id: if f.id > 0 { f.id } else { (i + 1) as i32 },
+        .map(|(_i, f)| {
+            if f.title.trim().is_empty() || f.priority <= 0 { return None; }
+            let id = if f.id > 0 { f.id } else { while used.contains(&next_id) { next_id += 1; } used.insert(next_id); let id = next_id; next_id += 1; id };
+            Some(Feature {
+            id,
             title: f.title,
             priority: f.priority,
             passes: false,
-            depends_on: f.depends_on,
+            depends_on: unique_i32(f.depends_on),
             description: truncate_description(&f.description),
-            references: f.references,
-        })
-        .collect();
+            references: unique_strings(f.references),
+        })})
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default();
 
     if let Some(error) = dependency_graph_error(&reindexed) {
         eprintln!("[FeatureStore] invalid dependency graph: {error}");
@@ -119,6 +129,16 @@ pub fn parse(json: &str) -> Vec<Feature> {
     }
 
     reindexed
+}
+
+fn unique_i32(values: Vec<i32>) -> Vec<i32> {
+    let mut seen = HashSet::new();
+    values.into_iter().filter(|v| seen.insert(*v)).collect()
+}
+
+fn unique_strings(values: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values.into_iter().filter(|v| !v.trim().is_empty() && seen.insert(v.clone())).collect()
 }
 
 // Cuts down to DESCRIPTION_MAX_CHARS characters — never throws, never rejects the whole

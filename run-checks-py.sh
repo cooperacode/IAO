@@ -68,7 +68,7 @@ done
 grep -Eq '"passes"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIR/.harness/feature_list.json" \
   && ! grep -Eq '"passes"[[:space:]]*:[[:space:]]*false' "$SMOKE_DIR/.harness/feature_list.json" \
   || { echo "[smoke] feature_list.json did not close with all features passing" >&2; exit 1; }
-[[ -s "$SMOKE_DIR/.harness/logs/verify-feature-2.log" ]] \
+[[ -s "$SMOKE_DIR/app/.harness/logs/verify-feature-2.log" ]] \
   || { echo "[smoke] verify-feature log was not created" >&2; exit 1; }
 echo "    loop closed on stop and all features pass ✓"
 

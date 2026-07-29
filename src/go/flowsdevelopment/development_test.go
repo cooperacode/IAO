@@ -55,7 +55,11 @@ func cmd(value string, args ...string) *engine.Envelope {
 }
 
 func planWith(targetDir string) string {
-	return Plan(cmd("plan", featuresJSON, "dotnet test", targetDir))
+	result := Plan(cmd("plan", featuresJSON, "dotnet test", targetDir))
+	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
+		panic(err)
+	}
+	return result
 }
 
 // advanceToVerify drives the flow up to an implemented, not-yet-verified feature.
@@ -297,9 +301,13 @@ func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) 
 	targetDir, _ := isolate(t)
 	json := `[{"id":1,"title":"A","priority":2,"description":"does X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]`
 	Plan(cmd("plan", json, "dotnet test", targetDir))
+	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	Bearings(cmd("bearings", "ok"))
 	Smoke(cmd("smoke", "ok"))
 	Pick(cmd("pick")) // picks "B" (priority 1), no description/references
+	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\n")
 	Implement(cmd("implement", "done"))
 	Verify(cmd("verify", "PASS")) // completes "B", auto-advances
 	Bearings(cmd("bearings", "ok"))
@@ -374,6 +382,7 @@ func TestVerify_Fail_GoesBackToImplement(t *testing.T) {
 func TestVerify_Pass_RunsAutomatedHandoffAndAdvances(t *testing.T) {
 	targetDir, _ := isolate(t)
 	advanceToVerify(targetDir)
+	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\n")
 
 	result := Verify(cmd("verify", "PASS"))
 
@@ -408,13 +417,13 @@ func TestImplement_WithPassingVerifyFeature_RunsVerifyAndHandoffAutomatically(t 
 		t.Fatalf("unexpected pending count: %d", engine.PendingFeatureCount())
 	}
 	progress := readFile(t, filepath.Join(targetDir, "progress.txt"))
-	if !strings.Contains(progress, "Feature #2") || !strings.Contains(progress, "PASS: feature 2 verified") {
+	if !strings.Contains(progress, "Feature #2") || !strings.Contains(progress, "PASS: verify-feature.sh 2 passed") {
 		t.Fatalf("unexpected progress: %s", progress)
 	}
 	if !strings.Contains(progress, ".harness/logs/verify-feature-2.log") {
 		t.Fatalf("unexpected progress: %s", progress)
 	}
-	if !strings.Contains(readFile(t, verifyLogPath(2)), "command: bash ./verify-feature.sh 2") {
+	if !strings.Contains(readFile(t, filepath.Join(targetDir, verifyLogPath(2))), "command: bash ./verify-feature.sh 2") {
 		t.Fatal("unexpected log content")
 	}
 }
@@ -439,7 +448,7 @@ func TestImplement_WithFailingVerifyFeature_GoesBackToFix(t *testing.T) {
 	if strings.Contains(result, "DETAILED LINE THAT STAYS ONLY IN THE LOG") {
 		t.Fatalf("expected detailed line to stay in the log only: %s", result)
 	}
-	log := readFile(t, verifyLogPath(2))
+	log := readFile(t, filepath.Join(targetDir, verifyLogPath(2)))
 	if !strings.Contains(log, "FAIL: feature 2 broke") || !strings.Contains(log, "DETAILED LINE THAT STAYS ONLY IN THE LOG") {
 		t.Fatalf("unexpected log: %s", log)
 	}
@@ -460,10 +469,10 @@ func TestVerify_InvalidVerdict_ReemitsVerify(t *testing.T) {
 
 	result := Verify(cmd("verify", "I ran the tests and it passed"))
 
-	if !strings.Contains(result, `"value":"verify"`) || strings.Contains(result, `"value":"handoff"`) {
+	if !strings.Contains(result, `"value":"implement"`) || strings.Contains(result, `"value":"handoff"`) {
 		t.Fatalf("unexpected result: %s", result)
 	}
-	if !strings.Contains(result, "did not start") {
+	if !strings.Contains(result, "FAILED") {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
@@ -486,6 +495,7 @@ func TestHandoff_WithPending_OpensNewSession_AllPassing_Stops(t *testing.T) {
 	targetDir, _ := isolate(t)
 
 	advanceToVerify(targetDir)
+	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\n")
 	afterFirst := Verify(cmd("verify", "PASS"))
 
 	if !strings.Contains(afterFirst, "NEW SESSION") || engine.PendingFeatureCount() != 1 {
@@ -496,7 +506,7 @@ func TestHandoff_WithPending_OpensNewSession_AllPassing_Stops(t *testing.T) {
 	Smoke(cmd("smoke", "ok"))
 	Pick(cmd("pick"))
 	Implement(cmd("implement", "done"))
-	afterSecond := Verify(cmd("verify", "PASS"))
+	afterSecond := Implement(cmd("implement", "PASS"))
 
 	if afterSecond != "stop" || !engine.AllFeaturesPassing() {
 		t.Fatalf("unexpected end state: %s", afterSecond)
@@ -509,7 +519,7 @@ func TestHandoff_LegacyWithHash_MarksFeaturePassed(t *testing.T) {
 
 	result := Handoff(cmd("handoff", "abc123"))
 
-	if !strings.Contains(result, "NEW SESSION") || engine.PendingFeatureCount() != 1 {
+	if !strings.Contains(result, `"value":"handoff"`) || engine.PendingFeatureCount() != 2 {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
@@ -529,12 +539,16 @@ func TestVerify_Pass_AutomatedHandoffOnlyCommitsTargetDir(t *testing.T) {
 	}
 
 	Plan(cmd("plan", featuresJSON, "dotnet test", target))
+	if err := os.WriteFile(filepath.Join(target, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeVerifyFeatureScript(t, target, "#!/usr/bin/env bash\nset -e\n")
 	Bearings(cmd("bearings", "ok"))
 	Smoke(cmd("smoke", "ok"))
 	Pick(cmd("pick"))
 	Implement(cmd("implement", "done in target"))
 
-	result := Verify(cmd("verify", "PASS: all green"))
+	result := Implement(cmd("implement", "PASS: all green"))
 
 	if !strings.Contains(result, "NEW SESSION") {
 		t.Fatalf("unexpected result: %s", result)

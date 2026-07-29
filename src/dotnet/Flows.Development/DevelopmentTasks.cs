@@ -7,7 +7,7 @@ namespace Flows.Development;
 /// Anthropic). An initializer (session 0) expands the brief into a prioritized feature
 /// list; then a loop of fresh-context sessions implements ONE feature at a time:
 ///
-///   start → plan → [bearings → smoke → pick → implement → verify(auto-handoff)]*
+///   start → plan → [implement → verify(auto-handoff)]*
 ///
 /// The state that survives the hard resets lives in persistent artifacts: the
 /// <see cref="FeatureStore"/> (feature_list.json, the harness's) and progress.txt + git
@@ -38,6 +38,7 @@ public static partial class DevelopmentTasks
     private const string CurrentFeatureSummaryKey = "current_feature_summary";
     private const string CurrentFeatureVerifyKey = "current_feature_verify";
     private const string FeatureStepsKey = "feature_steps";
+    private const string BearingsKey = "current_bearings";
 
     // Name of the brief artifact in ArtifactStore (.harness/brief.md) — persisted in
     // Start() so it can be reinjected into bearings/implement (DevelopmentTasks.Prompt.cs),
@@ -52,15 +53,14 @@ public static partial class DevelopmentTasks
     {
         // A previous session (maybe from another driver — tokens ran out in one IDE and
         // another takes over) may have died mid-feature. Restarting would throw away work
-        // in progress; resuming is safe and deterministic: Bearings is reentrant by
-        // construction (it only rearms the per-feature guard) and the next Pick()
-        // reselects the same feature, still pending — without needing to know exactly
-        // where the previous session stopped.
+        // in progress; resuming is safe and deterministic: the harness reconstructs the
+        // session context and reselects the same pending feature without needing to know
+        // exactly where the previous session stopped.
         if (FeatureStore.PendingCount() > 0)
         {
             Console.Error.WriteLine(
-                "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.");
-            return BearingsPrompt();
+                "[dev] run in progress detected (pending feature); resuming deterministically.");
+            return Bearings(null);
         }
 
         // Flow that PRODUCES feature_list: a new run erases the previous run's.
@@ -77,7 +77,8 @@ public static partial class DevelopmentTasks
             return InitializerInteractive();
 
         var (content, files) = DocsReader.Read(DocsFolder);
-        // Persisted so it can be reinjected into bearings/implement
+        // Persisted so it can be reinjected into the deterministic bearings context and
+        // implementation prompt
         // (DevelopmentTasks.Prompt.cs) — before this feature, "content" was only a local
         // variable of this turn, discarded as soon as the initializer finished.
         ArtifactStore.Write(BriefArtifactName, content);
@@ -111,22 +112,36 @@ public static partial class DevelopmentTasks
         // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
         // concern, not part of the contract).
         RunConfigStore.Write(new RunConfig(
-            ArgAt(envelope, 1, "dotnet test"),
-            ArgAt(envelope, 2, "."),
+            ExternalOrArg("HARNESS_VERIFY_CMD", envelope, 1, "dotnet test"),
+            ExternalOrArg("HARNESS_TARGET_DIR", envelope, 2, "."),
             Guid.NewGuid().ToString()));
 
-        return BearingsPrompt();
+        // Bearings, smoke and pick are deterministic harness work. The first driver turn
+        // after planning should be the creative implementation turn.
+        return Bearings(null);
     }
 
     public static string Bearings(Envelope? envelope)
     {
-        // New session (one feature): resets the per-feature guard counter.
+        // New session (one feature): resets the per-feature guard counter and captures
+        // bounded repository evidence without spending a model turn.
         StateStore.Set(FeatureStepsKey, "1");
-        return SmokePrompt();
+        CaptureBearings();
+        return Smoke(null);
     }
 
-    public static string Smoke(Envelope? envelope) =>
-        OverFeatureBudget() ? Stop("per-feature guard") : PickPrompt();
+    public static string Smoke(Envelope? envelope)
+    {
+        if (OverFeatureBudget())
+            return Stop("per-feature guard");
+
+        var smoke = TryAutomatedSmoke();
+        if (!smoke.Success)
+            return SmokeRetryPrompt(smoke.Result);
+
+        // Selection is already deterministic; no driver acknowledgement is required.
+        return Pick(null);
+    }
 
     public static string Pick(Envelope? envelope)
     {
@@ -161,11 +176,11 @@ public static partial class DevelopmentTasks
         if (OverFeatureBudget())
             return Stop("per-feature guard");
 
-        var summary = Arg(envelope).Trim();
-        if (!string.IsNullOrWhiteSpace(summary))
-            StateStore.Set(CurrentFeatureSummaryKey, summary);
+        // The driver's prose summary is not control-plane evidence. Derive the progress
+        // description from the actual change set and keep the response payload optional.
+        StateStore.Set(CurrentFeatureSummaryKey, ImplementationSummary());
 
-        var autoVerify = TryAutomatedVerify();
+        var autoVerify = TryDeterministicVerify();
         if (autoVerify.Attempted)
         {
             StateStore.Set(CurrentFeatureVerifyKey, autoVerify.Result);
@@ -182,18 +197,16 @@ public static partial class DevelopmentTasks
         if (OverFeatureBudget())
             return Stop("per-feature guard");
 
-        // FAILED → back to implementing the SAME feature (correction loop, bounded by the
-        // guard). PASSED → the harness does the deterministic handoff (progress + git)
-        // without spending a model turn; if it fails, falls back to the legacy
-        // manual-repair prompt.
-        var result = Arg(envelope).Trim();
-        if (result.StartsWith("FAIL", StringComparison.OrdinalIgnoreCase))
-            return FixPrompt(result);
-
-        if (result.StartsWith("PASS", StringComparison.OrdinalIgnoreCase))
+        // The response payload is compatibility-only. The harness reruns the configured
+        // verification command and decides from its process result, never from a textual
+        // PASS/FAIL asserted by the driver.
+        var result = TryDeterministicVerify();
+        if (result.Attempted)
         {
-            StateStore.Set(CurrentFeatureVerifyKey, result);
-            return CompleteVerifiedFeature(result);
+            StateStore.Set(CurrentFeatureVerifyKey, result.Result);
+            return result.Success
+                ? CompleteVerifiedFeature(result.Result)
+                : FixPrompt(result.Result);
         }
 
         return VerifyRetryPrompt();
@@ -201,14 +214,21 @@ public static partial class DevelopmentTasks
 
     public static string Handoff(Envelope? envelope)
     {
-        if (string.IsNullOrWhiteSpace(Arg(envelope)))
-            return HandoffRetryPrompt();
+        var verified = State(CurrentFeatureVerifyKey);
+        if (!verified.StartsWith("PASS", StringComparison.OrdinalIgnoreCase))
+            return HandoffPrompt("no deterministic PASS is recorded for the current feature");
+
+        // A driver-supplied hash is not evidence. Retry the actual deterministic handoff
+        // and inspect the repository state before marking the feature as passed.
+        var handoff = TryAutomatedHandoff(verified);
+        if (!handoff.Success)
+            return HandoffPrompt(handoff.Failure);
 
         if (int.TryParse(State(CurrentFeatureIdKey), out var id))
             FeatureStore.MarkPassed(id);
 
-        // Any feature still pending? Yes → next session (bearings). No → done.
-        return FeatureStore.AllPassing() ? Done() : BearingsPrompt();
+        // Any feature still pending? Yes → next session. No → done.
+        return FeatureStore.AllPassing() ? Done() : Bearings(null);
     }
 
     // --- guards and termination -------------------------------------------------
@@ -249,4 +269,69 @@ public static partial class DevelopmentTasks
         envelope?.Args is { } args && args.Length > index && !string.IsNullOrWhiteSpace(args[index])
             ? args[index]
             : fallback;
+
+    private static string ExternalOrArg(string variable, Envelope? envelope, int index, string fallback)
+    {
+        var external = Environment.GetEnvironmentVariable(variable);
+        return !string.IsNullOrWhiteSpace(external) ? external : ArgAt(envelope, index, fallback);
+    }
+
+    private static void CaptureBearings()
+    {
+        var targetDir = RunConfigStore.Load().TargetDir;
+        string resolvedTarget;
+        try
+        {
+            resolvedTarget = ResolveTargetDir(targetDir);
+        }
+        catch (InvalidOperationException ex)
+        {
+            StateStore.Set(BearingsKey, $"cwd: {Directory.GetCurrentDirectory()}\nTarget error: {ex.Message}");
+            return;
+        }
+
+        var progressPath = Path.Combine(resolvedTarget, "progress.txt");
+        string progress;
+        try
+        {
+            progress = File.Exists(progressPath)
+                ? string.Join("\n", File.ReadAllLines(progressPath).TakeLast(12))
+                : "(progress.txt not found)";
+        }
+        catch (Exception ex)
+        {
+            progress = $"(progress unavailable: {OneLine(ex.Message)})";
+        }
+
+        var git = GitCommand.Run(resolvedTarget, "log", "-n", "10", "--oneline");
+        var gitLog = git.ExitCode == 0
+            ? git.Output.Trim()
+            : $"(git log unavailable: {OneLine(git.Error, "not a Git repository")})";
+
+        StateStore.Set(BearingsKey,
+            $"cwd: {Directory.GetCurrentDirectory()}\n"
+            + $"target: {resolvedTarget}\n"
+            + $"progress tail:\n{progress}\n"
+            + $"recent git log:\n{gitLog}");
+    }
+
+    private static string ImplementationSummary()
+    {
+        try
+        {
+            var targetDir = ResolveTargetDir(RunConfigStore.Load().TargetDir);
+            var staged = GitCommand.Run(
+                targetDir, "diff", "--cached", "--stat", "--", ".", ":(exclude).harness");
+            var unstaged = GitCommand.Run(
+                targetDir, "diff", "--stat", "--", ".", ":(exclude).harness");
+            var summary = OneLine($"{staged.Output} {unstaged.Output}");
+            return string.IsNullOrWhiteSpace(summary)
+                ? "implementation completed"
+                : $"changed: {Snippet(summary)}";
+        }
+        catch
+        {
+            return "implementation completed";
+        }
+    }
 }

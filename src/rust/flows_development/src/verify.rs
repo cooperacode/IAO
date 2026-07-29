@@ -49,43 +49,41 @@ struct VerifyScriptResult {
     timed_out: bool,
 }
 
-pub fn try_automated_verify(feature_id: i32, target_dir: &Path) -> AutomatedVerifyResult {
+pub fn try_automated_verify(feature_id: i32, target_dir: &Path, verify_cmd: &str) -> AutomatedVerifyResult {
     let script = target_dir.join("verify-feature.sh");
-    if !script.exists() {
-        return AutomatedVerifyResult::missing();
-    }
+    let (command, label, is_script) = if script.is_file() {
+        (vec!["bash".to_string(), script.to_string_lossy().to_string(), feature_id.to_string()], format!("bash ./verify-feature.sh {feature_id}"), true)
+    } else {
+        let args = configured_verify_argv(verify_cmd);
+        if args.is_empty() { return AutomatedVerifyResult::missing(); }
+        (args.clone(), args.join(" "), false)
+    };
 
-    let result = run_verify_script(target_dir, &script, feature_id);
-    let log_path = write_verify_log(target_dir, &script, feature_id, &result);
+    let result = run_verify_script(target_dir, &command);
+    let log_path = write_verify_log(target_dir, &label, feature_id, &result);
 
     if result.timed_out {
         return AutomatedVerifyResult::failed(format!(
-            "FAIL: verify-feature.sh {feature_id} exceeded timeout ({}){}",
+            "FAIL: verification exceeded timeout ({}){}",
             verify_timeout_description(),
             verify_output_suffix(&result, &log_path)
         ));
     }
 
     if result.exit_code == 0 {
-        return AutomatedVerifyResult::passed(pass_result(
-            feature_id,
-            &result.output,
-            &result.error,
-            &log_path,
-        ));
+        return AutomatedVerifyResult::passed(format!("PASS: {} passed{}", if is_script { format!("verify-feature.sh {feature_id}") } else { "configured verify command".to_string() }, log_suffix(&log_path)));
     }
 
     AutomatedVerifyResult::failed(format!(
-        "FAIL: verify-feature.sh {feature_id} failed (exit {}){}",
+        "FAIL: verification failed (exit {}){}",
         result.exit_code,
         verify_output_suffix(&result, &log_path)
     ))
 }
 
-fn run_verify_script(target_dir: &Path, script: &Path, feature_id: i32) -> VerifyScriptResult {
-    let child = Command::new("bash")
-        .arg(script)
-        .arg(feature_id.to_string())
+fn run_verify_script(target_dir: &Path, command: &[String]) -> VerifyScriptResult {
+    let child = Command::new(&command[0])
+        .args(&command[1..])
         .current_dir(target_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -174,7 +172,7 @@ fn verify_timeout_description() -> String {
 
 fn write_verify_log(
     target_dir: &Path,
-    script: &Path,
+    command: &str,
     feature_id: i32,
     result: &VerifyScriptResult,
 ) -> String {
@@ -184,9 +182,7 @@ fn write_verify_log(
         .collect();
     let display_path = relative_path.to_string_lossy().replace('\\', "/");
 
-    let full_path = std::env::current_dir()
-        .unwrap_or_default()
-        .join(&relative_path);
+    let full_path = target_dir.join(&relative_path);
     let write_result = full_path
         .parent()
         .map(std::fs::create_dir_all)
@@ -196,9 +192,8 @@ fn write_verify_log(
                 &full_path,
                 format!(
                     "timestampUtc: {}\n\
-command: bash ./verify-feature.sh {feature_id}\n\
+                    command: {command}\n\
 cwd: {}\n\
-script: {}\n\
 exitCode: {}\n\
 timedOut: {}\n\
 \n\
@@ -209,7 +204,6 @@ timedOut: {}\n\
 {}",
                     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                     target_dir.display(),
-                    script.display(),
                     result.exit_code,
                     result.timed_out,
                     result.output,
@@ -227,14 +221,14 @@ timedOut: {}\n\
     }
 }
 
-fn pass_result(feature_id: i32, output: &str, error: &str, log_path: &str) -> String {
-    let first_line = first_meaningful_line(&[output, error]);
-    let result = if first_line.to_uppercase().starts_with("PASS") {
-        snippet(&first_line)
-    } else {
-        format!("PASS: verify-feature.sh {feature_id} passed")
-    };
-    result + &log_suffix(log_path)
+fn configured_verify_argv(raw: &str) -> Vec<String> {
+    let text = raw.trim();
+    if text.is_empty() || [";", "&", "|", "<", ">", "`", "$"].iter().any(|x| text.contains(x)) { return Vec::new(); }
+    let args = text.split_whitespace().map(str::to_string).collect::<Vec<_>>();
+    if args.is_empty() { return args; }
+    let bin = std::path::Path::new(&args[0]).file_name().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+    if ["sh", "bash", "zsh", "fish", "cmd", "powershell", "pwsh"].contains(&bin.as_str()) && args.iter().skip(1).any(|x| ["-c", "-command", "/c"].contains(&x.as_str())) { return Vec::new(); }
+    args
 }
 
 fn verify_output_suffix(result: &VerifyScriptResult, log_path: &str) -> String {

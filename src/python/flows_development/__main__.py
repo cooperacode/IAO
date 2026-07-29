@@ -27,17 +27,6 @@ TASKS = {
 # selection is the harness's).
 VALIDATORS = {
     "plan": envelope_validation.not_empty("the JSON array of features [{id,title,priority}]"),
-    "bearings": envelope_validation.not_empty("the short bearings summary (pwd, progress, git log)"),
-    "smoke": envelope_validation.not_empty("the compact smoke test result (init.sh + log path)"),
-    "implement": envelope_validation.not_empty("the short summary of what was implemented"),
-    "verify": envelope_validation.matches(
-        r"^(PASS\b|FAIL\b)",
-        "the compact self-verify verdict starting with PASS or FAIL: reason",
-    ),
-    "handoff": envelope_validation.matches(
-        r"^([0-9a-f]{6,40}\b|NO_GIT:\s+\S.*)$",
-        "the commit hash, or NO_GIT: reason when there is no Git repository",
-    ),
 }
 
 

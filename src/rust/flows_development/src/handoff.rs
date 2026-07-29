@@ -226,6 +226,13 @@ fn append_progress(
         one_line(&command, "")
     );
 
+    if let Ok(existing) = std::fs::read_to_string(target_dir.join("progress.txt")) {
+        let prefix = format!("Feature #{feature_id} - {}:", one_line(title, ""));
+        if existing.lines().any(|l| l.contains(&prefix) && l.contains("Result:")) {
+            return Ok(());
+        }
+    }
+
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .create(true)

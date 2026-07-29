@@ -111,29 +111,21 @@ Repeat the command '%s' and '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd
 // --- per-feature loop (one fresh-context session) ------------------
 
 func BearingsPrompt() string {
-	input := fmt.Sprintf(`=== NEW SESSION (clean context) ===
-You are a coding agent starting a FRESH session. Do not assume anything from the
-previous session — all state lives in the persistent artifacts.
-%s
-Get your bearings with short output: run `+"`pwd`"+`, read only the tail of `+"`progress.txt`"+` and the
-recent `+"`git log --oneline`"+` to understand what has already been done. Do not paste long
-logs; if you need to preserve detail, save it in `+"`.harness/logs/`"+`.
-
-Summarize what you found in '%s' in 2-4 lines.`, briefBlock(), tokenNote)
+	input := "=== NEW SESSION (clean context) ===\n" + briefBlock() +
+		"The harness already captured bounded bearings (working directory, progress tail, and recent git history).\n" +
+		"Continue with the smoke step; do not return a bearings note."
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "bearings", []string{tokenNote}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "bearings", []string{}),
 		engine.Skills("dev-bearings"))
 }
 
 func SmokePrompt() string {
-	input := fmt.Sprintf("Smoke test: run `./init.sh` in the target directory (%s) and confirm\n"+
-		"the baseline comes up/builds without error before touching any feature. Save the\n"+
-		"full output to `.harness/logs/smoke.log` and report in '%s' just `ok` or the\n"+
-		"main error and the log path.", engine.LoadRunConfig().TargetDir, tokenSmoke)
+	input := fmt.Sprintf("The harness runs `./init.sh` deterministically in the target directory (%s).\n"+
+		"It stores full output in `.harness/logs/smoke.log`; proceed without a smoke verdict.", engine.LoadRunConfig().TargetDir)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{tokenSmoke}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{}),
 		engine.Skills("dev-smoke"))
 }
 
@@ -146,43 +138,41 @@ func PickPrompt() string {
 		nil)
 }
 
+func SmokeFixPrompt(failure string) string {
+	input := fmt.Sprintf("Smoke failed deterministically: %s\nFix the target setup, then return `smoke` without arguments.", failure)
+	return engine.Format(input, engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{}), engine.Skills("dev-smoke"))
+}
+
 func ImplementPrompt(feature engine.Feature) string {
 	input := fmt.Sprintf("Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n"+
 		"it:\n%s\nFeature #%d (priority %d): %s\n%sWork in the target directory (%s). If you run commands with\n"+
-		"long output, save it to `.harness/logs/` and do not paste logs into the summary. When done,\n"+
-		"summarize what you implemented in '%s' in one short sentence.",
+		"long output, save it to `.harness/logs/`. Return `implement` without arguments when done;\n"+
+		"the harness derives the summary from the actual Git diff.",
 		briefBlock(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
-		engine.LoadRunConfig().TargetDir, tokenSummary)
+		engine.LoadRunConfig().TargetDir)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{tokenSummary}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
 		engine.Skills("dev-implement"))
 }
 
 func VerifyPrompt() string {
 	config := engine.LoadRunConfig()
-	input := fmt.Sprintf("The harness did not find `verify-feature.sh` in the target directory, so do a\n"+
-		"manual self-verify of feature #%s\n(%s) the way a user would: run\n"+
-		"`%s` in the target directory (%s) and\nconfirm the behavior end to end. Save the full output to\n"+
-		"`.harness/logs/verify-%s.log`.\n\nRespond in '%s' starting with `PASS` or `FAIL: <reason>`, including only the\n"+
-		"main error and the log path.",
-		state(currentFeatureIdKey), state(currentFeatureTitleKey), config.VerifyCmd, config.TargetDir,
-		state(currentFeatureIdKey), tokenResult)
+	input := fmt.Sprintf("The deterministic verifier could not be started for feature #%s (%s) in %s.\n"+
+		"Repair the verification setup and return `implement` without arguments.", state(currentFeatureIdKey), state(currentFeatureTitleKey), config.TargetDir)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "verify", []string{tokenResult}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
 		engine.Skills("dev-verify"))
 }
 
 func VerifyRetryPrompt() string {
 	config := engine.LoadRunConfig()
-	input := fmt.Sprintf("The self-verify verdict did not start with `PASS` or `FAIL`. Re-run, if\n"+
-		"needed, `%s` in the target directory (%s)\nsaving the full output to `.harness/logs/verify-%s.log`.\n"+
-		"Respond in '%s' starting exactly with `PASS` or `FAIL: <reason>`,\nwithout pasting long logs.",
-		config.VerifyCmd, config.TargetDir, state(currentFeatureIdKey), tokenResult)
+	input := fmt.Sprintf("The deterministic verifier is unavailable for feature #%s in %s.\n"+
+		"Repair or create it and return `implement` without arguments.", state(currentFeatureIdKey), config.TargetDir)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "verify", []string{tokenResult}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
 		engine.Skills("dev-verify"))
 }
 
@@ -193,11 +183,11 @@ func FixPrompt(verifyFailure string) string {
 	}
 
 	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s). %sFix the implementation (still ONLY this feature).\n"+
-		"If you check logs, read only the relevant excerpt. Summarize the fix in '%s' —\nwe'll verify again next.",
-		state(currentFeatureIdKey), state(currentFeatureTitleKey), failure, tokenSummary)
+		"If you check logs, read only the relevant excerpt. Return `implement` without arguments; the harness derives the new summary from Git.",
+		state(currentFeatureIdKey), state(currentFeatureTitleKey), failure)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{tokenSummary}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
 		engine.Skills("dev-implement"))
 }
 
@@ -207,23 +197,17 @@ func HandoffPrompt(automaticFailure string) string {
 		failure = fmt.Sprintf("Automatic handoff failed: %s\n\n", automaticFailure)
 	}
 
-	input := fmt.Sprintf("%sLeave the state CLEAN for the next session:\n"+
-		"1. `git commit` with a descriptive message referencing feature #%s. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.\n"+
-		"2. Append a line to `progress.txt` in this exact format (same as the automatic handoff, so entries stay consistent): `[YYYY-MM-DD HH:MM UTC] Feature #<id> - <title>: <what was done>. Verify with: <command>. Result: <result>`.\n\n"+
-		"Confirm with the commit hash or `NO_GIT: <reason>` in '%s'.",
-		failure, state(currentFeatureIdKey), tokenCommit)
+	input := fmt.Sprintf("%sAutomatic handoff requires a deterministic PASS. Return `handoff` without arguments so the harness can retry the real progress/git operation.", failure)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "handoff", []string{tokenCommit}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "handoff", []string{}),
 		engine.Skills("dev-handoff"))
 }
 
 func HandoffRetryPrompt() string {
-	input := fmt.Sprintf("The handoff confirmation came back empty. Update `progress.txt` in the target directory\n"+
-		"(%s) and respond in '%s' with the commit hash or\n`NO_GIT: <reason>` when there is no Git repository.",
-		engine.LoadRunConfig().TargetDir, tokenCommit)
+	input := "The handoff is deterministic and only runs after a recorded PASS. Return `handoff` without arguments after verification passes."
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "handoff", []string{tokenCommit}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "handoff", []string{}),
 		engine.Skills("dev-handoff"))
 }

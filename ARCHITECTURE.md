@@ -116,9 +116,10 @@ and routing to the task the flow registered.
   tolerates markdown fences and prose around the JSON object; a parse failure
   becomes a protocol error, not a silent termination.
   (`src/dotnet/Harness.Engine/Envelope.cs`)
-- **`EnvelopeValidation`** — one predicate per command. In Development, `verify`
-  must start with `PASS` or `FAIL`; `handoff` needs a commit hash or
-  `NO_GIT: <reason>`.
+- **`EnvelopeValidation`** — cheap protocol predicates per command. In
+  Development, the smoke/implement acknowledgements are only repair signals;
+  verification and handoff are decided from process and repository state, not
+  from driver-supplied PASS text or hashes.
   (`src/dotnet/Harness.Engine/EnvelopeValidation.cs`)
 
 Guards enforced here, independent of any single flow: `MaxSteps` (global, from
@@ -136,7 +137,7 @@ What leaves the harness each turn: an instruction block with `input`, a
 
 - **`PromptFormatter`** — composes the block handed to the driver and
   substitutes the tokens of the current state (`$FEATURES`, `$VERIFY_CMD`,
-  `$TARGET_DIR`, `$NOTE`, `$SMOKE`, `$SUMMARY`, `$RESULT`, `$COMMIT`). It
+  `$TARGET_DIR`, `$SMOKE`, `$SUMMARY`, `$RESULT`). It
   re-injects the driver context captured at `start` (e.g. `{"driver": "codex"}`)
   into every output, so the harness never forgets who it is talking to.
   (`src/dotnet/Harness.Engine/PromptFormatter.cs`)
@@ -153,11 +154,9 @@ What leaves the harness each turn: an instruction block with `input`, a
   current working directory, falling back to the binary's own directory.
   (`src/dotnet/Harness.Engine/PathResolver.cs`)
 
-Injected skills, one per step: `dev-initializer`, `dev-bearings`, `dev-smoke`,
-`dev-implement`, and — **manual fallback path only** — `dev-verify` and
-`dev-handoff`. The asterisk in Figure 3 marks exactly that: these two skills are
-only injected when the automatic path described in Figure 6 is unavailable or
-fails.
+Injected skills, one per driver turn: `dev-initializer`, `dev-implement`, and —
+**repair path only** — `dev-smoke`, `dev-verify`, and `dev-handoff`. Bearings and
+feature selection are internal harness work.
 
 ## Figure 4 — Persistence and Telemetry Layer
 
@@ -228,31 +227,32 @@ does not assume.
 
 ![High-level architecture — Harness · Flows.Development](assets/images/fig-6-902-en.svg)
 
-Eight states. Six are driver turns; `pick` is an internal harness decision, and
-`verify`/`handoff` return to the driver only when automation is missing or
-fails.
+Eight protocol commands remain available for compatibility, but the normal
+path has only the planning and implementation driver turns. `bearings`,
+`smoke`, and `pick` are executed internally; `verify` and `handoff` return to
+the driver only when automated repair is needed.
 
 | State | What happens |
 |---|---|
-| `start` | Resumes via `bearings` if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `docs/` or interactively) |
-| `plan` | Writes up to `MaxFeatures = 10` features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`) |
-| `bearings` | Re-orients from disk (`progress.txt`, `git log`) and resets the per-feature step budget |
-| `smoke` | Runs `./init.sh` before touching any feature |
+| `start` | Resumes by reconstructing bounded repository context if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `docs/` or interactively) |
+| `plan` | Writes up to `MaxFeatures = 10` features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`), then starts deterministic session setup |
+| `bearings` | Internal compatibility command: captures the `progress.txt` tail and `git log`, then continues automatically |
+| `smoke` | Internal compatibility command: runs `./init.sh` with timeout and exit-code classification before selecting a feature |
 | `pick` | **Harness decision, no driver input.** Selects the highest-priority feature among the ones whose dependencies already passed |
 | `implement` | Edits code and tests for the selected feature, then **tries to close it automatically** |
-| *auto-verify* | If `verify-feature.sh` exists, the harness runs it (with a timeout) and logs the output — no driver turn spent |
+| *auto-verify* | The harness runs `verify-feature.sh`, or the configured `verify_cmd` when the script is absent, with timeout and logs — no driver turn spent |
 | *auto-handoff* | On a pass, the harness updates `progress.txt`, commits via `GitCommand`, and marks the feature — again, no driver turn |
 | `stop` | When every feature passes, or no pending feature is ready (blocked by an unmet dependency) |
 
-**Fallback path** — `verify` (driver answers `PASS`/`FAIL`) and `handoff`
-(driver answers a commit hash or `NO_GIT: <reason>`) are only requested as
-separate turns when `verify-feature.sh` is absent, or when the automated path
-fails. `FAIL` never swaps the feature: it always routes back to `implement` to
-fix the same item.
+**Fallback path** — `verify` and `handoff` are only requested as repair turns
+when the harness cannot complete the configured operation. The harness executes
+the configured verification command without a shell and decides from its exit
+code; textual `PASS` or commit hashes are not evidence. A failed verification
+always routes back to `implement` for the same feature.
 
-**Cyclic return** — after a successful handoff (automatic or manual), the flow
-goes back to `bearings` with a clean session, not straight to the next
-`implement`.
+**Cyclic return** — after a successful handoff, the harness reconstructs the
+bounded bearings context and starts the next feature without a separate driver
+turn.
 
 **Budget** — `MaxFeatures = 10`, `StepsPerFeature = 8`,
 `StepBudget = 10 × 8 + 8 = 88`, passed to `HarnessHost.Run` as the effective
@@ -288,17 +288,16 @@ binary and, from there, to the repository being changed.
   paths; defines `shouldResetOnStart`.
 - `DevelopmentTasks.cs` — transitions and persistent effects of the state
   machine.
-- `DevelopmentTasks.Verify.cs` — auto-verify, with timeout and a per-feature
-  log under `.harness/logs/`.
+- `DevelopmentTasks.Verify.cs` — deterministic smoke/verify execution, with
+  timeout and per-step logs under `.harness/logs/`.
 - `DevelopmentTasks.Handoff.cs` — auto-handoff: `progress.txt` and commit via
   `GitCommand`.
 - `DevelopmentTasks.Prompt.cs` — prompts, tokens, and skills per state.
 
 **Operational memory in the target project** — the files a fresh session reads
 before touching code: `init.sh` (setup and smoke test), `verify-feature.sh
-<id>` (the automation switch — its presence is what turns `verify`/`handoff`
-into automatic steps), `progress.txt` (human-readable summary), `git log`
-(handoff evidence, manual or automatic).
+<id>` (the preferred feature-specific verifier), `progress.txt` (human-readable
+summary), `git log` (handoff evidence, validated by the harness).
 
 ## Figure 8 — High-Level Architecture (Consolidated View)
 

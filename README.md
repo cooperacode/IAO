@@ -64,9 +64,9 @@ Development flow:
 ![High-level architecture — Harness · Flows.Development](assets/images/fig-6-902-en.svg)
 <p align="center"><i>Figure 2: The development flow is a state machine over a feature backlog, with a step budget and a dependency graph.</i></p>
 
-`verify` and `handoff` exist as driver-facing commands but only run as a
-fallback path — the harness requests them only when `verify-feature.sh` is
-absent from the target or when the automated verify/handoff fails.
+`verify` and `handoff` remain available as driver-facing repair commands. The
+harness normally executes verification and handoff itself; the driver is asked
+to intervene only when an automated operation cannot complete.
 
 The harness is the protocol boundary. The agent does not choose the next state
 on its own; it responds to the requested state, writes or sends a JSON envelope,
@@ -79,19 +79,18 @@ diagram, with the file that implements each component.
 
 - **Brief**: documents in `docs/*.md` or `docs/*.txt` that describe what should
   be built. Read once at `start` and persisted to `.harness/brief.md`
-  (`ArtifactStore`), so it can be reinjected verbatim into the `bearings` and
-  `implement` prompts later in the loop — not just consumed once at
-  initialization.
+  (`ArtifactStore`), so it can be reinjected verbatim into the implementation
+  prompt later in the loop — not just consumed once at initialization.
 - **HarnessHost**: reusable flow entry point; runs dispatch, publishes output
   to `stdout`, and snapshots state and trace when the flow stops.
 - **TaskRegistry**: parses envelopes, validates commands, applies step, cost,
   and time guards, and dispatches each command to the proper task.
 - **Envelope**: JSON contract exchanged between agent and harness, with `type`,
   `value`, `args`, and optional context.
-- **DevelopmentTasks**: development-specific state machine. Beyond the
-  driver-facing transitions, it also owns the automated verify/handoff path —
-  running the target's `verify-feature.sh` and committing on a pass — and only
-  falls back to a driver turn when that automation is absent or fails.
+- **DevelopmentTasks**: development-specific state machine. It performs
+  bearings, smoke execution, feature selection, verification, and handoff in
+  code; the driver is used for planning, implementation, and repair when an
+  automated operation fails.
 - **Stores in `.harness/`**: `StateStore` (current step and feature in
   progress, reset every `start`), `RunConfigStore` (`verify_cmd`/`target_dir`,
   written once and kept across a resumed run), `FeatureStore` (the feature
@@ -101,8 +100,8 @@ diagram, with the file that implements each component.
 - **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, or another driver
   able to run the runner, read `stdout`, and respond in JSON.
 - **Project code**: the target repository, changed by the agent one feature at
-  a time and verified — automatically through `verify-feature.sh` when the
-  target provides one, or manually by the agent otherwise.
+  a time and verified — automatically through `verify-feature.sh` or the
+  configured `verify_cmd`; the agent is only asked to repair a failed setup.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how each participant maps to source
 files across the engine and flow layers.
@@ -115,12 +114,12 @@ files across the engine and flow layers.
    for a structured feature list.
 4. The agent returns the list; the harness validates it, caps it, and persists
    it to `.harness/feature_list.json`.
-5. For each ready feature, the harness drives the `bearings -> smoke -> pick ->
-   implement -> verify` cycle.
+5. For each ready feature, the harness collects bounded bearings, runs the smoke
+   script, selects the ready feature, and emits only the implementation turn.
 6. If verification fails, the harness returns to implementation for the same
    feature within the configured limits.
-7. When the feature passes, the harness performs the handoff, marks the feature
-   as complete, and selects the next one.
+7. When the feature passes, the harness performs the handoff, validates the real
+   repository state, marks the feature as complete, and selects the next one.
 8. When no pending features remain, the harness emits `stop`.
 
 Protocol errors do not silently terminate the flow. The harness returns a
@@ -159,6 +158,10 @@ This repository includes three protocol-compatible implementations:
 
 The `harness.json` file configures global limits such as `maxSteps`,
 `maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`.
+
+For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
+`HARNESS_VERIFY_CMD` can override the values returned by the initializer, keeping
+those control-plane settings outside the model response.
 
 The included adapters call `./run-development.sh` by default:
 

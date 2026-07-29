@@ -44,7 +44,8 @@ public static class FeatureStore
     /// <summary>
     /// Parses the raw feature array the driver returns in <c>plan</c>
     /// (<c>[{"id":1,"title":"...","priority":1}, ...]</c>). Forces <c>Passes = false</c>
-    /// (every feature is born pending) and reindexes missing/duplicate ids by order. Empty
+    /// (every feature is born pending) and assigns collision-free ids to entries that omitted
+    /// one. Duplicate explicit ids, blank titles and non-positive priorities are rejected.
     /// list if the JSON doesn't parse — the caller re-issues the request (corrective loop),
     /// doesn't bring down the run. Parsing lives in the engine because
     /// <see cref="HarnessJsonContext"/> (AOT) is internal to the assembly.
@@ -57,18 +58,43 @@ public static class FeatureStore
             if (parsed is null || parsed.Length == 0)
                 return [];
 
-            // Reindex first: DependsOn only makes sense referencing already-final ids, not
-            // the raw (possibly missing/duplicated) ones that came from the driver.
-            var reindexed = parsed
-                .Select((f, i) => f with
+            if (parsed.Any(f => string.IsNullOrWhiteSpace(f.Title) || f.Priority <= 0))
+            {
+                Console.Error.WriteLine(
+                    "[FeatureStore] every feature must have a title and a positive priority.");
+                return [];
+            }
+
+            var explicitIds = parsed.Where(f => f.Id > 0).Select(f => f.Id).ToList();
+            if (explicitIds.Count != explicitIds.Distinct().Count())
+            {
+                Console.Error.WriteLine("[FeatureStore] duplicate explicit feature id.");
+                return [];
+            }
+
+            var usedIds = explicitIds.ToHashSet();
+            var nextId = usedIds.Count == 0 ? 1 : usedIds.Max() + 1;
+            var reindexed = new List<Feature>(parsed.Length);
+            foreach (var feature in parsed)
+            {
+                var id = feature.Id;
+                if (id <= 0)
                 {
-                    Id = f.Id > 0 ? f.Id : i + 1,
+                    while (usedIds.Contains(nextId))
+                        nextId++;
+                    id = nextId++;
+                    usedIds.Add(id);
+                }
+
+                reindexed.Add(feature with
+                {
+                    Id = id,
                     Passes = false,
-                    DependsOn = f.Deps,
-                    Description = TruncateDescription(f.Description),
-                    References = f.Refs,
-                })
-                .ToList();
+                    DependsOn = feature.Deps.Distinct().ToArray(),
+                    Description = TruncateDescription(feature.Description),
+                    References = feature.Refs.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().ToArray(),
+                });
+            }
 
             if (DependencyGraphError(reindexed) is { } error)
             {

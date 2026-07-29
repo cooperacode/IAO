@@ -17,6 +17,7 @@ use harness_engine::{
 };
 
 use crate::{handoff, prompts, verify};
+use std::process::Command;
 
 // Local guards for this flow (harness.json's global ceiling, 12, is too short for a
 // loop). Few features + a per-feature step ceiling: bars the implement↔verify loop that
@@ -118,8 +119,8 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
     // concern, not part of the contract).
     run_config_store::write(&RunConfig {
-        verify_cmd: arg_at(envelope, 1, "dotnet test"),
-        target_dir: arg_at(envelope, 2, "."),
+        verify_cmd: std::env::var("HARNESS_VERIFY_CMD").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 1, "dotnet test")),
+        target_dir: std::env::var("HARNESS_TARGET_DIR").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 2, ".")),
         run_id: uuid::Uuid::new_v4().to_string(),
     });
 
@@ -129,12 +130,15 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 pub fn bearings(_envelope: Option<&Envelope>) -> String {
     // New session (one feature): resets the per-feature guard counter.
     state_store::set(FEATURE_STEPS_KEY, "1");
+    capture_bearings();
     prompts::smoke_prompt()
 }
 
 pub fn smoke(_envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
         stop("per-feature guard")
+    } else if let Err(failure) = run_smoke() {
+        prompts::smoke_fix_prompt(&failure)
     } else {
         prompts::pick_prompt()
     }
@@ -174,22 +178,20 @@ pub fn pick(_envelope: Option<&Envelope>) -> String {
     prompts::implement_prompt(&next)
 }
 
-pub fn implement(envelope: Option<&Envelope>) -> String {
+pub fn implement(_envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
         return stop("per-feature guard");
     }
 
-    let summary = arg(envelope).trim().to_string();
-    if !summary.is_empty() {
-        state_store::set(CURRENT_FEATURE_SUMMARY_KEY, &summary);
-    }
+    state_store::set(CURRENT_FEATURE_SUMMARY_KEY, &implementation_summary());
 
     let feature_id: Option<i32> = state(CURRENT_FEATURE_ID_KEY).parse().ok();
     if let Some(feature_id) = feature_id {
         // Invalid target_dir (root, home, harness install) -> same "automatic
         // verification not attempted" path as a target_dir with no verify-feature.sh.
         if let Ok(target_dir) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
-            let auto = verify::try_automated_verify(feature_id, &target_dir);
+            let config = run_config_store::load();
+            let auto = verify::try_automated_verify(feature_id, &target_dir, &config.verify_cmd);
             if auto.attempted {
                 state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
                 return if auto.success {
@@ -204,44 +206,56 @@ pub fn implement(envelope: Option<&Envelope>) -> String {
     prompts::verify_prompt()
 }
 
-pub fn verify(envelope: Option<&Envelope>) -> String {
+pub fn verify(_envelope: Option<&Envelope>) -> String {
     if over_feature_budget() {
         return stop("per-feature guard");
     }
 
-    // FAILED → back to implementing the SAME feature (correction loop, bounded by the
-    // guard). PASSED → the harness does the deterministic handoff (progress + git)
-    // without spending a model turn; if it fails, falls back to the legacy manual-repair
-    // prompt.
-    let result = arg(envelope).trim().to_string();
-    let upper = result.to_uppercase();
-    if upper.starts_with("FAIL") {
-        return prompts::fix_prompt(Some(&result));
-    }
-
-    if upper.starts_with("PASS") {
-        state_store::set(CURRENT_FEATURE_VERIFY_KEY, &result);
-        return handoff::complete_verified_feature(&result);
-    }
-
-    prompts::verify_retry_prompt()
+    let config = run_config_store::load();
+    let id = match state(CURRENT_FEATURE_ID_KEY).parse::<i32>() { Ok(v) => v, Err(_) => return prompts::verify_retry_prompt() };
+    let target = match handoff::resolve_target_dir(&config.target_dir) { Ok(v) => v, Err(_) => return prompts::verify_retry_prompt() };
+    let auto = verify::try_automated_verify(id, &target, &config.verify_cmd);
+    if !auto.attempted { return prompts::verify_retry_prompt(); }
+    state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
+    if auto.success { handoff::complete_verified_feature(&auto.result) } else { prompts::fix_prompt(Some(&auto.result)) }
 }
 
-pub fn handoff_task(envelope: Option<&Envelope>) -> String {
-    if arg(envelope).trim().is_empty() {
-        return prompts::handoff_retry_prompt();
-    }
+pub fn handoff_task(_envelope: Option<&Envelope>) -> String {
+    let result = state(CURRENT_FEATURE_VERIFY_KEY);
+    if !result.to_uppercase().starts_with("PASS") { return prompts::handoff_retry_prompt(); }
+    handoff::complete_verified_feature(&result)
+}
 
-    if let Ok(id) = state(CURRENT_FEATURE_ID_KEY).parse::<i32>() {
-        feature_store::mark_passed(id);
+fn capture_bearings() {
+    if let Ok(target) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
+        let progress = std::fs::read_to_string(target.join("progress.txt")).unwrap_or_default();
+        let tail = progress.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+        let log = harness_engine::git_command::run(&target, &["log", "-n", "10", "--oneline"]);
+        let evidence = format!("cwd: {}\nprogress tail:\n{}\ngit log:\n{}", target.display(), tail, handoff::one_line(&log.output, "no git history"));
+        state_store::set("bearings", &evidence.chars().take(4000).collect::<String>());
     }
+}
 
-    // Any feature still pending? Yes → next session (bearings). No → done.
-    if feature_store::all_passing() {
-        done()
-    } else {
-        prompts::bearings_prompt()
+fn run_smoke() -> Result<(), String> {
+    let target = handoff::resolve_target_dir(&run_config_store::load().target_dir)?;
+    let script = target.join("init.sh");
+    if !script.is_file() { return Err("init.sh is missing from the target directory".to_string()); }
+    let output = Command::new("bash").arg(&script).current_dir(&target).output().map_err(|e| e.to_string())?;
+    let log = target.join(".harness/logs/smoke.log");
+    if let Some(parent) = log.parent() { let _ = std::fs::create_dir_all(parent); }
+    let _ = std::fs::write(&log, format!("exitCode: {}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}\n", output.status.code().unwrap_or(-1), String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)));
+    if output.status.success() { Ok(()) } else { Err("init.sh failed. Log: .harness/logs/smoke.log".to_string()) }
+}
+
+fn implementation_summary() -> String {
+    let config = run_config_store::load();
+    if let Ok(target) = handoff::resolve_target_dir(&config.target_dir) {
+        let diff = harness_engine::git_command::run(&target, &["diff", "HEAD", "--stat", ".", ":(exclude).harness"]);
+        if diff.exit_code == 0 && !diff.output.trim().is_empty() { return handoff::one_line(&diff.output, "implementation completed"); }
+        let status = harness_engine::git_command::run(&target, &["status", "--short", "--", ".", ":(exclude).harness"]);
+        return handoff::one_line(&status.output, "implementation completed");
     }
+    "implementation completed".to_string()
 }
 
 // --- guards and termination -------------------------------------------------
@@ -342,14 +356,17 @@ mod tests {
     }
 
     fn plan_default() -> String {
-        plan(Some(&cmd(
+        let result = plan(Some(&cmd(
             "plan",
             vec![FEATURES_JSON, "dotnet test", "src/app"],
-        )))
+        )));
+        std::fs::create_dir_all("src/app").unwrap();
+        std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
+        result
     }
 
     /// Advances the flow until a feature is chosen and implemented (ready for verify),
-    /// with no `verify-feature.sh` in the target (falls back to manual self-verify).
+    /// with no `verify-feature.sh` in the target (the deterministic fallback fails).
     fn advance_to_verify() {
         plan_default();
         bearings(Some(&cmd("bearings", vec!["orientado"])));
@@ -517,9 +534,12 @@ mod tests {
         let _iso = Isolated::new();
         let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]"#;
         plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"])));
+        std::fs::create_dir_all("src/app").unwrap();
+        std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
         bearings(Some(&cmd("bearings", vec!["ok"])));
         smoke(Some(&cmd("smoke", vec!["ok"])));
         pick(Some(&cmd("pick", vec![]))); // escolhe "B" (prioridade 1), sem description/references
+        write_verify_feature_script(std::path::Path::new("src/app"), "#!/usr/bin/env bash\nset -e\n");
         implement(Some(&cmd("implement", vec!["feito"])));
         verify(Some(&cmd("verify", vec!["PASS"]))); // completes "B", auto-advances
         bearings(Some(&cmd("bearings", vec!["ok"])));
@@ -717,6 +737,8 @@ mod tests {
 
         advance_to_verify();
 
+        write_verify_feature_script(std::path::Path::new("src/app"), "#!/usr/bin/env bash\nset -e\n");
+
         let result = verify(Some(&cmd("verify", vec!["PASS"])));
 
         assert!(result.contains("NEW SESSION"));
@@ -738,9 +760,9 @@ mod tests {
 
         let result = verify(Some(&cmd("verify", vec!["rodei os testes e passou"])));
 
-        assert!(result.contains(r#""value":"verify"#));
+        assert!(result.contains(r#""value":"implement"#));
         assert!(!result.contains(r#""value":"handoff"#));
-        assert!(result.contains("did not start"));
+        assert!(result.contains("FAILED"));
     }
 
     #[test]
@@ -764,7 +786,7 @@ mod tests {
         assert_eq!(feature_store::pending_count(), 1);
         let progress = std::fs::read_to_string("src/app/progress.txt").unwrap();
         assert!(progress.contains("Feature #2"));
-        assert!(progress.contains("PASS: feature 2 verificada"));
+        assert!(progress.contains("PASS: verify-feature.sh 2 passed"));
         assert!(progress.contains(".harness/logs/verify-feature-2.log"));
     }
 
@@ -815,8 +837,8 @@ mod tests {
 
         let result = handoff_task(Some(&cmd("handoff", vec!["abc123"])));
 
-        assert!(result.contains("NEW SESSION"));
-        assert_eq!(feature_store::pending_count(), 1);
+        assert!(result.contains(r#""value":"handoff"#));
+        assert_eq!(feature_store::pending_count(), 2);
     }
 
     #[test]

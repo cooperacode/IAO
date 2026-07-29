@@ -25,6 +25,7 @@ public class DevelopmentFlowTests : IDisposable
         Clean();
         _targetDir = Path.Combine(Path.GetTempPath(), "development-flow-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_targetDir);
+        WriteInitScript(_targetDir);
     }
 
     public void Dispose()
@@ -97,9 +98,14 @@ public class DevelopmentFlowTests : IDisposable
     {
         Plan();
         DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "baseline ok"));
-        DevelopmentTasks.Pick(Cmd("pick"));
         DevelopmentTasks.Implement(Cmd("implement", "implementei"));
+    }
+
+    private static void WriteInitScript(string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        File.WriteAllText(Path.Combine(targetDir, "init.sh"),
+            "#!/usr/bin/env bash\nset -euo pipefail\n");
     }
 
     private static void WriteVerifyFeatureScript(string targetDir, string body)
@@ -135,7 +141,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Start();
 
-        Assert.Contains("NEW SESSION", result); // bearings_prompt, not the initializer
+        Assert.Contains("\"value\":\"implement\"", result); // deterministic session setup
         Assert.Equal(2, FeatureStore.Load().Count); // untouched
         Assert.Equal(2, FeatureStore.PendingCount()); // none marked as passing
         Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd); // untouched
@@ -154,7 +160,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DispatchJson("""{"type":"text","value":"start"}""");
 
-        Assert.Contains("NEW SESSION", result); // resumed via bearings, didn't restart
+        Assert.Contains("\"value\":\"implement\"", result); // resumed without restart
         Assert.Contains(Trace.Load(), e => e is { Step: 41, Command: "handoff" }); // trace preserved
         Assert.Equal(stepBeforeStart + 1, StateStore.Load().Step); // counter continued, didn't go back to 1
     }
@@ -175,15 +181,14 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Plan_PersisteFeaturesERoteiaParaBearings()
+    public void Plan_PersisteFeaturesERoteiaDiretoParaImplementacao()
     {
-        var result = DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "npm test", "web"));
+        var result = DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "npm test", _targetDir));
 
         Assert.Equal(2, FeatureStore.Load().Count);
         Assert.Equal("npm test", RunConfigStore.Load().VerifyCmd);
-        Assert.Equal("web", RunConfigStore.Load().TargetDir);
-        Assert.Contains("NEW SESSION", result);
-        Assert.Contains("\"value\":\"bearings\"", result);
+        Assert.Equal(_targetDir, RunConfigStore.Load().TargetDir);
+        Assert.Contains("\"value\":\"implement\"", result);
     }
 
     [Fact]
@@ -252,7 +257,7 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Plan_RetornaBearingsComOBriefReinjetado()
+    public void Plan_RetornaImplementComOBriefReinjetado()
     {
         GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
@@ -263,15 +268,13 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Pick_RetornaImplementComOBriefReinjetado()
+    public void BearingsSelecionaImplementComOBriefReinjetado()
     {
         GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
         Plan();
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
 
-        var result = DevelopmentTasks.Pick(Cmd("pick"));
+        var result = DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
 
         Assert.Contains("topic A brief", result);
     }
@@ -280,43 +283,31 @@ public class DevelopmentFlowTests : IDisposable
     public void BearingsEImplement_SemBriefPersistido_NaoTemTagBrief()
     {
         // No docs/: interactive mode, no persisted brief — the block disappears, not empty.
-        var bearings = Plan();
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-        var implement = DevelopmentTasks.Pick(Cmd("pick"));
+        var implement = Plan();
 
-        Assert.DoesNotContain("<brief>", bearings);
         Assert.DoesNotContain("<brief>", implement);
     }
 
     [Fact]
-    public void Pick_RetornaImplementComDescriptionEReferencesDaFeature()
+    public void ImplementPrompt_ComDescriptionEReferencesDaFeature()
     {
         const string json =
             """[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]""";
+        WriteVerifyFeatureScript(_targetDir,
+            "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
         DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-        DevelopmentTasks.Pick(Cmd("pick")); // escolhe "B" (prioridade 1), sem description/references
-        DevelopmentTasks.Implement(Cmd("implement", "feito"));
-        DevelopmentTasks.Verify(Cmd("verify", "PASS")); // completes "B", auto-advances
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-
-        var result = DevelopmentTasks.Pick(Cmd("pick")); // agora escolhe "A"
+        DevelopmentTasks.Bearings(Cmd("bearings", "ok")); // escolhe "B"
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito")); // completes B, auto-advances to A
 
         Assert.Contains("Description: faz X", result);
         Assert.Contains("Brief references: RF-003", result);
     }
 
     [Fact]
-    public void Pick_RetornaImplementSemDescriptionNemReferences_NaoTemBlocoDeContexto()
+    public void ImplementPrompt_SemDescriptionNemReferences_NaoTemBlocoDeContexto()
     {
         Plan(); // FeaturesJson sem description/references
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-
-        var result = DevelopmentTasks.Pick(Cmd("pick"));
+        var result = DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
 
         Assert.DoesNotContain("Description:", result);
         Assert.DoesNotContain("Brief references:", result);
@@ -337,11 +328,7 @@ public class DevelopmentFlowTests : IDisposable
     public void Pick_EscolheMaiorPrioridadeEGravaAFeatureCorrente()
     {
         Plan();
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        var afterSmoke = DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-        Assert.Contains("\"value\":\"pick\"", afterSmoke);
-
-        var implement = DevelopmentTasks.Pick(Cmd("pick"));
+        var implement = DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
 
         Assert.Equal("2", StateStore.Get("current_feature_id")); // prioridade 1 = id 2 ("B")
         Assert.Contains("B", implement);
@@ -362,11 +349,12 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Verify_Pass_ExecutaHandoffAutomaticoEAvanca()
     {
-        AdvanceToVerify();
+        WriteVerifyFeatureScript(_targetDir,
+            "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
+        Plan();
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
 
-        var result = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
-
-        Assert.Contains("NEW SESSION", result); // ainda falta a id 1
+        Assert.Contains("\"value\":\"implement\"", result); // ainda falta a id 1
         Assert.DoesNotContain("\"value\":\"handoff\"", result);
         Assert.Equal(1, FeatureStore.PendingCount());
         Assert.Contains("Feature #2", File.ReadAllText(Path.Combine(_targetDir, "progress.txt")));
@@ -383,12 +371,10 @@ public class DevelopmentFlowTests : IDisposable
             """);
         Plan();
         DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "baseline ok"));
-        DevelopmentTasks.Pick(Cmd("pick"));
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
 
-        Assert.Contains("NEW SESSION", result);
+        Assert.Contains("\"value\":\"implement\"", result);
         Assert.DoesNotContain("\"value\":\"verify\"", result);
         Assert.Equal(1, FeatureStore.PendingCount());
         var progress = File.ReadAllText(Path.Combine(_targetDir, "progress.txt"));
@@ -411,8 +397,6 @@ public class DevelopmentFlowTests : IDisposable
             """);
         Plan();
         DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "baseline ok"));
-        DevelopmentTasks.Pick(Cmd("pick"));
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
 
@@ -429,15 +413,52 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Verify_VereditoInvalido_ReemiteVerify()
+    public void Smoke_IgnoraConfirmacaoTextualEReexecutaInitSh()
+    {
+        File.WriteAllText(Path.Combine(_targetDir, "init.sh"),
+            "#!/usr/bin/env bash\nset -euo pipefail\necho falhou\nexit 9\n");
+        Plan();
+
+        var result = DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
+
+        Assert.Contains("smoke", result);
+        Assert.DoesNotContain("\"value\":\"implement\"", result);
+        Assert.Contains("exitCode: 9", File.ReadAllText(Path.Combine(".harness", "logs", "smoke.log")));
+    }
+
+    [Fact]
+    public void Implement_SemScriptExecutaVerifyCmdDeterministicamente()
+    {
+        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "true", _targetDir));
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
+
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal(1, FeatureStore.PendingCount());
+        Assert.Contains("command: true", File.ReadAllText(Path.Combine(".harness", "logs", "verify-feature-2.log")));
+    }
+
+    [Fact]
+    public void VerifyCmd_ComOperadorDeShellNaoEhExecutado()
+    {
+        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "true && false", _targetDir));
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
+
+        Assert.Contains("no deterministic verify command", result);
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal(2, FeatureStore.PendingCount());
+    }
+
+    [Fact]
+    public void Verify_IgnoresVereditoTextualEExecutaComandoDeterministico()
     {
         AdvanceToVerify();
 
         var result = DevelopmentTasks.Verify(Cmd("verify", "rodei os testes e passou"));
 
-        Assert.Contains("\"value\":\"verify\"", result);
-        Assert.DoesNotContain("\"value\":\"handoff\"", result);
-        Assert.Contains("did not start", result);
+        Assert.Contains("FAILED", result);
+        Assert.Contains("\"value\":\"implement\"", result);
     }
 
     [Fact]
@@ -455,18 +476,16 @@ public class DevelopmentFlowTests : IDisposable
     public void Handoff_ComPendencia_AbreNovaSessao_ComTudoPassando_Encerra()
     {
         // 1ª feature (id 2)
-        AdvanceToVerify();
-        var afterFirst = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
+        WriteVerifyFeatureScript(_targetDir,
+            "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
+        Plan();
+        var afterFirst = DevelopmentTasks.Implement(Cmd("implement", "feito"));
 
-        Assert.Contains("NEW SESSION", afterFirst); // ainda falta a id 1
+        Assert.Contains("\"value\":\"implement\"", afterFirst); // ainda falta a id 1
         Assert.Equal(1, FeatureStore.PendingCount());
 
         // 2ª feature (id 1)
-        DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-        DevelopmentTasks.Pick(Cmd("pick"));
-        DevelopmentTasks.Implement(Cmd("implement", "feito"));
-        var afterSecond = DevelopmentTasks.Verify(Cmd("verify", "PASS"));
+        var afterSecond = DevelopmentTasks.Implement(Cmd("implement", "feito"));
 
         Assert.Equal("stop", afterSecond);
         Assert.True(FeatureStore.AllPassing());
@@ -479,8 +498,8 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Handoff(Cmd("handoff", "abc123"));
 
-        Assert.Contains("NEW SESSION", result);
-        Assert.Equal(1, FeatureStore.PendingCount());
+        Assert.Contains("\"value\":\"handoff\"", result);
+        Assert.Equal(2, FeatureStore.PendingCount());
     }
 
     [Fact]
@@ -496,14 +515,13 @@ public class DevelopmentFlowTests : IDisposable
         File.WriteAllText(Path.Combine(repo, "outside.txt"), "fora do target");
 
         DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", target));
+        WriteInitScript(target);
+        WriteVerifyFeatureScript(target,
+            "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-        DevelopmentTasks.Pick(Cmd("pick"));
-        DevelopmentTasks.Implement(Cmd("implement", "feito no target"));
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito no target"));
 
-        var result = DevelopmentTasks.Verify(Cmd("verify", "PASS: tudo verde"));
-
-        Assert.Contains("NEW SESSION", result);
+        Assert.Contains("\"value\":\"implement\"", result);
         var committedFiles = Git(repo, "show", "--name-only", "--format=", "HEAD");
         Assert.Contains("app/progress.txt", committedFiles);
         Assert.DoesNotContain("outside.txt", committedFiles);
@@ -558,7 +576,7 @@ public class DevelopmentFlowTests : IDisposable
         var json = """[{"id":1,"title":"sobrevivente","priority":1,"dependsOn":[2]},{"id":2,"title":"cortada","priority":1000},"""
             + extrasJson + "]";
 
-        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", "."));
+        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
 
         Assert.DoesNotContain(2, FeatureStore.Load().Select(f => f.Id)); // id 2 foi de fato cortado
         var survivor = FeatureStore.Load().Single(f => f.Id == 1);
@@ -570,11 +588,8 @@ public class DevelopmentFlowTests : IDisposable
     {
         // f1: prioridade pior, sem deps. f2: prioridade melhor, mas depende de f1.
         var json = """[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"depends","priority":1,"dependsOn":[1]}]""";
-        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", "."));
+        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-
-        DevelopmentTasks.Pick(Cmd("pick"));
 
         Assert.Equal("1", StateStore.Get("current_feature_id"));
     }
@@ -589,9 +604,7 @@ public class DevelopmentFlowTests : IDisposable
             new Feature(2, "B", 2, false, [1]),
         ]);
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
-        DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
-
-        var result = DevelopmentTasks.Pick(Cmd("pick"));
+        var result = DevelopmentTasks.Smoke(Cmd("smoke", "ok"));
 
         Assert.Equal("stop", result);
         Assert.Equal(2, FeatureStore.PendingCount()); // nada foi marcado como passando

@@ -24,7 +24,7 @@ public static partial class DevelopmentTasks
         if (int.TryParse(State(CurrentFeatureIdKey), out var id))
             FeatureStore.MarkPassed(id);
 
-        return FeatureStore.AllPassing() ? Done() : BearingsPrompt();
+        return FeatureStore.AllPassing() ? Done() : Bearings(null);
     }
 
     private static HandoffResult TryAutomatedHandoff(string verifyResult)
@@ -168,7 +168,16 @@ public static partial class DevelopmentTasks
             $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC] Feature #{featureId} - {OneLine(title)}: "
             + $"{summary}. Verify with: {OneLine(command)}. Result: {verify}";
 
-        File.AppendAllText(Path.Combine(targetDir, "progress.txt"), line + Environment.NewLine);
+        var progressPath = Path.Combine(targetDir, "progress.txt");
+        if (File.Exists(progressPath)
+            && File.ReadLines(progressPath).Any(existing =>
+                existing.Contains($"Feature #{featureId} - {OneLine(title)}:", StringComparison.Ordinal)
+                && existing.Contains($"Result: {verify}", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        File.AppendAllText(progressPath, line + Environment.NewLine);
     }
 
     private static string CommitMessage(int featureId, string title)

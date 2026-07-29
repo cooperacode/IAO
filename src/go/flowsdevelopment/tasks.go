@@ -15,6 +15,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -129,8 +131,8 @@ func Plan(envelope *engine.Envelope) string {
 	// following session without needing to appear in the Envelope exchanged with the model
 	// (RFC §6.4 — run identity is a control-plane concern, not the contract's).
 	engine.WriteRunConfig(engine.RunConfig{
-		VerifyCmd: argAt(envelope, 1, "dotnet test"),
-		TargetDir: argAt(envelope, 2, "."),
+		VerifyCmd: envOrArg("HARNESS_VERIFY_CMD", envelope, 1, "dotnet test"),
+		TargetDir: envOrArg("HARNESS_TARGET_DIR", envelope, 2, "."),
 		RunId:     newRunId(),
 	})
 
@@ -169,6 +171,7 @@ func less(a, b engine.Feature) bool {
 // Bearings starts a new (or resumed) feature session and rearms the per-feature guard.
 func Bearings(envelope *engine.Envelope) string {
 	engine.SetState(featureStepsKey, "1")
+	captureBearings()
 	return SmokePrompt()
 }
 
@@ -176,6 +179,9 @@ func Bearings(envelope *engine.Envelope) string {
 func Smoke(envelope *engine.Envelope) string {
 	if overFeatureBudget() {
 		return stopFlow("per-feature guard")
+	}
+	if failure := runSmoke(); failure != "" {
+		return SmokeFixPrompt(failure)
 	}
 	return PickPrompt()
 }
@@ -207,16 +213,13 @@ func Pick(envelope *engine.Envelope) string {
 	return ImplementPrompt(*next)
 }
 
-// Implement records the driver's summary and attempts automated verification.
+// Implement derives a summary from the target diff and attempts automated verification.
 func Implement(envelope *engine.Envelope) string {
 	if overFeatureBudget() {
 		return stopFlow("per-feature guard")
 	}
 
-	summary := strings.TrimSpace(arg(envelope))
-	if summary != "" {
-		engine.SetState(currentFeatureSummaryKey, summary)
-	}
+	engine.SetState(currentFeatureSummaryKey, implementationSummary())
 
 	autoVerify := tryAutomatedVerify()
 	if autoVerify.Attempted {
@@ -230,8 +233,8 @@ func Implement(envelope *engine.Envelope) string {
 	return VerifyPrompt()
 }
 
-// Verify handles the manual self-verify fallback path.
-func Verify(envelope *engine.Envelope) string {
+// Verify reruns the deterministic verifier; envelope text is ignored.
+func Verify(_ *engine.Envelope) string {
 	if overFeatureBudget() {
 		return stopFlow("per-feature guard")
 	}
@@ -240,34 +243,24 @@ func Verify(envelope *engine.Envelope) string {
 	// guard). PASSED → the harness performs the deterministic handoff (progress + git)
 	// without spending a model turn; if that fails, falls back to the legacy manual-repair
 	// prompt.
-	result := strings.TrimSpace(arg(envelope))
-	upper := strings.ToUpper(result)
-	if strings.HasPrefix(upper, "FAIL") {
-		return FixPrompt(result)
+	autoVerify := tryAutomatedVerify()
+	if !autoVerify.Attempted {
+		return VerifyRetryPrompt()
 	}
-	if strings.HasPrefix(upper, "PASS") {
-		engine.SetState(currentFeatureVerifyKey, result)
-		return completeVerifiedFeature(result)
+	engine.SetState(currentFeatureVerifyKey, autoVerify.Result)
+	if autoVerify.Success {
+		return completeVerifiedFeature(autoVerify.Result)
 	}
-
-	return VerifyRetryPrompt()
+	return FixPrompt(autoVerify.Result)
 }
 
 // Handoff records the driver's manual handoff confirmation.
-func Handoff(envelope *engine.Envelope) string {
-	if strings.TrimSpace(arg(envelope)) == "" {
+func Handoff(_ *engine.Envelope) string {
+	result := state(currentFeatureVerifyKey)
+	if !strings.HasPrefix(strings.ToUpper(result), "PASS") {
 		return HandoffRetryPrompt()
 	}
-
-	if id, err := strconv.Atoi(state(currentFeatureIdKey)); err == nil {
-		engine.MarkFeaturePassed(id)
-	}
-
-	// Any feature still pending? Yes → next session (bearings). No → done.
-	if engine.AllFeaturesPassing() {
-		return done()
-	}
-	return BearingsPrompt()
+	return completeVerifiedFeature(result)
 }
 
 // --- guards and termination -------------------------------------------------
@@ -309,4 +302,63 @@ func argAt(envelope *engine.Envelope, index int, fallback string) string {
 		return envelope.Args[index]
 	}
 	return fallback
+}
+
+func envOrArg(name string, envelope *engine.Envelope, index int, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return argAt(envelope, index, fallback)
+}
+
+func captureBearings() {
+	config := engine.LoadRunConfig()
+	target, err := resolveTargetDir(config.TargetDir)
+	if err != nil {
+		return
+	}
+	progress, _ := os.ReadFile(filepath.Join(target, "progress.txt"))
+	lines := strings.Split(strings.TrimRight(string(progress), "\n"), "\n")
+	if len(lines) > 12 {
+		lines = lines[len(lines)-12:]
+	}
+	log := engine.RunGitCommand(target, "log", "-n", "10", "--oneline")
+	evidence := fmt.Sprintf("cwd: %s\nprogress tail:\n%s\ngit log:\n%s", target, strings.Join(lines, "\n"), oneLine(log.Output, "no git history"))
+	engine.SetState("bearings", evidence)
+}
+
+func runSmoke() string {
+	config := engine.LoadRunConfig()
+	target, err := resolveTargetDir(config.TargetDir)
+	if err != nil {
+		return fmt.Sprintf("invalid target directory: %s", err)
+	}
+	script := filepath.Join(target, "init.sh")
+	if !fileExistsLocal(script) {
+		return "init.sh is missing from the target directory"
+	}
+	cmd := exec.Command("bash", script)
+	cmd.Dir = target
+	out, err := cmd.CombinedOutput()
+	log := filepath.Join(target, ".harness", "logs", "smoke.log")
+	_ = os.MkdirAll(filepath.Dir(log), 0o755)
+	_ = os.WriteFile(log, []byte(fmt.Sprintf("error: %v\n\n%s\n", err, out)), 0o644)
+	if err == nil {
+		return ""
+	}
+	return "init.sh failed. Log: .harness/logs/smoke.log"
+}
+
+func implementationSummary() string {
+	config := engine.LoadRunConfig()
+	target, err := resolveTargetDir(config.TargetDir)
+	if err != nil {
+		return "implementation completed"
+	}
+	diff := engine.RunGitCommand(target, "diff", "HEAD", "--stat", ".", ":(exclude).harness")
+	if diff.ExitCode == 0 && strings.TrimSpace(diff.Output) != "" {
+		return oneLine(diff.Output, "implementation completed")
+	}
+	status := engine.RunGitCommand(target, "status", "--short", "--", ".", ":(exclude).harness")
+	return oneLine(status.Output, "implementation completed")
 }

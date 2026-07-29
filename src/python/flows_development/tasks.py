@@ -17,6 +17,8 @@ from __future__ import annotations
 import subprocess
 import sys
 import uuid
+import os
+import shlex
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -113,8 +115,8 @@ def plan(envelope: Envelope | None) -> str:
     # exchanged with the model (RFC §6.4 — run identity is a control-plane concern, not
     # the contract's).
     run_config_store.write(RunConfig(
-        _arg_at(envelope, 1, "dotnet test"),
-        _arg_at(envelope, 2, "."),
+        os.environ.get("HARNESS_VERIFY_CMD", "").strip() or _arg_at(envelope, 1, "dotnet test"),
+        os.environ.get("HARNESS_TARGET_DIR", "").strip() or _arg_at(envelope, 2, "."),
         str(uuid.uuid4()),
     ))
 
@@ -124,11 +126,17 @@ def plan(envelope: Envelope | None) -> str:
 def bearings(envelope: Envelope | None) -> str:
     # New session (one feature): resets the per-feature guard counter.
     state_store.set(state_keys.FEATURE_STEPS, "1")
+    _capture_bearings()
     return prompts.smoke_prompt()
 
 
 def smoke(envelope: Envelope | None) -> str:
-    return _stop("per-feature guard") if _over_feature_budget() else prompts.pick_prompt()
+    if _over_feature_budget():
+        return _stop("per-feature guard")
+    ok, failure = _run_smoke()
+    if not ok:
+        return prompts.smoke_fix_prompt(failure)
+    return prompts.pick_prompt()
 
 
 def pick(envelope: Envelope | None) -> str:
@@ -162,9 +170,7 @@ def implement(envelope: Envelope | None) -> str:
     if _over_feature_budget():
         return _stop("per-feature guard")
 
-    summary = _arg(envelope).strip()
-    if summary:
-        state_store.set(state_keys.CURRENT_FEATURE_SUMMARY, summary)
+    state_store.set(state_keys.CURRENT_FEATURE_SUMMARY, _implementation_summary())
 
     attempted, success, result = _try_automated_verify()
     if attempted:
@@ -178,32 +184,19 @@ def verify(envelope: Envelope | None) -> str:
     if _over_feature_budget():
         return _stop("per-feature guard")
 
-    # FAILED → back to implementing the SAME feature (correction loop, bounded by the
-    # guard). PASSED → the harness performs the deterministic handoff (progress + git)
-    # without spending a model turn; if that fails, falls back to the legacy manual-repair prompt.
-    result = _arg(envelope).strip()
-    if result.upper().startswith("FAIL"):
-        return prompts.fix_prompt(result)
-
-    if result.upper().startswith("PASS"):
-        state_store.set(state_keys.CURRENT_FEATURE_VERIFY, result)
-        return _complete_verified_feature(result)
-
-    return prompts.verify_retry_prompt()
+    # The envelope is deliberately ignored: verification is a process exit-code
+    # decision, never an LLM-authored PASS/FAIL string.
+    attempted, success, result = _try_automated_verify()
+    if not attempted:
+        return prompts.verify_retry_prompt()
+    state_store.set(state_keys.CURRENT_FEATURE_VERIFY, result)
+    return _complete_verified_feature(result) if success else prompts.fix_prompt(result)
 
 
 def handoff(envelope: Envelope | None) -> str:
-    if not _arg(envelope).strip():
+    if not _state(state_keys.CURRENT_FEATURE_VERIFY).upper().startswith("PASS"):
         return prompts.handoff_retry_prompt()
-
-    try:
-        feature_id = int(_state(state_keys.CURRENT_FEATURE_ID))
-        feature_store.mark_passed(feature_id)
-    except ValueError:
-        pass
-
-    # Any feature still pending? Yes → next session (bearings). No → done.
-    return _done() if feature_store.all_passing() else prompts.bearings_prompt()
+    return _complete_verified_feature(_state(state_keys.CURRENT_FEATURE_VERIFY))
 
 
 # --- guards and termination -------------------------------------------------
@@ -290,45 +283,45 @@ def _try_automated_verify() -> tuple[bool, bool, str]:
         return False, False, ""
 
     script = target_dir / "verify-feature.sh"
-    if not script.exists():
-        return False, False, ""
+    if script.is_file():
+        command = ["bash", str(script), str(feature_id)]
+        label = f"bash ./verify-feature.sh {feature_id}"
+    else:
+        command = _configured_verify_argv(run_config_store.load().verify_cmd)
+        if not command:
+            return False, False, ""
+        label = " ".join(shlex.quote(item) for item in command)
 
     try:
-        proc = subprocess.run(
-            ["bash", str(script), str(feature_id)],
-            cwd=target_dir,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=_verify_timeout_seconds(),
-        )
+        proc = subprocess.run(command, cwd=target_dir, text=True, capture_output=True,
+                              check=False, timeout=_verify_timeout_seconds())
     except subprocess.TimeoutExpired as ex:
         output = _coerce_output(ex.stdout)
         error = _coerce_output(ex.stderr)
-        log_path = _write_verify_log(target_dir, script, feature_id, -1, True, output, error)
+        log_path = _write_verify_log(target_dir, label, feature_id, -1, True, output, error)
         return (
             True,
             False,
-            f"FAIL: verify-feature.sh {feature_id} exceeded timeout ({_verify_timeout_description()})"
+            f"FAIL: verification exceeded timeout ({_verify_timeout_description()})"
             + _verify_output_suffix(output, error, log_path),
         )
     except Exception as ex:
         error = str(ex)
-        log_path = _write_verify_log(target_dir, script, feature_id, -1, False, "", error)
+        log_path = _write_verify_log(target_dir, label, feature_id, -1, False, "", error)
         return (
             True,
             False,
-            f"FAIL: verify-feature.sh {feature_id} did not start: {_snippet(error)}{_log_suffix(log_path)}",
+            f"FAIL: verification did not start: {_snippet(error)}{_log_suffix(log_path)}",
         )
 
-    log_path = _write_verify_log(target_dir, script, feature_id, proc.returncode, False, proc.stdout, proc.stderr)
+    log_path = _write_verify_log(target_dir, label, feature_id, proc.returncode, False, proc.stdout, proc.stderr)
     if proc.returncode == 0:
-        return True, True, _pass_result(feature_id, proc.stdout, proc.stderr, log_path)
+        return True, True, _pass_result(feature_id, proc.stdout, proc.stderr, log_path, bool(script.is_file()))
 
     return (
         True,
         False,
-        f"FAIL: verify-feature.sh {feature_id} failed (exit {proc.returncode})"
+        f"FAIL: verification failed (exit {proc.returncode})"
         + _verify_output_suffix(proc.stdout, proc.stderr, log_path),
     )
 
@@ -356,6 +349,73 @@ def _resolve_target_dir(target_dir: str) -> Path:
     return resolved
 
 
+def _capture_bearings() -> None:
+    """Captures bounded repository evidence; the model no longer has to report it."""
+    try:
+        target = _resolve_target_dir(run_config_store.load().target_dir)
+        progress = target / "progress.txt"
+        tail = progress.read_text(encoding="utf-8", errors="replace").splitlines()[-12:] if progress.exists() else []
+        log = git_command.run(target, "log", "-n", "10", "--oneline")
+        evidence = f"cwd: {target}\nprogress tail:\n" + "\n".join(tail)
+        evidence += "\ngit log:\n" + _one_line(log.output, "no git history")
+        state_store.set("bearings", evidence[:4000])
+    except Exception as ex:
+        state_store.set("bearings", f"bearings unavailable: {_one_line(str(ex))}")
+
+
+def _run_smoke() -> tuple[bool, str]:
+    try:
+        target = _resolve_target_dir(run_config_store.load().target_dir)
+    except ValueError as ex:
+        return False, f"invalid target directory: {ex}"
+    script = target / "init.sh"
+    if not script.is_file():
+        return False, "init.sh is missing from the target directory"
+    try:
+        proc = subprocess.run(["bash", str(script)], cwd=target, text=True,
+                              capture_output=True, check=False, timeout=_verify_timeout_seconds())
+        log = target / ".harness" / "logs" / "smoke.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(f"exitCode: {proc.returncode}\n\n--- stdout ---\n{proc.stdout}\n\n--- stderr ---\n{proc.stderr}\n", encoding="utf-8")
+        if proc.returncode == 0:
+            return True, ""
+        return False, f"init.sh failed (exit {proc.returncode}). Log: .harness/logs/smoke.log"
+    except subprocess.TimeoutExpired:
+        return False, f"init.sh exceeded timeout ({_verify_timeout_description()}). Log: .harness/logs/smoke.log"
+    except Exception as ex:
+        return False, f"init.sh did not start: {_one_line(str(ex))}"
+
+
+def _implementation_summary() -> str:
+    try:
+        target = _resolve_target_dir(run_config_store.load().target_dir)
+        diff = git_command.run(target, "diff", "HEAD", "--stat", ".", ":(exclude).harness")
+        if diff.exit_code == 0 and diff.output.strip():
+            return _one_line(diff.output, "implementation completed")
+        status = git_command.run(target, "status", "--short", "--", ".", ":(exclude).harness")
+        return _one_line(status.output, "implementation completed")
+    except Exception:
+        return "implementation completed"
+
+
+def _configured_verify_argv(raw: str) -> list[str]:
+    text = raw.strip()
+    if not text:
+        return []
+    if any(token in text for token in (";", "&", "|", "<", ">", "`", "$")):
+        return []
+    try:
+        argv = shlex.split(text)
+    except ValueError:
+        return []
+    if not argv:
+        return []
+    shell_bins = {"sh", "bash", "zsh", "fish", "cmd", "powershell", "pwsh"}
+    if Path(argv[0]).name.lower() in shell_bins and any(arg in {"-c", "-command", "/c"} for arg in argv[1:]):
+        return []
+    return argv
+
+
 def _harness_install_root() -> Path:
     """Install/distribution root of the IAO harness (proxy: the root of `src/python`, two
     levels above `harness_engine/__init__.py`)."""
@@ -376,7 +436,12 @@ def _append_progress(
         f"[{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC] Feature #{feature_id} - {_one_line(title)}: "
         f"{summary}. Verify with: {_one_line(command)}. Result: {verify}"
     )
-    with (target_dir / "progress.txt").open("a", encoding="utf-8") as fh:
+    progress = target_dir / "progress.txt"
+    existing = progress.read_text(encoding="utf-8", errors="replace") if progress.exists() else ""
+    prefix = f"Feature #{feature_id} - {_one_line(title)}:"
+    if any(prefix in prior and "Result:" in prior for prior in existing.splitlines()):
+        return
+    with progress.open("a", encoding="utf-8") as fh:
         fh.write(line + "\n")
 
 
@@ -389,7 +454,7 @@ def _commit_message(feature_id: int, title: str) -> str:
 
 def _write_verify_log(
     target_dir: Path,
-    script: Path,
+    command: str,
     feature_id: int,
     exit_code: int,
     timed_out: bool,
@@ -398,14 +463,13 @@ def _write_verify_log(
 ) -> str:
     relative_path = Path(".harness/logs") / f"verify-feature-{feature_id}.log"
     try:
-        log_path = relative_path.resolve()
+        log_path = target_dir / relative_path
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(
             "\n".join([
                 f"timestampUtc: {datetime.now(timezone.utc).isoformat()}",
-                f"command: bash ./verify-feature.sh {feature_id}",
+                f"command: {command}",
                 f"cwd: {target_dir}",
-                f"script: {script}",
                 f"exitCode: {exit_code}",
                 f"timedOut: {timed_out}",
                 "",
@@ -438,14 +502,9 @@ def _verify_timeout_description() -> str:
     return "no limit" if seconds is None else f"{int(seconds * 1000)}ms"
 
 
-def _pass_result(feature_id: int, output: str, error: str, log_path: str) -> str:
-    first_line = _first_meaningful_line(output, error)
-    result = (
-        _snippet(first_line)
-        if first_line.upper().startswith("PASS")
-        else f"PASS: verify-feature.sh {feature_id} passed"
-    )
-    return result + _log_suffix(log_path)
+def _pass_result(feature_id: int, output: str, error: str, log_path: str, script: bool) -> str:
+    label = f"verify-feature.sh {feature_id}" if script else "configured verify command"
+    return f"PASS: {label} passed" + _log_suffix(log_path)
 
 
 def _verify_output_suffix(output: str | None, error: str | None, log_path: str) -> str:

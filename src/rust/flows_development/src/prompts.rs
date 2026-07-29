@@ -12,11 +12,6 @@ use crate::tasks::{BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_
 const FEATURES: &str = "$FEATURES";
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
-const NOTE: &str = "$NOTE";
-const SMOKE: &str = "$SMOKE";
-const SUMMARY: &str = "$SUMMARY";
-const RESULT: &str = "$RESULT";
-const COMMIT: &str = "$COMMIT";
 
 const FEATURES_SHAPE: &str =
     r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]"#;
@@ -164,16 +159,13 @@ pub fn bearings_prompt() -> String {
 You are a coding agent starting a FRESH session. Do not assume anything from the\n\
 previous session — all state lives in the persistent artifacts.\n\
 {brief}\
-Get your bearings with short output: run `pwd`, read only the tail of `progress.txt` and the\n\
-recent `git log --oneline` to understand what has already been done. Do not paste long\n\
-logs; if you need to preserve detail, save it in `.harness/logs/`.\n\
-\n\
-Summarize what you found in '{NOTE}' in 2-4 lines."
+The harness already captured bounded bearings (working directory, progress tail, and recent\n\
+git history). Continue with the smoke step; do not return a bearings note."
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "bearings", vec![NOTE.to_string()]),
+        &Envelope::new(envelope_type::COMMAND, "bearings", vec![]),
         Some(&prompt_formatter::skills(&["dev-bearings"])),
     )
 }
@@ -181,17 +173,21 @@ Summarize what you found in '{NOTE}' in 2-4 lines."
 pub fn smoke_prompt() -> String {
     let target_dir = run_config_store::load().target_dir;
     let input = format!(
-        "Smoke test: run `./init.sh` in the target directory ({target_dir}) and confirm\n\
-that the baseline comes up/builds without error before touching any feature. Save the\n\
-full output to `.harness/logs/smoke.log` and report in '{SMOKE}' just `ok` or the\n\
-main error and the log path."
+        "The harness runs `./init.sh` deterministically in the target directory ({target_dir}) and confirms\n\
+that the baseline comes up/builds without error before touching any feature. The harness\n\
+saves the full output to `.harness/logs/smoke.log`; proceed without a smoke verdict."
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "smoke", vec![SMOKE.to_string()]),
+        &Envelope::new(envelope_type::COMMAND, "smoke", vec![]),
         Some(&prompt_formatter::skills(&["dev-smoke"])),
     )
+}
+
+pub fn smoke_fix_prompt(failure: &str) -> String {
+    let input = format!("Smoke failed deterministically: {failure}\nFix the target setup, then return `smoke` without arguments.");
+    prompt_formatter::format(&input, &Envelope::new(envelope_type::COMMAND, "smoke", vec![]), Some(&prompt_formatter::skills(&["dev-smoke"])))
 }
 
 pub fn pick_prompt() -> String {
@@ -216,8 +212,8 @@ it:\n\
 Feature #{} (priority {}): {}\n\
 {context}\
 Work in the target directory ({target_dir}). If you run commands with\n\
-long output, save it to `.harness/logs/` and do not paste logs into the summary. When done,\n\
-summarize what you implemented in '{SUMMARY}' in one short sentence.",
+long output, save it to `.harness/logs/`. Return `implement` without arguments when done;\n\
+the harness derives the summary from the actual Git diff.",
         feature.id, feature.priority, feature.title
     );
 
@@ -226,7 +222,7 @@ summarize what you implemented in '{SUMMARY}' in one short sentence.",
         &Envelope::new(
             envelope_type::COMMAND,
             "implement",
-            vec![SUMMARY.to_string()],
+            vec![],
         ),
         Some(&prompt_formatter::skills(&["dev-implement"])),
     )
@@ -236,23 +232,14 @@ pub fn verify_prompt() -> String {
     let config = run_config_store::load();
     let feature_id = state(CURRENT_FEATURE_ID_KEY);
     let input = format!(
-        "The harness did not find `verify-feature.sh` in the target directory, so do a\n\
-manual self-verify of feature #{feature_id}\n\
-({}) the way a user would: run\n\
-`{}` in the target directory ({}) and\n\
-confirm the behavior end to end. Save the full output to\n\
-`.harness/logs/verify-{feature_id}.log`.\n\
-\n\
-Respond in '{RESULT}' starting with `PASS` or `FAIL: <reason>`, including only the\n\
-main error and the log path.",
+        "The deterministic verifier could not be started for feature #{feature_id} ({}) in target directory ({}). Repair the verification setup and return `implement` without arguments.",
         state(CURRENT_FEATURE_TITLE_KEY),
-        config.verify_cmd,
         config.target_dir
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "verify", vec![RESULT.to_string()]),
+        &Envelope::new(envelope_type::COMMAND, "implement", vec![]),
         Some(&prompt_formatter::skills(&["dev-verify"])),
     )
 }
@@ -261,17 +248,13 @@ pub fn verify_retry_prompt() -> String {
     let config = run_config_store::load();
     let feature_id = state(CURRENT_FEATURE_ID_KEY);
     let input = format!(
-        "The self-verify verdict did not start with `PASS` or `FAIL`. Re-run, if\n\
-needed, `{}` in the target directory ({})\n\
-saving the full output to `.harness/logs/verify-{feature_id}.log`.\n\
-Respond in '{RESULT}' starting exactly with `PASS` or `FAIL: <reason>`,\n\
-without pasting long logs.",
-        config.verify_cmd, config.target_dir
+        "The deterministic verifier is unavailable for feature #{feature_id} in target directory ({}). Repair or create it and return `implement` without arguments.",
+        config.target_dir
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "verify", vec![RESULT.to_string()]),
+        &Envelope::new(envelope_type::COMMAND, "implement", vec![]),
         Some(&prompt_formatter::skills(&["dev-verify"])),
     )
 }
@@ -285,8 +268,8 @@ pub fn fix_prompt(verify_failure: Option<&str>) -> String {
     let input = format!(
         "Verification FAILED on feature #{}\n\
 ({}). {failure}Fix the implementation (still ONLY this feature).\n\
-If you check logs, read only the relevant excerpt. Summarize the fix in '{SUMMARY}' —\n\
-we'll verify again next.",
+If you check logs, read only the relevant excerpt. Return `implement` without arguments;\n\
+the harness derives the new summary from Git.",
         state(CURRENT_FEATURE_ID_KEY),
         state(CURRENT_FEATURE_TITLE_KEY)
     );
@@ -296,7 +279,7 @@ we'll verify again next.",
         &Envelope::new(
             envelope_type::COMMAND,
             "implement",
-            vec![SUMMARY.to_string()],
+            vec![],
         ),
         Some(&prompt_formatter::skills(&["dev-implement"])),
     )
@@ -309,32 +292,23 @@ pub fn handoff_prompt(automatic_failure: Option<&str>) -> String {
     };
 
     let input = format!(
-        "{failure}Leave the state CLEAN for the next session:\n\
-1. `git commit` with a descriptive message referencing feature #{}. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.\n\
-2. Append a line to `progress.txt` in this exact format (same as the automatic handoff, so entries stay consistent): `[YYYY-MM-DD HH:MM UTC] Feature #<id> - <title>: <what was done>. Verify with: <command>. Result: <result>`.\n\
-\n\
-Confirm with the commit hash or `NO_GIT: <reason>` in '{COMMIT}'.",
-        state(CURRENT_FEATURE_ID_KEY)
+        "{failure}Automatic handoff requires a deterministic PASS. Return `handoff` without arguments\n\
+so the harness can retry the real progress/git operation."
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "handoff", vec![COMMIT.to_string()]),
+        &Envelope::new(envelope_type::COMMAND, "handoff", vec![]),
         Some(&prompt_formatter::skills(&["dev-handoff"])),
     )
 }
 
 pub fn handoff_retry_prompt() -> String {
-    let target_dir = run_config_store::load().target_dir;
-    let input = format!(
-        "The handoff confirmation came back empty. Update `progress.txt` in the target directory\n\
-({target_dir}) and respond in '{COMMIT}' with the commit hash or\n\
-`NO_GIT: <reason>` when there is no Git repository."
-    );
+    let input = "The handoff is deterministic and only runs after a recorded PASS. Return `handoff` without arguments after verification passes.";
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "handoff", vec![COMMIT.to_string()]),
+        &Envelope::new(envelope_type::COMMAND, "handoff", vec![]),
         Some(&prompt_formatter::skills(&["dev-handoff"])),
     )
 }

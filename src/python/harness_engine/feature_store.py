@@ -104,21 +104,37 @@ def parse(features_json: str) -> list[Feature]:
         if not isinstance(parsed, list) or len(parsed) == 0:
             return []
 
-        # Reindex first: depends_on only makes sense referencing final ids, not the raw
-        # (possibly missing/duplicate) ones that came from the driver.
+        # Preserve explicit ids and assign missing ids collision-free. Duplicate explicit
+        # ids are rejected because silently rewriting references makes the plan ambiguous.
+        explicit = [Feature.from_dict(raw).id for raw in parsed if isinstance(raw, dict) and Feature.from_dict(raw).id > 0]
+        if len(explicit) != len(set(explicit)):
+            raise ValueError("duplicate explicit feature id")
+        used = set(explicit)
+        next_id = 1
         reindexed: list[Feature] = []
         for i, raw in enumerate(parsed):
             if not isinstance(raw, dict):
                 raise TypeError("each feature must be a JSON object")
             candidate = Feature.from_dict(raw)
-            fid = candidate.id if candidate.id > 0 else i + 1
+            if candidate.id > 0:
+                fid = candidate.id
+            else:
+                while next_id in used:
+                    next_id += 1
+                fid = next_id
+                used.add(fid)
+                next_id += 1
+            if not candidate.title.strip():
+                raise ValueError("feature title cannot be blank")
+            if candidate.priority <= 0:
+                raise ValueError("feature priority must be positive")
             reindexed.append(replace(
                 candidate,
                 id=fid,
                 passes=False,
-                depends_on=candidate.deps,
+                depends_on=tuple(dict.fromkeys(candidate.deps)),
                 description=_truncate_description(candidate.description),
-                references=candidate.refs,
+                references=tuple(dict.fromkeys(r for r in candidate.refs if r.strip())),
             ))
 
         error = _dependency_graph_error(reindexed)

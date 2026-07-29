@@ -56,6 +56,31 @@ public class FeatureStoreTests : IDisposable
     }
 
     [Fact]
+    public void Parse_IdExplicitoDuplicado_RetornaVazio()
+    {
+        var features = FeatureStore.Parse(
+            """[{"id":1,"title":"A","priority":1},{"id":1,"title":"B","priority":2}]""");
+
+        Assert.Empty(features);
+    }
+
+    [Fact]
+    public void Parse_TituloVazioOuPrioridadeNaoPositiva_RetornaVazio()
+    {
+        Assert.Empty(FeatureStore.Parse("""[{"id":1,"title":"","priority":1}]"""));
+        Assert.Empty(FeatureStore.Parse("""[{"id":1,"title":"A","priority":0}]"""));
+    }
+
+    [Fact]
+    public void Parse_IdAusenteNaoColideComIdExplicito()
+    {
+        var features = FeatureStore.Parse(
+            """[{"title":"A","priority":1},{"id":1,"title":"B","priority":2}]""");
+
+        Assert.Equal([2, 1], features.Select(f => f.Id).ToArray());
+    }
+
+    [Fact]
     public void Parse_JsonInvalido_RetornaVazioSemLancar()
     {
         Assert.Empty(FeatureStore.Parse("this is not json"));

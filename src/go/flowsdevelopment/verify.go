@@ -43,23 +43,34 @@ func tryAutomatedVerify() automatedVerifyResult {
 	}
 
 	script := filepath.Join(targetDir, "verify-feature.sh")
-	if !fileExistsLocal(script) {
-		return missingVerify()
+	command := []string{"bash", script, strconv.Itoa(featureId)}
+	label := fmt.Sprintf("bash ./verify-feature.sh %d", featureId)
+	isScript := fileExistsLocal(script)
+	if !isScript {
+		command = configuredVerifyArgv(engine.LoadRunConfig().VerifyCmd)
+		if len(command) == 0 {
+			return missingVerify()
+		}
+		label = strings.Join(command, " ")
 	}
 
-	result := runVerifyScript(targetDir, script, featureId)
-	logPath := writeVerifyLog(targetDir, script, featureId, result)
+	result := runVerifyScript(targetDir, command)
+	logPath := writeVerifyLog(targetDir, label, featureId, result)
 	if result.TimedOut {
-		return failedVerify(fmt.Sprintf("FAIL: verify-feature.sh %d exceeded timeout (%s)%s",
-			featureId, verifyTimeoutDescription(), verifyOutputSuffix(result, logPath)))
+		return failedVerify(fmt.Sprintf("FAIL: verification exceeded timeout (%s)%s",
+			verifyTimeoutDescription(), verifyOutputSuffix(result, logPath)))
 	}
 
 	if result.ExitCode == 0 {
-		return passedVerify(passResult(featureId, result.Output, result.Error, logPath))
+		kind := "configured verify command"
+		if isScript {
+			kind = fmt.Sprintf("verify-feature.sh %d", featureId)
+		}
+		return passedVerify(fmt.Sprintf("PASS: %s passed%s", kind, logSuffix(logPath)))
 	}
 
-	return failedVerify(fmt.Sprintf("FAIL: verify-feature.sh %d failed (exit %d)%s",
-		featureId, result.ExitCode, verifyOutputSuffix(result, logPath)))
+	return failedVerify(fmt.Sprintf("FAIL: verification failed (exit %d)%s",
+		result.ExitCode, verifyOutputSuffix(result, logPath)))
 }
 
 type verifyScriptResult struct {
@@ -69,8 +80,8 @@ type verifyScriptResult struct {
 	TimedOut bool
 }
 
-func runVerifyScript(targetDir, script string, featureId int) verifyScriptResult {
-	cmd := exec.Command("bash", script, strconv.Itoa(featureId))
+func runVerifyScript(targetDir string, command []string) verifyScriptResult {
+	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = targetDir
 	// New process group so a timeout can kill the whole tree, not just the direct child.
 	// Implemented per-OS in process_unix.go/process_windows.go.
@@ -131,21 +142,18 @@ func verifyTimeoutDescription() string {
 	return fmt.Sprintf("%dms", timeoutMs)
 }
 
-func writeVerifyLog(targetDir, script string, featureId int, result verifyScriptResult) string {
+func writeVerifyLog(targetDir, command string, featureId int, result verifyScriptResult) string {
 	relativePath := filepath.Join(".harness", "logs", fmt.Sprintf("verify-feature-%d.log", featureId))
 	displayPath := strings.ReplaceAll(relativePath, "\\", "/")
 
-	fullPath, err := filepath.Abs(relativePath)
-	if err != nil {
-		return fmt.Sprintf("log unavailable (%s)", oneLine(err.Error(), ""))
-	}
+	fullPath := filepath.Join(targetDir, relativePath)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return fmt.Sprintf("log unavailable (%s)", oneLine(err.Error(), ""))
 	}
 
 	content := fmt.Sprintf(
-		"timestampUtc: %s\ncommand: bash ./verify-feature.sh %d\ncwd: %s\nscript: %s\nexitCode: %d\ntimedOut: %t\n\n--- stdout ---\n%s\n\n--- stderr ---\n%s",
-		time.Now().UTC().Format("2006-01-02T15:04:05.0000000Z"), featureId, targetDir, script,
+		"timestampUtc: %s\ncommand: %s\ncwd: %s\nexitCode: %d\ntimedOut: %t\n\n--- stdout ---\n%s\n\n--- stderr ---\n%s",
+		time.Now().UTC().Format("2006-01-02T15:04:05.0000000Z"), command, targetDir,
 		result.ExitCode, result.TimedOut, result.Output, result.Error)
 
 	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
@@ -205,6 +213,26 @@ func snippet(value string, maxChars int) string {
 func fileExistsLocal(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func configuredVerifyArgv(raw string) []string {
+	text := strings.TrimSpace(raw)
+	if text == "" || strings.ContainsAny(text, ";&|<>`$") {
+		return nil
+	}
+	args := strings.Fields(text)
+	if len(args) == 0 {
+		return nil
+	}
+	bin := strings.ToLower(filepath.Base(args[0]))
+	if bin == "sh" || bin == "bash" || bin == "zsh" || bin == "fish" || bin == "cmd" || bin == "powershell" || bin == "pwsh" {
+		for _, arg := range args[1:] {
+			if arg == "-c" || arg == "-command" || arg == "/c" {
+				return nil
+			}
+		}
+	}
+	return args
 }
 
 func min(a, b int) int {

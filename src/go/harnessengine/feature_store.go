@@ -85,13 +85,33 @@ func ParseFeatures(rawJSON string) []Feature {
 		return []Feature{}
 	}
 
-	// Reindex first: dependsOn only makes sense referencing final ids, not the raw
-	// (possibly missing/duplicate) ones that came from the driver.
+	// Preserve explicit ids and assign missing ids collision-free. Duplicate explicit ids
+	// are rejected because silently rewriting references makes the plan ambiguous.
+	explicit := make(map[int]bool)
+	for _, f := range parsed {
+		if f.Id > 0 {
+			if explicit[f.Id] {
+				fmt.Fprintln(os.Stderr, "[FeatureStore] failed to parse features: duplicate explicit feature id")
+				return []Feature{}
+			}
+			explicit[f.Id] = true
+		}
+	}
+	nextId := 1
 	reindexed := make([]Feature, len(parsed))
 	for i, f := range parsed {
 		id := f.Id
 		if id <= 0 {
-			id = i + 1
+			for explicit[nextId] {
+				nextId++
+			}
+			id = nextId
+			explicit[id] = true
+			nextId++
+		}
+		if strings.TrimSpace(f.Title) == "" || f.Priority <= 0 {
+			fmt.Fprintln(os.Stderr, "[FeatureStore] failed to parse features: blank title or non-positive priority")
+			return []Feature{}
 		}
 		dependsOn := f.DependsOn
 		if dependsOn == nil {
@@ -106,9 +126,9 @@ func ParseFeatures(rawJSON string) []Feature {
 			Title:       f.Title,
 			Priority:    f.Priority,
 			Passes:      false,
-			DependsOn:   dependsOn,
+			DependsOn:   uniqueInts(dependsOn),
 			Description: truncateDescription(f.Description),
-			References:  references,
+			References:  uniqueStrings(references),
 		}
 	}
 
@@ -128,6 +148,30 @@ func truncateDescription(description string) string {
 		return string(runes[:DescriptionMaxChars])
 	}
 	return description
+}
+
+func uniqueInts(values []int) []int {
+	seen := make(map[int]bool)
+	result := make([]int, 0, len(values))
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 // dependencyGraphError returns "" if the DependsOn graph is valid (every id exists, no

@@ -46,7 +46,11 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _plan() -> str:
-    return tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", "src/app"))
+    result = tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", "src/app"))
+    target = Path("src/app")
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
+    return result
 
 
 def _advance_to_verify() -> None:
@@ -182,9 +186,12 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
         '{"id":2,"title":"B","priority":1}]'
     )
     tasks.plan(_cmd("plan", json_str, "dotnet test", "src/app"))
+    Path("src/app").mkdir(parents=True, exist_ok=True)
+    (Path("src/app") / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
     tasks.bearings(_cmd("bearings", "ok"))
     tasks.smoke(_cmd("smoke", "ok"))
     tasks.pick(_cmd("pick"))  # escolhe "B" (prioridade 1), sem description/references
+    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     tasks.implement(_cmd("implement", "feito"))
     tasks.verify(_cmd("verify", "PASS"))  # completa "B", avança automaticamente
     tasks.bearings(_cmd("bearings", "ok"))
@@ -285,9 +292,9 @@ def test_verify_fail_volta_para_implement():
 
 
 def test_verify_pass_executa_handoff_automatico_e_avanca():
+    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     _advance_to_verify()
-
-    result = tasks.verify(_cmd("verify", "PASS"))
+    result = tasks.implement(_cmd("implement", "PASS"))
 
     assert "NEW SESSION" in result
     assert '"value":"handoff"' not in result
@@ -312,9 +319,9 @@ echo "PASS: feature $1 verificada"
     assert feature_store.pending_count() == 1
     progress = Path("src/app/progress.txt").read_text()
     assert "Feature #2" in progress
-    assert "PASS: feature 2 verificada" in progress
+    assert "PASS: verify-feature.sh 2 passed" in progress
     assert ".harness/logs/verify-feature-2.log" in progress
-    assert "command: bash ./verify-feature.sh 2" in _verify_log_path(2).read_text()
+    assert "command: bash ./verify-feature.sh 2" in Path("src/app/.harness/logs/verify-feature-2.log").read_text()
 
 
 def test_implement_com_verify_feature_falhando_volta_para_fix():
@@ -335,7 +342,7 @@ exit 7
     assert "feature 2 quebrou" in result
     assert ".harness/logs/verify-feature-2.log" in result
     assert "LINHA DETALHADA QUE FICA SO NO LOG" not in result
-    log = _verify_log_path(2).read_text()
+    log = Path("src/app/.harness/logs/verify-feature-2.log").read_text()
     assert "FAIL: feature 2 quebrou" in log
     assert "LINHA DETALHADA QUE FICA SO NO LOG" in log
     assert '"value":"implement"' in result
@@ -348,9 +355,8 @@ def test_verify_veredito_invalido_reemite_verify():
 
     result = tasks.verify(_cmd("verify", "rodei os testes e passou"))
 
-    assert '"value":"verify"' in result
-    assert '"value":"handoff"' not in result
-    assert "did not start" in result
+    assert '"value":"implement"' in result
+    assert "FAILED" in result
 
 
 def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
@@ -364,8 +370,9 @@ def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
 
 def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     # 1ª feature (id 2)
+    _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     _advance_to_verify()
-    after_first = tasks.verify(_cmd("verify", "PASS"))
+    after_first = tasks.implement(_cmd("implement", "PASS"))
 
     assert "NEW SESSION" in after_first  # ainda falta a id 1
     assert feature_store.pending_count() == 1
@@ -375,7 +382,7 @@ def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     tasks.smoke(_cmd("smoke", "ok"))
     tasks.pick(_cmd("pick"))
     tasks.implement(_cmd("implement", "feito"))
-    after_second = tasks.verify(_cmd("verify", "PASS"))
+    after_second = tasks.implement(_cmd("implement", "PASS"))
 
     assert after_second == "stop"
     assert feature_store.all_passing()
@@ -386,8 +393,8 @@ def test_handoff_legado_com_hash_marca_feature_como_passando():
 
     result = tasks.handoff(_cmd("handoff", "abc123"))
 
-    assert "NEW SESSION" in result
-    assert feature_store.pending_count() == 1
+    assert '"value":"handoff"' in result
+    assert feature_store.pending_count() == 2
 
 
 def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
@@ -400,12 +407,14 @@ def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
     (repo / "outside.txt").write_text("fora do target")
 
     tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", str(target)))
+    (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
+    _write_verify_feature_script(target, "#!/usr/bin/env bash\nset -e\n")
     tasks.bearings(_cmd("bearings", "ok"))
     tasks.smoke(_cmd("smoke", "ok"))
     tasks.pick(_cmd("pick"))
     tasks.implement(_cmd("implement", "feito no target"))
 
-    result = tasks.verify(_cmd("verify", "PASS: tudo verde"))
+    result = tasks.implement(_cmd("implement", "PASS: tudo verde"))
 
     assert "NEW SESSION" in result
     committed_files = _git(repo, "show", "--name-only", "--format=", "HEAD")

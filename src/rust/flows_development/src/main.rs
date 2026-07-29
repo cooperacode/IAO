@@ -38,34 +38,6 @@ fn main() {
         "plan".to_string(),
         envelope_validation::not_empty("the JSON array of features [{id,title,priority}]"),
     );
-    validators.insert(
-        "bearings".to_string(),
-        envelope_validation::not_empty("the short bearings summary (pwd, progress, git log)"),
-    );
-    validators.insert(
-        "smoke".to_string(),
-        envelope_validation::not_empty(
-            "the compact smoke test result (init.sh + log path)",
-        ),
-    );
-    validators.insert(
-        "implement".to_string(),
-        envelope_validation::not_empty("the short summary of what was implemented"),
-    );
-    validators.insert(
-        "verify".to_string(),
-        envelope_validation::matches(
-            r"^(PASS\b|FAIL\b)",
-            "the compact self-verify verdict starting with PASS or FAIL: reason",
-        ),
-    );
-    validators.insert(
-        "handoff".to_string(),
-        envelope_validation::matches(
-            r"^([0-9a-f]{6,40}\b|NO_GIT:\s+\S.*)$",
-            "the commit hash, or NO_GIT: reason when there is no Git repository",
-        ),
-    );
 
     // Own snapshots: if this flow shares `.harness/` with other flows (same workspace), it
     // must NOT overwrite the last-run.* another flow consumes. Freezes at its own path.
