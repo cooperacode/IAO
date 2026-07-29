@@ -226,7 +226,7 @@ does not assume.
 
 ## Figure 6 — Flow Layer: the Flows.Development State Machine
 
-![Figure 6 — Flow layer: the Flows.Development state machine](assets/images/fig-6-en.svg)
+![High-level architecture — Harness · Flows.Development](assets/images/fig-6-902-en.svg)
 
 Eight states. Six are driver turns; `pick` is an internal harness decision, and
 `verify`/`handoff` return to the driver only when automation is missing or
