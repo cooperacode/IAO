@@ -225,7 +225,7 @@ def handoff_prompt(automatic_failure: str | None = None) -> str:
 """
     input_text = f"""{failure}Leave the state CLEAN for the next session:
 1. `git commit` with a descriptive message referencing feature #{_state(state_keys.CURRENT_FEATURE_ID)}. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.
-2. Append a line to `progress.txt`: feature completed, what was done, and how to verify.
+2. Append a line to `progress.txt` in this exact format (same as the automatic handoff, so entries stay consistent): `[YYYY-MM-DD HH:MM UTC] Feature #<id> - <title>: <what was done>. Verify with: <command>. Result: <result>`.
 
 Confirm with the commit hash or `NO_GIT: <reason>` in '{COMMIT}'."""
     return prompt_formatter.format(

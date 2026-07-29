@@ -209,7 +209,7 @@ func HandoffPrompt(automaticFailure string) string {
 
 	input := fmt.Sprintf("%sLeave the state CLEAN for the next session:\n"+
 		"1. `git commit` with a descriptive message referencing feature #%s. If the target directory is not a Git repository, record this explicitly as `NO_GIT: <reason>`.\n"+
-		"2. Append a line to `progress.txt`: feature completed, what was done, and how to verify.\n\n"+
+		"2. Append a line to `progress.txt` in this exact format (same as the automatic handoff, so entries stay consistent): `[YYYY-MM-DD HH:MM UTC] Feature #<id> - <title>: <what was done>. Verify with: <command>. Result: <result>`.\n\n"+
 		"Confirm with the commit hash or `NO_GIT: <reason>` in '%s'.",
 		failure, state(currentFeatureIdKey), tokenCommit)
 
