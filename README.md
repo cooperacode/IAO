@@ -61,7 +61,7 @@ memory that makes a hard-reset session viable.
 Development flow:
 
 
-![High-level architecture — Harness · Flows.Development](assets/images/fig-6-en.svg)
+![High-level architecture — Harness · Flows.Development](assets/images/fig-6-902-en.svg)
 <p align="center"><i>Figure 2: The development flow is a state machine over a feature backlog, with a step budget and a dependency graph.</i></p>
 
 `verify` and `handoff` exist as driver-facing commands but only run as a
