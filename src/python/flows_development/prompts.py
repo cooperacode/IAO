@@ -123,7 +123,9 @@ def smoke_fix_prompt(failure: str) -> str:
 def implement_prompt(feature: Feature) -> str:
     brief = _brief_block()
     context = _feature_context_block(feature)
-    input_text = f"""Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond
+    input_text = f"""=== NEW SESSION (clean context) ===
+
+Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond
 it:
 {brief}Feature #{feature.id} (priority {feature.priority}): {feature.title}
 {context}Work in the target directory ({run_config_store.load().target_dir}). If you run commands with

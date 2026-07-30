@@ -642,6 +642,7 @@ mod tests {
         ); // prioridade 1 = id 2 ("B")
         assert!(implement_prompt.contains('B'));
         assert!(implement_prompt.contains(r#""value":"implement"#));
+        assert!(implement_prompt.contains("=== NEW SESSION (clean context) ==="));
     }
 
     #[test]
@@ -706,6 +707,7 @@ mod tests {
 
         assert!(result.contains("FAILED"));
         assert!(result.contains(r#""value":"implement"#));
+        assert!(!result.contains("NEW SESSION"));
     }
 
     #[test]

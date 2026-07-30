@@ -344,6 +344,9 @@ func TestPick_ChoosesHighestPriorityAndRecordsCurrentFeature(t *testing.T) {
 	if !strings.Contains(implement, "B") || !strings.Contains(implement, `"value":"implement"`) {
 		t.Fatalf("unexpected result: %s", implement)
 	}
+	if !strings.Contains(implement, "<input>\n    === NEW SESSION (clean context) ===") {
+		t.Fatalf("expected a clean-context boundary before a new feature: %s", implement)
+	}
 }
 
 func TestVerify_Fail_GoesBackToImplement(t *testing.T) {
@@ -354,6 +357,9 @@ func TestVerify_Fail_GoesBackToImplement(t *testing.T) {
 
 	if !strings.Contains(result, "FAILED") || !strings.Contains(result, `"value":"implement"`) {
 		t.Fatalf("unexpected result: %s", result)
+	}
+	if strings.Contains(result, "NEW SESSION") {
+		t.Fatalf("a retry of the same feature must not request a new context: %s", result)
 	}
 }
 

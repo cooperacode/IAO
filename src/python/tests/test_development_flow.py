@@ -255,6 +255,7 @@ def test_pick_escolhe_maior_prioridade_e_grava_a_feature_corrente():
     assert state_store.get("current_feature_id") == "2"  # prioridade 1 = id 2 ("B")
     assert "B" in implement
     assert '"value":"implement"' in implement
+    assert "<input>\n    === NEW SESSION (clean context) ===" in implement
 
 
 def test_verify_fail_volta_para_implement():
@@ -263,6 +264,7 @@ def test_verify_fail_volta_para_implement():
     result = tasks.verify(_cmd("verify", "FAIL: testes vermelhos"))
 
     assert "FAILED" in result
+    assert "NEW SESSION" not in result
     assert '"value":"implement"' in result
 
 

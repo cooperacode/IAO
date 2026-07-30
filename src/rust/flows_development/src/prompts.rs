@@ -160,7 +160,8 @@ pub fn implement_prompt(feature: &Feature) -> String {
     let brief = brief_block();
     let context = feature_context_block(feature);
     let input = format!(
-        "Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n\
+        "=== NEW SESSION (clean context) ===\n\n\
+Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n\
 it:\n\
 {brief}\
 Feature #{} (priority {}): {}\n\

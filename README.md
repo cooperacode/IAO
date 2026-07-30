@@ -116,6 +116,9 @@ files across the engine and flow layers.
    it to `.harness/feature_list.json`.
 5. For each ready feature, the harness collects bounded bearings, runs the smoke
    script, selects the ready feature, and emits only the implementation turn.
+   That prompt starts with `=== NEW SESSION (clean context) ===`, asking the
+   driver to use a fresh context for the feature; implementation retries do not
+   reopen the context.
 6. If verification fails, the harness returns to implementation for the same
    feature within the configured limits.
 7. When the feature passes, the harness performs the handoff, validates the real

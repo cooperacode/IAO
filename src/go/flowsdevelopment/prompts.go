@@ -114,7 +114,8 @@ func SmokeFixPrompt(failure string) string {
 }
 
 func ImplementPrompt(feature engine.Feature) string {
-	input := fmt.Sprintf("Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n"+
+	input := fmt.Sprintf("=== NEW SESSION (clean context) ===\n\n"+
+		"Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n"+
 		"it:\n%s\nFeature #%d (priority %d): %s\n%sWork in the target directory (%s). If you run commands with\n"+
 		"long output, save it to `.harness/logs/`. Return `implement` without arguments when done;\n"+
 		"the harness derives the summary from the actual Git diff.",

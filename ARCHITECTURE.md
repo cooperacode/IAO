@@ -230,7 +230,10 @@ does not assume.
 Eight protocol commands remain available for compatibility, but the normal
 path has only the planning and implementation driver turns. `bearings`,
 `smoke`, and `pick` are executed internally; `verify` and `handoff` return to
-the driver only when automated repair is needed.
+the driver only when automated repair is needed. Each new `implement` prompt
+begins with `=== NEW SESSION (clean context) ===`, which is the driver-facing
+boundary for the fresh context of the next feature; retries for the same
+feature do not emit it.
 
 | State | What happens |
 |---|---|
@@ -252,7 +255,9 @@ always routes back to `implement` for the same feature.
 
 **Cyclic return** — after a successful handoff, the harness reconstructs the
 bounded bearings context and starts the next feature without a separate driver
-turn.
+turn. The resulting `implement` instruction carries the explicit clean-context
+marker, so a driver that supports the long-running-agent adapter can open a new
+session while recovering the feature context from persistent artifacts.
 
 **Budget** — `MaxFeatures = 10`, `StepsPerFeature = 8`,
 `StepBudget = 10 × 8 + 8 = 88`, passed to `HarnessHost.Run` as the effective

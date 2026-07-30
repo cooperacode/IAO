@@ -333,6 +333,7 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Equal("2", StateStore.Get("current_feature_id")); // prioridade 1 = id 2 ("B")
         Assert.Contains("B", implement);
         Assert.Contains("\"value\":\"implement\"", implement);
+        Assert.Contains("=== NEW SESSION (clean context) ===", implement);
     }
 
     [Fact]
@@ -344,6 +345,7 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.Contains("FAILED", result);
         Assert.Contains("\"value\":\"implement\"", result);
+        Assert.DoesNotContain("NEW SESSION", result);
     }
 
     [Fact]
