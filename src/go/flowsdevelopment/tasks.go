@@ -344,7 +344,7 @@ func runSmoke() string {
 	cmd := exec.Command("bash", script)
 	cmd.Dir = target
 	out, err := cmd.CombinedOutput()
-	log := filepath.Join(target, ".harness", "logs", "smoke.log")
+	log := filepath.Join(".harness", "logs", "smoke.log")
 	_ = os.MkdirAll(filepath.Dir(log), 0o755)
 	_ = os.WriteFile(log, []byte(fmt.Sprintf("error: %v\n\n%s\n", err, out)), 0o644)
 	if err == nil {

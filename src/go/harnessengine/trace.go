@@ -55,13 +55,16 @@ var TraceOutcome = struct {
 // that solves the same pain as StateStore: Step is a counter global to the whole run, it
 // doesn't identify WHICH unit of work the step belongs to.
 type TraceEntry struct {
-	Step             int    `json:"step"`
-	Command          string `json:"command"`
-	Outcome          string `json:"outcome"`
-	InstructionChars int    `json:"instructionChars"`
-	Timestamp        string `json:"timestamp"`
-	PrevHash         string `json:"prevHash"`
-	Label            string `json:"label"`
+	Step                int      `json:"step"`
+	Command             string   `json:"command"`
+	Outcome             string   `json:"outcome"`
+	InstructionChars    int      `json:"instructionChars"`
+	Timestamp           string   `json:"timestamp"`
+	PrevHash            string   `json:"prevHash"`
+	Label               string   `json:"label"`
+	ContextWindowTokens *int     `json:"contextWindowTokens,omitempty"`
+	ContextUsedTokens   *int     `json:"contextUsedTokens,omitempty"`
+	ContextRatio        *float64 `json:"contextRatio,omitempty"`
 }
 
 // ResetTrace truncates the trace at the start of a new workflow (paired with ResetState).
@@ -75,20 +78,35 @@ func ResetTrace() {
 }
 
 // AppendTrace appends a labeled trace entry.
-func AppendTrace(step int, command, outcome string, instructionChars int, label string) {
+func AppendTrace(step int, command, outcome string, instructionChars int, label string, usage ...*ContextUsage) {
 	if err := ensureDir(traceDir); err != nil {
 		fmt.Fprintf(os.Stderr, "[Trace] failed to write: %s\n", err)
 		return
 	}
 
+	var contextWindowTokens, contextUsedTokens *int
+	var contextRatio *float64
+	if len(usage) > 0 && usage[0] != nil && usage[0].ContextWindowTokens > 0 && usage[0].ContextUsedTokens >= 0 {
+		window := usage[0].ContextWindowTokens
+		used := usage[0].ContextUsedTokens
+		ratio := float64(used) / float64(window)
+		if ratio > 1 {
+			ratio = 1
+		}
+		contextWindowTokens, contextUsedTokens, contextRatio = &window, &used, &ratio
+	}
+
 	entry := TraceEntry{
-		Step:             step,
-		Command:          command,
-		Outcome:          outcome,
-		InstructionChars: instructionChars,
-		Timestamp:        time.Now().UTC().Format("2006-01-02T15:04:05.000000Z"),
-		PrevHash:         computePrevHash(),
-		Label:            label,
+		Step:                step,
+		Command:             command,
+		Outcome:             outcome,
+		InstructionChars:    instructionChars,
+		Timestamp:           time.Now().UTC().Format("2006-01-02T15:04:05.000000Z"),
+		PrevHash:            computePrevHash(),
+		Label:               label,
+		ContextWindowTokens: contextWindowTokens,
+		ContextUsedTokens:   contextUsedTokens,
+		ContextRatio:        contextRatio,
 	}
 
 	line, err := json.Marshal(entry)

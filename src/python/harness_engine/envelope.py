@@ -14,6 +14,8 @@ import json
 import sys
 from dataclasses import dataclass
 
+from harness_engine.context_policy import ContextUsage
+
 
 class EnvelopeType:
     """Protocol signals carried in `Envelope.type`."""
@@ -32,6 +34,7 @@ class Envelope:
     # Equals/GetHashCode because arrays compare by reference; not the case here.
     args: tuple[str, ...] = ()
     context: dict[str, str] | None = None
+    context_usage: ContextUsage | None = None
 
     def to_json(self) -> str:
         data: dict[str, object] = {
@@ -41,6 +44,8 @@ class Envelope:
         }
         if self.context is not None:
             data["context"] = self.context
+        if self.context_usage is not None:
+            data["contextUsage"] = self.context_usage.to_dict()
         return json.dumps(data, separators=(",", ":"))
 
     @staticmethod
@@ -83,7 +88,9 @@ class Envelope:
                         raise TypeError("each value in 'context' must be a string.")
                     context[str(key)] = val
 
-            return Envelope(type_, envelope_value, args, context)
+            context_usage = ContextUsage.from_dict(root.get("contextUsage"))
+
+            return Envelope(type_, envelope_value, args, context, context_usage)
         except Exception as ex:
             # Diagnostics go to stderr — stdout is the harness transport channel (the
             # driver reads stdout as the next instruction) and must not be polluted.

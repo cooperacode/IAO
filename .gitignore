@@ -16,6 +16,7 @@ bench/out/
 report/
 
 todo-*/
+!assets/use-cases/todo-*/
 app/
 .back_*/
 dist/

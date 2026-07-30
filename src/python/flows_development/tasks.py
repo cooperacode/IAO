@@ -380,7 +380,7 @@ def _run_smoke() -> tuple[bool, str]:
     try:
         proc = subprocess.run(["bash", str(script)], cwd=target, text=True,
                               capture_output=True, check=False, timeout=_verify_timeout_seconds())
-        log = target / ".harness" / "logs" / "smoke.log"
+        log = Path(".harness") / "logs" / "smoke.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text(f"exitCode: {proc.returncode}\n\n--- stdout ---\n{proc.stdout}\n\n--- stderr ---\n{proc.stderr}\n", encoding="utf-8")
         if proc.returncode == 0:
@@ -469,7 +469,7 @@ def _write_verify_log(
 ) -> str:
     relative_path = Path(".harness/logs") / f"verify-feature-{feature_id}.log"
     try:
-        log_path = target_dir / relative_path
+        log_path = relative_path
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(
             "\n".join([

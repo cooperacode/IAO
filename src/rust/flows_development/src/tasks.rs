@@ -245,7 +245,7 @@ fn run_smoke() -> Result<(), String> {
     let script = target.join("init.sh");
     if !script.is_file() { return Err("init.sh is missing from the target directory".to_string()); }
     let output = Command::new("bash").arg(&script).current_dir(&target).output().map_err(|e| e.to_string())?;
-    let log = target.join(".harness/logs/smoke.log");
+    let log = std::path::PathBuf::from(".harness/logs/smoke.log");
     if let Some(parent) = log.parent() { let _ = std::fs::create_dir_all(parent); }
     let _ = std::fs::write(&log, format!("exitCode: {}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}\n", output.status.code().unwrap_or(-1), String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)));
     if output.status.success() { Ok(()) } else { Err("init.sh failed. Log: .harness/logs/smoke.log".to_string()) }

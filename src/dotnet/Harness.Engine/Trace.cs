@@ -46,13 +46,21 @@ public static class Trace
         }
     }
 
-    public static void Append(int step, string command, string outcome, int instructionChars, string label = "")
+    public static void Append(
+        int step, string command, string outcome, int instructionChars, string label = "",
+        ContextUsage? contextUsage = null)
     {
         try
         {
             Directory.CreateDirectory(Dir);
             var prevHash = ComputePrevHash();
-            var entry = new TraceEntry(step, command, outcome, instructionChars, DateTimeOffset.UtcNow, prevHash, label);
+            var entry = new TraceEntry(
+                step, command, outcome, instructionChars, DateTimeOffset.UtcNow, prevHash, label,
+                contextUsage?.ContextWindowTokens,
+                contextUsage?.ContextUsedTokens,
+                contextUsage is { ContextWindowTokens: > 0 }
+                    ? Math.Clamp((double)contextUsage.ContextUsedTokens / contextUsage.ContextWindowTokens, 0d, 1d)
+                    : null);
             var line = JsonSerializer.Serialize(entry, HarnessJsonContext.Default.TraceEntry);
             // A single append call for the whole line (already with prevHash embedded) — this
             // is what guarantees the event's atomicity at the file level.
@@ -165,7 +173,8 @@ public static class Trace
 /// </remarks>
 public record TraceEntry(
     int Step, string Command, string Outcome, int InstructionChars, DateTimeOffset Timestamp,
-    string PrevHash = "", string Label = "");
+    string PrevHash = "", string Label = "", int? ContextWindowTokens = null,
+    int? ContextUsedTokens = null, double? ContextRatio = null);
 
 /// <summary>Possible outcomes of a step, recorded in <see cref="TraceEntry.Outcome"/>.</summary>
 public static class TraceOutcome

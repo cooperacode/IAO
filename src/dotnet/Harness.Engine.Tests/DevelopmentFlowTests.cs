@@ -437,7 +437,7 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.Contains("\"value\":\"implement\"", result);
         Assert.Equal(1, FeatureStore.PendingCount());
-        Assert.Contains("command: true", File.ReadAllText(Path.Combine(".harness", "logs", "verify-feature-2.log")));
+        Assert.Contains("command: true", File.ReadAllText(VerifyLogPath(2)));
     }
 
     [Fact]

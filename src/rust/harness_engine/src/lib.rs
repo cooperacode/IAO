@@ -2,6 +2,7 @@ pub mod artifact_store;
 pub mod artifact_template;
 pub mod atomic_io;
 pub mod batch_evaluator;
+pub mod context_policy;
 pub mod docs_reader;
 pub mod envelope;
 pub mod envelope_validation;
@@ -23,6 +24,7 @@ pub mod task_registry;
 pub mod trace;
 
 pub use envelope::{Envelope, envelope_type};
+pub use context_policy::ContextUsage;
 pub use envelope_validation::{ValidationResult, Validator};
 pub use errors::HarnessTimeoutError;
 pub use harness_config::HarnessConfig;

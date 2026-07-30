@@ -8,6 +8,8 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::context_policy::ContextUsage;
+
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/trace.jsonl";
 
@@ -31,7 +33,7 @@ pub mod trace_outcome {
 
 /// One loop iteration: step, received command, outcome, cost (chars of the emitted
 /// instruction), and recording time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TraceEntry {
     pub step: i32,
     pub command: String,
@@ -55,6 +57,12 @@ pub struct TraceEntry {
     /// before this field existed.
     #[serde(default)]
     pub label: String,
+    #[serde(rename = "contextWindowTokens", default, skip_serializing_if = "Option::is_none")]
+    pub context_window_tokens: Option<i32>,
+    #[serde(rename = "contextUsedTokens", default, skip_serializing_if = "Option::is_none")]
+    pub context_used_tokens: Option<i32>,
+    #[serde(rename = "contextRatio", default, skip_serializing_if = "Option::is_none")]
+    pub context_ratio: Option<f64>,
 }
 
 fn genesis_hash() -> String {
@@ -107,10 +115,30 @@ pub fn append_with_label(
     instruction_chars: i32,
     label: &str,
 ) {
+    append_with_context(step, command, outcome, instruction_chars, label, None);
+}
+
+pub fn append_with_context(
+    step: i32,
+    command: &str,
+    outcome: &str,
+    instruction_chars: i32,
+    label: &str,
+    context_usage: Option<&ContextUsage>,
+) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
         eprintln!("[Trace] failed to write: {e}");
         return;
     }
+
+    let (context_window_tokens, context_used_tokens, context_ratio) = match context_usage {
+        Some(usage) if usage.context_window_tokens > 0 && usage.context_used_tokens >= 0 => (
+            Some(usage.context_window_tokens),
+            Some(usage.context_used_tokens),
+            Some((usage.context_used_tokens as f64 / usage.context_window_tokens as f64).clamp(0.0, 1.0)),
+        ),
+        _ => (None, None, None),
+    };
 
     let entry = TraceEntry {
         step,
@@ -120,6 +148,9 @@ pub fn append_with_label(
         timestamp: now_iso(),
         prev_hash: last_line_hash(FILE_PATH),
         label: label.to_string(),
+        context_window_tokens,
+        context_used_tokens,
+        context_ratio,
     };
 
     let mut line = match serde_json::to_string(&entry) {

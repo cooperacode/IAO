@@ -9,6 +9,7 @@ namespace Harness.Engine;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(Envelope))]
+[JsonSerializable(typeof(ContextUsage))]
 [JsonSerializable(typeof(HarnessState))]
 [JsonSerializable(typeof(HarnessConfig))]
 [JsonSerializable(typeof(ArtifactManifest))]

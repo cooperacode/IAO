@@ -23,7 +23,7 @@ const MAX_ALLOWED_TIMEOUT_MS: i32 = 5 * 60_000;
 // meant to contain.
 const TIMEOUT_MS_ENV_VAR: &str = "HARNESS_TIMEOUT_MS";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HarnessConfig {
     #[serde(rename = "maxSteps", default)]
     pub max_steps: i32,
@@ -35,6 +35,12 @@ pub struct HarnessConfig {
     pub docs_folder: String,
     #[serde(rename = "timeoutMs", default)]
     pub timeout_ms: i32,
+    #[serde(rename = "contextResetMode", default)]
+    pub context_reset_mode: String,
+    #[serde(rename = "contextResetThreshold", default)]
+    pub context_reset_threshold: f64,
+    #[serde(rename = "contextFallbackFeatures", default)]
+    pub context_fallback_features: i32,
 }
 
 // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
@@ -49,6 +55,9 @@ pub fn default_config() -> HarnessConfig {
         docs_max_chars: 40_000,
         docs_folder: "docs".to_string(),
         timeout_ms: 0,
+        context_reset_mode: "adaptive".to_string(),
+        context_reset_threshold: 0.70,
+        context_fallback_features: 1,
     }
 }
 
@@ -139,6 +148,20 @@ fn normalize(config: HarnessConfig) -> HarnessConfig {
             config.docs_folder
         },
         timeout_ms: config.timeout_ms.clamp(0, MAX_ALLOWED_TIMEOUT_MS),
+        context_reset_mode: match config.context_reset_mode.trim().to_ascii_lowercase().as_str() {
+            "adaptive" | "per-feature" | "never" => config.context_reset_mode.trim().to_ascii_lowercase(),
+            _ => default.context_reset_mode,
+        },
+        context_reset_threshold: if config.context_reset_threshold <= 0.0 {
+            default.context_reset_threshold
+        } else {
+            config.context_reset_threshold.clamp(0.1, 1.0)
+        },
+        context_fallback_features: if config.context_fallback_features > 0 {
+            config.context_fallback_features
+        } else {
+            default.context_fallback_features
+        },
     }
 }
 

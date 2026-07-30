@@ -237,6 +237,7 @@ class UsageEvent:
     context_window: int | None
     path: Path
     cwd: str | None = None
+    context_used_tokens: int | None = None
 
 
 def codex_home() -> Path:
@@ -377,6 +378,7 @@ def load_rollout_events(
             continue
 
         model = current_model or UNKNOWN_MODEL
+        last_usage = _snapshot(info.get("last_token_usage"))
         events.append(
             UsageEvent(
                 session_id=session.session_id,
@@ -386,6 +388,7 @@ def load_rollout_events(
                 context_window=current_context_window,
                 path=path,
                 cwd=session.cwd,
+                context_used_tokens=last_usage.get("input_tokens") if last_usage else None,
             )
         )
         _remember_ts(session, ts)

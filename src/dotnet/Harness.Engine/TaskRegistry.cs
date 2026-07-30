@@ -54,6 +54,9 @@ public static class TaskRegistry
                 StateStore.SetContext(context);
         }
 
+        var observedContextUsage = envelope?.ContextUsage ?? ContextUsage.FromEnvironment();
+        ContextPolicy.Observe(observedContextUsage);
+
         // Iteration guard — hard stop under the team's token budget.
         var step = StateStore.Increment();
 
@@ -70,7 +73,7 @@ public static class TaskRegistry
         // re-read (not from the Load() snapshot above) because the action itself may have
         // just set it (e.g. Pick() choosing this step's feature).
         var label = StateStore.Get(StateStore.TraceLabelKey) ?? "";
-        Trace.Append(step, command, outcome, resultBytes, label);
+        Trace.Append(step, command, outcome, resultBytes, label, observedContextUsage);
 
         // The instruction's cost is only known here now — it feeds the accumulator the next
         // turn's guard will check.

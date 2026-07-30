@@ -1,11 +1,11 @@
 ---
 name: development
-description: Develops a project feature by feature (long-running pattern), one fresh-context session per feature, until all of them pass.
+description: Develops a project feature by feature (long-running pattern), with adaptive context boundaries, until all of them pass.
 ---
 
 ## CONTEXT
 You act as a **coding agent** driving a project from scratch to "all features passing",
-**one feature at a time**, with a hard context reset between features.
+**one feature at a time**, with a context reset when the harness requests one.
 
 ## Role in the harness
 
@@ -40,11 +40,17 @@ doesn't recover the exact position within it.
   newlines within that string, use `\n` (JSON requirement).
 - If `stdout` begins with `HARNESS PROTOCOL ERROR:`, fix the indicated field by rewriting
   `.harness/inbox.json` and run the script again — don't stop.
+- Optional context telemetry: only when the host/runtime provides authoritative values,
+  include `contextUsage` in the response envelope with `schema`, `sessionId`,
+  `contextWindowTokens`, `contextUsedTokens`, and `source`. Never estimate or invent
+  token counts. If unavailable, omit it and let the harness use its deterministic fallback.
+  A host adapter may alternatively expose the same canonical JSON through
+  `HARNESS_CONTEXT_USAGE_JSON` for the current turn.
 
-## Hard reset per feature (essential)
+## Context boundary per feature
 
 When `<input>` begins with `=== NEW SESSION (clean context) ===`, the harness is starting
-**a new feature**. Treat it as a session from scratch:
+**a new feature requiring a clean driver context**. Treat it as a session from scratch:
 
 - **Spawn a new sub-agent** to drive this feature (clean context). It does NOT inherit what
   you saw in previous features — it must get its bearings only from the persistent artifacts
@@ -54,6 +60,8 @@ When `<input>` begins with `=== NEW SESSION (clean context) ===`, the harness is
   leaves with its state recorded in the artifacts.
 - The sub-agent follows the same inbox protocol above until that feature's `handoff` step;
   once done (the harness returns another `NEW SESSION` or `stop`), it ends.
+- If the marker is absent, continue the current driver context for the next feature; the
+  adaptive policy has decided that the reported context pressure is below the threshold.
 
 ## Self-verify
 
@@ -64,15 +72,32 @@ the same feature — fix it and verify again.
 
 ## Procedure
 
+Before each harness invocation, refresh the optional Claude telemetry with:
+
+```bash
+USAGE=$(python3 scripts/claude_context_usage.py 2>/dev/null || true)
+if [ -n "$USAGE" ]; then
+  HARNESS_CONTEXT_USAGE_JSON="$USAGE" ./run-development.sh
+else
+  ./run-development.sh
+fi
+```
+
+The Claude adapter assumes a 200,000-token context window by default. Set
+`CLAUDE_CONTEXT_WINDOW_TOKENS` or `HARNESS_CONTEXT_WINDOW_TOKENS` to override
+that assumption when the active model uses another window. The adapter
+discovers the newest local transcript session when `CLAUDE_CODE_SESSION_ID` is
+not exported.
+
 1. Write `{ "type": "text", "value": "start", "context": { "driver": "claude code" } }` to
-   `.harness/inbox.json`, run `./run-development.sh` and keep the `stdout`. (The brief comes
+   `.harness/inbox.json`, execute the telemetry-aware invocation above, and keep the `stdout`. (The brief comes
    from `docs/`; with no docs, `start` asks for the goal, the target directory, and the
    verification command.)
 2. While `stdout` is not exactly `stop`:
-   - execute the instruction from `<input>` (with the injected skill), respecting the hard
-     reset per feature;
-   - fill in the `<response>` JSON, write it to `.harness/inbox.json`, run
-     `./run-development.sh` and replace `stdout` with the new result.
+   - execute the instruction from `<input>` (with the injected skill), respecting the
+     optional context boundary marker;
+   - fill in the `<response>` JSON, write it to `.harness/inbox.json`, execute the
+     telemetry-aware invocation above and replace `stdout` with the new result.
 3. On seeing `stop`, all features pass.
 4. Generate the session's usage and cost report:
    `skills/session-report/generate_report.py --driver claude` (correlates

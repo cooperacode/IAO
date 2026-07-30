@@ -1,5 +1,5 @@
 name = "development"
-description = "Develops a project feature by feature (long-running pattern) driving the harness ./run-development.sh, with a fresh context per feature."
+description = "Develops a project feature by feature (long-running pattern) driving the harness ./run-development.sh, with adaptive context boundaries."
 
 developer_instructions = '''
 ## CONTEXT
@@ -23,10 +23,16 @@ When picking up a session that died mid-feature (e.g. ran out of tokens in anoth
 - Always respond with only the JSON from <response> filled in, written to .harness/inbox.json, with no code fences or surrounding text.
 - Artifacts (summaries, results, features, etc.) come back as a string inside args. For newlines within an args string, use \n (JSON requirement).
 - If stdout begins with "HARNESS PROTOCOL ERROR:", fix the indicated field by rewriting .harness/inbox.json and run the script again. Do not stop.
+- Optional context telemetry: only when the host/runtime provides authoritative values,
+  include `contextUsage` in the response envelope with `schema`, `sessionId`,
+  `contextWindowTokens`, `contextUsedTokens`, and `source`. Never estimate or invent
+  token counts. If unavailable, omit `contextUsage`; the harness applies its
+  deterministic fallback. A host adapter may alternatively expose the same
+  canonical JSON through `HARNESS_CONTEXT_USAGE_JSON` for the current turn.
 
-## Hard reset per feature (essential)
+## Context boundary per feature
 
-When <input> begins with "=== NEW SESSION (clean context) ===", the harness is starting a new feature. Treat it as a session from scratch: spawn a new sub-agent to drive it, which gets its bearings only from the persistent artifacts (progress.txt, git log). Do not inherit or re-summarize the context from previous features.
+When <input> begins with "=== NEW SESSION (clean context) ===", the harness is requesting a fresh driver context for the new feature. Treat it as a session from scratch: spawn a new sub-agent to drive it, which gets its bearings only from the persistent artifacts (progress.txt, git log). Do not inherit or re-summarize the context from previous features. If the marker is absent, continue the current context for the new feature; the harness has decided that the reported context pressure is below the configured threshold.
 
 ## Self-verify
 
@@ -34,10 +40,24 @@ At the verify step, run the verification command indicated in <input> ($VERIFY_C
 
 ## Procedure
 
-1. Write { "type": "text", "value": "start", "context": { "driver": "codex" } } to .harness/inbox.json and run ./run-development.sh (no arguments); keep the stdout. The brief comes from docs/; with no docs, start asks for the goal, the target directory, and the verification command.
+Before each harness invocation, refresh the optional live Codex telemetry with:
+
+```bash
+USAGE=$(python3 scripts/codex_context_usage.py 2>/dev/null || true)
+if [ -n "$USAGE" ]; then
+  HARNESS_CONTEXT_USAGE_JSON="$USAGE" ./run-development.sh
+else
+  ./run-development.sh
+fi
+```
+
+The adapter uses `CODEX_THREAD_ID` to select the current Codex session. If no
+token event is available yet, it emits no value and the harness fallback applies.
+
+1. Write { "type": "text", "value": "start", "context": { "driver": "codex" } } to .harness/inbox.json, execute the telemetry-aware invocation above, and keep the stdout. The brief comes from docs/; with no docs, start asks for the goal, the target directory, and the verification command.
 2. While stdout is not exactly stop:
-   - execute the instruction from <input> (with the injected skill), respecting the hard reset per feature;
-   - fill in the <response> JSON, write it to .harness/inbox.json and run ./run-development.sh (no arguments);
+   - execute the instruction from <input> (with the injected skill), respecting the optional context boundary marker;
+   - fill in the <response> JSON, write it to .harness/inbox.json and execute the telemetry-aware invocation above;
    - replace stdout with the new result.
 3. On seeing stop, all features pass (.harness/feature_list.json).
 4. Generate the session's usage and cost report: skills/session-report/generate_report.py --driver codex (correlates .harness/trace.jsonl with this session's token consumption - see skills/session-report/SKILL.md). If it fails, do not block wrap-up: report the error and move on to step 5 anyway.

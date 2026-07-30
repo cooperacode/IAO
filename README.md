@@ -116,9 +116,10 @@ files across the engine and flow layers.
    it to `.harness/feature_list.json`.
 5. For each ready feature, the harness collects bounded bearings, runs the smoke
    script, selects the ready feature, and emits only the implementation turn.
-   That prompt starts with `=== NEW SESSION (clean context) ===`, asking the
-   driver to use a fresh context for the feature; implementation retries do not
-   reopen the context.
+   That prompt requests `=== NEW SESSION (clean context) ===` when the adaptive
+   context policy reaches its threshold. When the driver does not provide
+   telemetry, the deterministic fallback preserves the per-feature boundary;
+   implementation retries do not reopen the context.
 6. If verification fails, the harness returns to implementation for the same
    feature within the configured limits.
 7. When the feature passes, the harness performs the handoff, validates the real
@@ -128,6 +129,25 @@ files across the engine and flow layers.
 Protocol errors do not silently terminate the flow. The harness returns a
 corrective message with the valid commands so the agent can fix the envelope and
 try again.
+
+The optional `contextUsage` envelope field lets a driver report an attested
+context window and current usage, for example `contextWindowTokens` and
+`contextUsedTokens`. The engine stores only the normalized ratio and applies
+`contextResetMode`, `contextResetThreshold` (70% by default), and
+`contextFallbackFeatures` from `harness.json`; it never reads provider-specific
+rollout files or assumes how tokens are stored.
+An adapter may provide the same canonical object through the response envelope
+or through `HARNESS_CONTEXT_USAGE_JSON` for the current harness turn.
+When valid telemetry is received, the harness also records
+`contextWindowTokens`, `contextUsedTokens`, and the normalized `contextRatio`
+on that turn in `.harness/trace.jsonl`; absent telemetry leaves these fields
+omitted for backward compatibility.
+The Codex adapter is `scripts/codex_context_usage.py`; it uses `CODEX_THREAD_ID`
+and delegates rollout parsing to `scripts/codex_usage.py`.
+Equivalent adapters exist for Claude Code and Copilot; the Claude adapter uses
+a 200K-token window by default and accepts `CLAUDE_CONTEXT_WINDOW_TOKENS` (or
+the common window variable) as an override, while Copilot requires debug-log
+token data plus the corresponding window variable.
 
 ## Consequences
 
@@ -180,79 +200,6 @@ To run through Python or Rust, point the agent to `./run-development-py.sh` or
 protocol. Each port has its own local verification script
 (`./run-checks.sh`, `./run-checks-py.sh`, `./run-checks-rs.sh`) acting as a
 parity gate against the others.
-
-## Refinement Flow (Pre-Development)
-
-`Flows.Refinement` is a second flow built on the same harness pattern and
-transport. It runs **before** `Flows.Development`, turning an incomplete idea,
-brief, or existing documentation into four traceable artifacts covering the
-first three phases of the SDLC — Planning, Analysis, and Design:
-
-```text
-start -> discover -> planning -> analysis -> design -> review --READY--> publish -> stop
-                                                  |
-                                                  +-- FAIL:<phase> --> <phase> (recascade)
-```
-
-- `discover` consolidates the brief (read from `docs/*.md`/`docs/*.txt`, or
-  gathered interactively when no source is eligible) into
-  `.harness/discovery.md`;
-- `planning`, `analysis`, and `design` persist the Project Charter, the
-  Software Requirements Specification (SRS), and the Software Design Document
-  (SDD) — each validated deterministically (identifiers, required sections,
-  byte limits, cross-document traceability) before being written;
-- `review` either approves the set (`READY`), which triggers an automatic,
-  code-driven `publish` step, or rejects a specific phase
-  (`FAIL:planning`/`FAIL:analysis`/`FAIL:design`), which regenerates that
-  phase and every phase downstream of it;
-- after two failed review cycles, the run ends as
-  `refinement_status=needs_human_decision` instead of looping indefinitely.
-
-Start it the same way as the development flow — same runner shape, same
-`.harness/inbox.json` transport:
-
-```bash
-./run-refinement.sh '{ "type": "text", "value": "start" }'
-```
-
-`./run-refinement.sh` follows the same on-demand build/native-binary
-resolution as `./run-development.sh` (see the Implementation table above);
-today it only has a .NET implementation.
-
-Unlike the development flow, refinement runs as a single continuous session
-(`start` through `stop`) rather than one fresh context per feature — each
-phase's instruction points at the already-persisted `.harness/*.md` file
-instead of re-injecting its content, so a driver can still reread from disk
-instead of relying on conversation memory. The included adapters call
-`./run-refinement.sh`:
-
-| Agent | Adapter |
-|---|---|
-| Codex | `.codex/agents/refinement.toml` |
-| Claude Code | `.claude/agents/refinement.agent.md` |
-| GitHub Copilot | `.github/prompts/refinement.prompt.md` |
-| Devin | `.devin/workflows/refinement.md` |
-
-On success, the four approved documents are published atomically to:
-
-```text
-docs/<slug>-01-project-charter.md
-docs/<slug>-02-software-requirements-specification.md
-docs/<slug>-03-software-design-document.md
-docs/<slug>-04-readiness-handoff.md
-```
-
-Each published file carries a `<!-- generated-by: Flows.Refinement -->`
-marker, the run id, and a notice that it does not represent human approval
-unless one is explicitly recorded in its content — publishing never
-overwrites a pre-existing file that lacks that marker.
-
-**The handoff to `Flows.Development` is manual and explicit.**
-`Flows.Refinement` never calls `Flows.Development` internally — the harness
-only produces documents in `docs/`; a human (or the driving agent, on
-request) decides when to point `Flows.Development` at those documents so its
-`plan` step reads them as the brief. This keeps the two flows composable
-without coupling one flow's state machine to the other's.
 
 ## Example Usage
 

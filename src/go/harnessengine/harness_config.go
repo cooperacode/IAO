@@ -14,11 +14,14 @@ import (
 // without recompiling. Absent or unreadable → falls back to DefaultHarnessConfig (same
 // tolerance as the other stores: config is optional input, it must never bring the run down).
 type HarnessConfig struct {
-	MaxSteps            int    `json:"maxSteps"`
-	MaxInstructionChars int    `json:"maxInstructionChars"`
-	DocsMaxChars        int    `json:"docsMaxChars"`
-	DocsFolder          string `json:"docsFolder"`
-	TimeoutMs           int    `json:"timeoutMs"`
+	MaxSteps                int     `json:"maxSteps"`
+	MaxInstructionChars     int     `json:"maxInstructionChars"`
+	DocsMaxChars            int     `json:"docsMaxChars"`
+	DocsFolder              string  `json:"docsFolder"`
+	TimeoutMs               int     `json:"timeoutMs"`
+	ContextResetMode        string  `json:"contextResetMode"`
+	ContextResetThreshold   float64 `json:"contextResetThreshold"`
+	ContextFallbackFeatures int     `json:"contextFallbackFeatures"`
 }
 
 const harnessConfigPath = "harness.json"
@@ -42,11 +45,14 @@ const timeoutMsEnvVar = "HARNESS_TIMEOUT_MS"
 // mean "disabled".
 func DefaultHarnessConfig() HarnessConfig {
 	return HarnessConfig{
-		MaxSteps:            12,
-		MaxInstructionChars: 0,
-		DocsMaxChars:        40_000,
-		DocsFolder:          "docs",
-		TimeoutMs:           0,
+		MaxSteps:                12,
+		MaxInstructionChars:     0,
+		DocsMaxChars:            40_000,
+		DocsFolder:              "docs",
+		TimeoutMs:               0,
+		ContextResetMode:        "adaptive",
+		ContextResetThreshold:   0.70,
+		ContextFallbackFeatures: 1,
 	}
 }
 
@@ -133,6 +139,21 @@ func normalizeConfig(config HarnessConfig) HarnessConfig {
 		config.DocsFolder = def.DocsFolder
 	}
 	config.TimeoutMs = clamp(config.TimeoutMs, 0, maxAllowedTimeoutMs)
+	mode := strings.ToLower(strings.TrimSpace(config.ContextResetMode))
+	if mode != "adaptive" && mode != "per-feature" && mode != "never" {
+		config.ContextResetMode = def.ContextResetMode
+	} else {
+		config.ContextResetMode = mode
+	}
+	if config.ContextResetThreshold <= 0 {
+		config.ContextResetThreshold = def.ContextResetThreshold
+	}
+	if config.ContextResetThreshold > 1 {
+		config.ContextResetThreshold = 1
+	}
+	if config.ContextFallbackFeatures <= 0 {
+		config.ContextFallbackFeatures = def.ContextFallbackFeatures
+	}
 
 	return config
 }

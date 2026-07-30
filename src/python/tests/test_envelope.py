@@ -2,6 +2,7 @@
 
 import pytest
 
+from harness_engine.context_policy import ContextUsage
 from harness_engine.envelope import Envelope, EnvelopeType
 
 
@@ -96,3 +97,14 @@ def test_to_json_sem_context_nao_emite_o_campo():
     envelope = Envelope(EnvelopeType.COMMAND, "finalize", ("Epic",))
 
     assert "context" not in envelope.to_json()
+
+
+def test_context_usage_faz_roundtrip():
+    original = Envelope(
+        EnvelopeType.COMMAND,
+        "start",
+        (),
+        context_usage=ContextUsage("iao.context.v1", "s1", 128000, 84000, "driver"),
+    )
+
+    assert Envelope.parse(original.to_json()) == original

@@ -148,6 +148,9 @@ mod tests {
             timestamp: String::new(),
             prev_hash: String::new(),
             label: String::new(),
+            context_window_tokens: None,
+            context_used_tokens: None,
+            context_ratio: None,
         }
     }
 

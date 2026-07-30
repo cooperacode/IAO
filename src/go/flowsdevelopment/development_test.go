@@ -403,7 +403,7 @@ func TestImplement_WithPassingVerifyFeature_RunsVerifyAndHandoffAutomatically(t 
 	if !strings.Contains(progress, ".harness/logs/verify-feature-2.log") {
 		t.Fatalf("unexpected progress: %s", progress)
 	}
-	if !strings.Contains(readFile(t, filepath.Join(targetDir, verifyLogPath(2))), "command: bash ./verify-feature.sh 2") {
+	if !strings.Contains(readFile(t, verifyLogPath(2)), "command: bash ./verify-feature.sh 2") {
 		t.Fatal("unexpected log content")
 	}
 }
@@ -428,7 +428,7 @@ func TestImplement_WithFailingVerifyFeature_GoesBackToFix(t *testing.T) {
 	if strings.Contains(result, "DETAILED LINE THAT STAYS ONLY IN THE LOG") {
 		t.Fatalf("expected detailed line to stay in the log only: %s", result)
 	}
-	log := readFile(t, filepath.Join(targetDir, verifyLogPath(2)))
+	log := readFile(t, verifyLogPath(2))
 	if !strings.Contains(log, "FAIL: feature 2 broke") || !strings.Contains(log, "DETAILED LINE THAT STAYS ONLY IN THE LOG") {
 		t.Fatalf("unexpected log: %s", log)
 	}

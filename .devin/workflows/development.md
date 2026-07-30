@@ -1,12 +1,12 @@
 ---
-description: Develops a project feature by feature (long-running pattern) — the initializer expands the brief into prioritized features; a loop of fresh-context sessions implements them one at a time (bearings, smoke, pick, implement, verify, handoff) until all pass — driving the .NET Flows.Development harness.
+description: Develops a project feature by feature (long-running pattern) — the initializer expands the brief into prioritized features; an adaptive loop implements them one at a time (bearings, smoke, pick, implement, verify, handoff) until all pass — driving the .NET Flows.Development harness.
 auto_execution_mode: 3
 ---
 
 # Long-running development
 
 Takes a project from scratch to "all features passing", **one feature at a time**, with a
-hard context reset between features.
+context reset whenever the harness requests one.
 
 You are the **interpreter** for a harness whose state machine lives in compiled (.NET) code.
 **The flow logic lives in the program, not with you.** At each step you write the envelope to
@@ -34,17 +34,25 @@ Program: `./run-development.sh`
    newlines, use `\n` (JSON requirement).
 4. If `stdout` begins with `HARNESS PROTOCOL ERROR:`, fix the indicated field by rewriting
    `.harness/inbox.json` and **run the script again** — don't stop.
+5. Optional context telemetry: only when the host/runtime provides authoritative values,
+   include `contextUsage` in the response envelope with `schema`, `sessionId`,
+   `contextWindowTokens`, `contextUsedTokens`, and `source`. Never estimate or invent
+   token counts. If unavailable, omit it and let the harness use its deterministic fallback.
+   A host adapter may alternatively expose the same canonical JSON through
+   `HARNESS_CONTEXT_USAGE_JSON` for the current turn.
 
-## Hard reset per feature (essential)
+## Context boundary per feature
 
 When `<input>` begins with `=== NEW SESSION (clean context) ===`, the harness is starting
-**a new feature**. Treat it as a session from scratch: **spawn a new sub-agent** to drive it,
+**a new feature requiring a clean driver context**. Treat it as a session from scratch: **spawn a new sub-agent** to drive it,
 which gets its bearings **only** from the persistent artifacts (`progress.txt`, `git log`) —
 don't inherit or re-summarize the context from previous features.
 
 When picking up a session that died mid-feature (e.g. ran out of tokens in another IDE),
 check `progress.txt`/`git log` before reimplementing something that was already done —
 resuming doesn't recover the exact position within it.
+- If the marker is absent, continue the current driver context for the next feature; the
+  adaptive policy has decided that the reported context pressure is below the threshold.
 
 ## Self-verify
 
@@ -63,7 +71,7 @@ captured in `plan`) in the target directory and test it as a user would. Respond
 
 2. While `stdout` is **not** exactly `stop`:
    - Execute the instruction from the `<input>` block (with the skill from the `<skills>`
-     block), respecting the hard reset per feature.
+     block), respecting the optional context boundary marker.
    - Fill in the JSON from the `<response>` block, write it to `.harness/inbox.json` and run
      `./run-development.sh` (no arguments).
    - Replace `stdout` with the new result and repeat.

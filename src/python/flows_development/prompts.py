@@ -6,7 +6,7 @@ same name the driver fills in and returns as the next envelope's arg.
 from __future__ import annotations
 
 from flows_development import state_keys
-from harness_engine import artifact_store, prompt_formatter, run_config_store, state_store
+from harness_engine import artifact_store, context_policy, prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import DESCRIPTION_MAX_CHARS, Feature
 
@@ -123,7 +123,7 @@ def smoke_fix_prompt(failure: str) -> str:
 def implement_prompt(feature: Feature) -> str:
     brief = _brief_block()
     context = _feature_context_block(feature)
-    input_text = f"""=== NEW SESSION (clean context) ===
+    input_text = f"""{context_policy.new_feature_prefix()}
 
 Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond
 it:

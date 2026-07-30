@@ -4,7 +4,7 @@
 
 use harness_engine::envelope::{Envelope, envelope_type};
 use harness_engine::feature_store::{DESCRIPTION_MAX_CHARS, Feature};
-use harness_engine::{artifact_store, prompt_formatter, run_config_store, state_store};
+use harness_engine::{artifact_store, context_policy, prompt_formatter, run_config_store, state_store};
 
 use crate::tasks::{BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY};
 
@@ -160,7 +160,7 @@ pub fn implement_prompt(feature: &Feature) -> String {
     let brief = brief_block();
     let context = feature_context_block(feature);
     let input = format!(
-        "=== NEW SESSION (clean context) ===\n\n\
+        "{}\
 Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n\
 it:\n\
 {brief}\
@@ -169,7 +169,7 @@ Feature #{} (priority {}): {}\n\
 Work in the target directory ({target_dir}). If you run commands with\n\
 long output, save it to `.harness/logs/`. Return `implement` without arguments when done;\n\
 the harness derives the summary from the actual Git diff.",
-        feature.id, feature.priority, feature.title
+        context_policy::new_feature_prefix(), feature.id, feature.priority, feature.title
     );
 
     prompt_formatter::format(

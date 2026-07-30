@@ -36,6 +36,9 @@ class HarnessConfig:
     docs_max_chars: int
     docs_folder: str
     timeout_ms: int
+    context_reset_mode: str
+    context_reset_threshold: float
+    context_fallback_features: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -44,6 +47,9 @@ class HarnessConfig:
             "docsMaxChars": self.docs_max_chars,
             "docsFolder": self.docs_folder,
             "timeoutMs": self.timeout_ms,
+            "contextResetMode": self.context_reset_mode,
+            "contextResetThreshold": self.context_reset_threshold,
+            "contextFallbackFeatures": self.context_fallback_features,
         }
 
 
@@ -56,12 +62,16 @@ DEFAULT = HarnessConfig(
     docs_max_chars=40_000,
     docs_folder="docs",
     timeout_ms=0,
+    context_reset_mode="adaptive",
+    context_reset_threshold=0.70,
+    context_fallback_features=1,
 )
 
 _current: HarnessConfig | None = None
 
 
 def _normalize(config: HarnessConfig) -> HarnessConfig:
+    mode = config.context_reset_mode.strip().lower()
     return replace(
         config,
         max_steps=config.max_steps if config.max_steps > 0 else DEFAULT.max_steps,
@@ -69,6 +79,9 @@ def _normalize(config: HarnessConfig) -> HarnessConfig:
         docs_max_chars=config.docs_max_chars if config.docs_max_chars > 0 else DEFAULT.docs_max_chars,
         docs_folder=config.docs_folder.strip() if config.docs_folder and config.docs_folder.strip() else DEFAULT.docs_folder,
         timeout_ms=min(max(config.timeout_ms, 0), _MAX_ALLOWED_TIMEOUT_MS),
+        context_reset_mode=mode if mode in {"adaptive", "per-feature", "never"} else DEFAULT.context_reset_mode,
+        context_reset_threshold=min(max(config.context_reset_threshold or DEFAULT.context_reset_threshold, 0.1), 1.0),
+        context_fallback_features=config.context_fallback_features if config.context_fallback_features > 0 else DEFAULT.context_fallback_features,
     )
 
 
@@ -97,6 +110,9 @@ def load() -> HarnessConfig:
                 docs_max_chars=int(payload.get("docsMaxChars", 0) or 0),
                 docs_folder=str(payload.get("docsFolder") or ""),
                 timeout_ms=int(payload.get("timeoutMs", 0) or 0),
+                context_reset_mode=str(payload.get("contextResetMode") or ""),
+                context_reset_threshold=float(payload.get("contextResetThreshold", 0) or 0),
+                context_fallback_features=int(payload.get("contextFallbackFeatures", 0) or 0),
             )
     except Exception as ex:
         print(f"[HarnessConfig] failed to load; using defaults: {ex}", file=sys.stderr)

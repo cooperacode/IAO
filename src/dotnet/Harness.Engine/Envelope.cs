@@ -25,6 +25,9 @@ public record Envelope(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string>? Context { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ContextUsage? ContextUsage { get; init; }
+
     public string ToJson() => Serialize(this);
 
     /// <summary>Tolerant parse: accepts markdown fences and surrounding text around the JSON object.</summary>
@@ -37,7 +40,8 @@ public record Envelope(
         && Type == other.Type
         && Value == other.Value
         && (Args is null ? other.Args is null : other.Args is not null && Args.SequenceEqual(other.Args))
-        && ContextEquals(other);
+        && ContextEquals(other)
+        && Equals(ContextUsage, other.ContextUsage);
 
     private bool ContextEquals(Envelope other) =>
         Context is null
@@ -61,6 +65,7 @@ public record Envelope(
         foreach (var kv in Context ?? [])
             contextHash ^= HashCode.Combine(kv.Key, kv.Value);
         hash.Add(contextHash);
+        hash.Add(ContextUsage);
 
         return hash.ToHashCode();
     }
@@ -105,7 +110,28 @@ public record Envelope(
                     context[property.Name] = property.Value.GetString() ?? string.Empty;
             }
 
-            return new Envelope(type, envelopeValue, args) { Context = context };
+            ContextUsage? contextUsage = null;
+            if (root.TryGetProperty("contextUsage", out var usageElement)
+                && usageElement.ValueKind == JsonValueKind.Object)
+            {
+                try
+                {
+                    contextUsage = JsonSerializer.Deserialize(
+                        usageElement.GetRawText(),
+                        HarnessJsonContext.Default.ContextUsage);
+                }
+                catch (JsonException)
+                {
+                    // Telemetry is optional; malformed driver metadata must not break the
+                    // control-plane envelope.
+                }
+            }
+
+            return new Envelope(type, envelopeValue, args)
+            {
+                Context = context,
+                ContextUsage = contextUsage,
+            };
         }
         catch (Exception ex)
         {

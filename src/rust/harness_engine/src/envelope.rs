@@ -12,6 +12,8 @@ use std::io::Write;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::context_policy::ContextUsage;
+
 /// Protocol signals carried in [`Envelope::type_`].
 pub mod envelope_type {
     pub const TEXT: &str = "text";
@@ -29,6 +31,8 @@ pub struct Envelope {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<HashMap<String, String>>,
+    #[serde(rename = "contextUsage", default, skip_serializing_if = "Option::is_none")]
+    pub context_usage: Option<ContextUsage>,
 }
 
 impl Envelope {
@@ -38,6 +42,7 @@ impl Envelope {
             value: value.into(),
             args,
             context: None,
+            context_usage: None,
         }
     }
 
@@ -99,11 +104,16 @@ impl Envelope {
             _ => None,
         };
 
+        let context_usage = root
+            .get("contextUsage")
+            .and_then(|value| serde_json::from_value::<ContextUsage>(value.clone()).ok());
+
         Ok(Envelope {
             type_,
             value: envelope_value,
             args,
             context,
+            context_usage,
         })
     }
 
@@ -262,6 +272,22 @@ mod tests {
         );
 
         assert!(!envelope.to_json().contains("context"));
+    }
+
+    #[test]
+    fn context_usage_faz_roundtrip() {
+        let mut original = Envelope::new(envelope_type::COMMAND, "start", vec![]);
+        original.context_usage = Some(ContextUsage {
+            schema: "iao.context.v1".to_string(),
+            session_id: "s1".to_string(),
+            context_window_tokens: 128_000,
+            context_used_tokens: 84_000,
+            source: "driver".to_string(),
+        });
+
+        let roundtrip = Envelope::parse(&original.to_json()).unwrap();
+
+        assert_eq!(original, roundtrip);
     }
 
     #[test]

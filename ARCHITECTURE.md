@@ -112,7 +112,8 @@ and routing to the task the flow registered.
   the driver can correct and resend; the trace records the outcome and
   instruction size either way.
   (`src/dotnet/Harness.Engine/TaskRegistry.cs`)
-- **`Envelope`** — the contract `{ type, value, args, context? }`. Parsing
+- **`Envelope`** — the contract `{ type, value, args, context?, contextUsage? }`.
+  `contextUsage` is optional driver telemetry; parsing
   tolerates markdown fences and prose around the JSON object; a parse failure
   becomes a protocol error, not a silent termination.
   (`src/dotnet/Harness.Engine/Envelope.cs`)
@@ -147,6 +148,10 @@ What leaves the harness each turn: an instruction block with `input`, a
   that cannot be raised from `harness.json` alone, precisely because that file
   lives in the working directory the supervised agent controls.
   (`src/dotnet/Harness.Engine/HarnessConfig.cs`)
+- **`ContextPolicy`** — consumes only optional normalized context telemetry and
+  decides whether the next feature gets a clean-context marker. It persists a
+  ratio and feature counter, never provider-specific token records.
+  (`src/dotnet/Harness.Engine/ContextPolicy.cs`)
 - **`DocsReader`** — seeds the plan from `.md`/`.txt` files in deterministic
   order, honoring `docsMaxChars`.
   (`src/dotnet/Harness.Engine/DocsReader.cs`)
@@ -183,8 +188,9 @@ viable.
   *ready* — every id in its `dependsOn` already passed.
   (`src/dotnet/Harness.Engine/FeatureStore.cs` → `.harness/feature_list.json`)
 - **`Trace`** — one line per turn: step, command, outcome
-  (`instruction`/`stop`/`error`/`budget`/`timeout`), and instruction size. This
-  is the audit trail — evidence that doesn't depend on chat history.
+  (`instruction`/`stop`/`error`/`budget`/`timeout`), instruction size, and,
+  when available, context window, context usage, and normalized usage ratio.
+  This is the audit trail — evidence that doesn't depend on chat history.
   (`src/dotnet/Harness.Engine/Trace.cs` → `.harness/trace.jsonl`)
 
 **Closing snapshots**, written only when the flow emits `stop`, so a later
@@ -231,9 +237,19 @@ Eight protocol commands remain available for compatibility, but the normal
 path has only the planning and implementation driver turns. `bearings`,
 `smoke`, and `pick` are executed internally; `verify` and `handoff` return to
 the driver only when automated repair is needed. Each new `implement` prompt
-begins with `=== NEW SESSION (clean context) ===`, which is the driver-facing
-boundary for the fresh context of the next feature; retries for the same
-feature do not emit it.
+begins with `=== NEW SESSION (clean context) ===` when the adaptive context
+policy requests it, which is the driver-facing boundary for the fresh context
+of the next feature; retries for the same feature do not emit it. Drivers may
+optionally attach `contextUsage` telemetry to the envelope. The engine consumes
+only the generic window/used-token fields and never parses provider-specific
+rollout storage; in its absence, the configured deterministic fallback remains
+active. A host adapter can supply the canonical object in the response envelope
+or through `HARNESS_CONTEXT_USAGE_JSON` for the current turn. The Codex-specific
+bridge is isolated in `scripts/codex_context_usage.py`, which delegates parsing
+to `scripts/codex_usage.py`; this provider coupling does not enter the engine.
+Claude Code and Copilot use the same adapter boundary; when their host does not
+expose a reliable context window, those adapters intentionally emit no sample
+and the deterministic fallback remains active.
 
 | State | What happens |
 |---|---|

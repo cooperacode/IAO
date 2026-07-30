@@ -122,4 +122,17 @@ public class EnvelopeTests
 
         Assert.DoesNotContain("context", envelope.ToJson());
     }
+
+    [Fact]
+    public void ContextUsage_FazRoundtrip()
+    {
+        var original = new Envelope(EnvelopeType.Command, "start", [])
+        {
+            ContextUsage = new ContextUsage("iao.context.v1", "s1", 128_000, 84_000, "driver"),
+        };
+
+        var roundtrip = Envelope.Parse(original.ToJson());
+
+        Assert.Equal(original, roundtrip);
+    }
 }

@@ -18,7 +18,10 @@ public record HarnessConfig(
     int MaxInstructionChars,
     int DocsMaxChars,
     string DocsFolder,
-    int TimeoutMs)
+    int TimeoutMs,
+    string ContextResetMode,
+    double ContextResetThreshold,
+    int ContextFallbackFeatures)
 {
     // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
     // MaxInstructionChars = 0 disables the cost ceiling (only the step one applies).
@@ -30,7 +33,10 @@ public record HarnessConfig(
         MaxInstructionChars: 0,
         DocsMaxChars: 40_000,
         DocsFolder: "docs",
-        TimeoutMs: 0);
+        TimeoutMs: 0,
+        ContextResetMode: "adaptive",
+        ContextResetThreshold: 0.70,
+        ContextFallbackFeatures: 1);
 
     private const string FilePath = "harness.json";
 
@@ -96,5 +102,15 @@ public record HarnessConfig(
         DocsMaxChars = config.DocsMaxChars > 0 ? config.DocsMaxChars : Default.DocsMaxChars,
         DocsFolder = string.IsNullOrWhiteSpace(config.DocsFolder) ? Default.DocsFolder : config.DocsFolder,
         TimeoutMs = int.Clamp(config.TimeoutMs, 0, MaxAllowedTimeoutMs),
+        ContextResetMode = config.ContextResetMode is "adaptive" or "per-feature" or "never"
+            ? config.ContextResetMode
+            : Default.ContextResetMode,
+        ContextResetThreshold = double.Clamp(
+            config.ContextResetThreshold is > 0 and <= 1 ? config.ContextResetThreshold : Default.ContextResetThreshold,
+            0.1,
+            1.0),
+        ContextFallbackFeatures = config.ContextFallbackFeatures > 0
+            ? config.ContextFallbackFeatures
+            : Default.ContextFallbackFeatures,
     };
 }

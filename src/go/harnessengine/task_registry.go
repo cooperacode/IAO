@@ -74,6 +74,17 @@ func Dispatch(
 			SetContext(envelope.Context)
 		}
 	}
+	var observedContextUsage *ContextUsage
+	if envelope != nil {
+		usage := envelope.ContextUsage
+		if usage == nil {
+			usage = ContextUsageFromEnvironment()
+		}
+		observedContextUsage = usage
+	} else {
+		observedContextUsage = ContextUsageFromEnvironment()
+	}
+	ObserveContextUsage(observedContextUsage)
 
 	// Iteration guard — hard stop under the team's token budget.
 	step := IncrementStep()
@@ -97,7 +108,7 @@ func Dispatch(
 	if v := GetState(TraceLabelKey); v != nil {
 		label = *v
 	}
-	AppendTrace(step, command, outcome, resultBytes, label)
+	AppendTrace(step, command, outcome, resultBytes, label, observedContextUsage)
 
 	// The instruction's cost is only known here now — it feeds the accumulator the next
 	// turn's guard will check.

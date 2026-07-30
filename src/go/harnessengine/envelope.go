@@ -31,10 +31,11 @@ var EnvelopeType = struct {
 // only uses measures the engine attests itself (steps and instruction chars — see
 // TaskRegistry); real tokens live in the caller's billing metadata.
 type Envelope struct {
-	Type    string            `json:"type"`
-	Value   string            `json:"value"`
-	Args    []string          `json:"args"`
-	Context map[string]string `json:"context,omitempty"`
+	Type         string            `json:"type"`
+	Value        string            `json:"value"`
+	Args         []string          `json:"args"`
+	Context      map[string]string `json:"context,omitempty"`
+	ContextUsage *ContextUsage     `json:"contextUsage,omitempty"`
 }
 
 // NewEnvelope builds an envelope with no context (args defaults to an empty, non-nil slice).
@@ -120,7 +121,15 @@ func tryParseEnvelope(value string) (*Envelope, error) {
 		}
 	}
 
-	return &Envelope{Type: envType, Value: envValue, Args: args, Context: context}, nil
+	var contextUsage *ContextUsage
+	if raw, ok := root["contextUsage"]; ok {
+		var usage ContextUsage
+		if err := json.Unmarshal(raw, &usage); err == nil {
+			contextUsage = &usage
+		}
+	}
+
+	return &Envelope{Type: envType, Value: envValue, Args: args, Context: context, ContextUsage: contextUsage}, nil
 }
 
 // stringField reads an optional string field: absent/null becomes "", any other type is a

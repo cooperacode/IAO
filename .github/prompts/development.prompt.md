@@ -1,6 +1,6 @@
 ---
 agent: agent
-description: 'Develops a project feature by feature (long-running pattern) driving the harness ./run-development.sh, with a fresh context per feature.'
+description: 'Develops a project feature by feature (long-running pattern) driving the harness ./run-development.sh, with adaptive context boundaries.'
 tools: [execute, edit/editFiles]
 ---
 
@@ -38,14 +38,21 @@ resuming doesn't recover the exact position within it.
   newlines, use `\n` (JSON requirement).
 - If `stdout` begins with `HARNESS PROTOCOL ERROR:`, fix the indicated field by rewriting
   `.harness/inbox.json` and run the script again — don't stop.
+- Optional context telemetry: only when the host/runtime provides authoritative values,
+  include `contextUsage` in the response envelope with `schema`, `sessionId`,
+  `contextWindowTokens`, `contextUsedTokens`, and `source`. Never estimate or invent
+  token counts. If unavailable, omit it and let the harness use its deterministic fallback.
+  A host adapter may alternatively expose the same canonical JSON through
+  `HARNESS_CONTEXT_USAGE_JSON` for the current turn.
 
-## Hard reset per feature (essential)
+## Context boundary per feature
 
 When `<input>` begins with `=== NEW SESSION (clean context) ===`, the harness is starting
-**a new feature**. Treat it as a session from scratch: **spawn a new sub-agent** to drive it,
+**a new feature requiring a clean driver context**. Treat it as a session from scratch: **spawn a new sub-agent** to drive it,
 which gets its bearings **only** from the persistent artifacts (`progress.txt`, `git log`) —
-don't inherit or re-summarize the context from previous features. This reset is what keeps
-each session small enough to fit in a fresh context.
+don't inherit or re-summarize the context from previous features. If the marker is absent,
+continue the current driver context; the adaptive policy has decided that the reported
+context pressure is below the threshold.
 
 ## Self-verify
 
@@ -56,15 +63,29 @@ the same feature — fix it and verify again.
 
 ## Procedure
 
+Before each harness invocation, refresh the optional Copilot telemetry with:
+
+```bash
+USAGE=$(python3 scripts/copilot_context_usage.py 2>/dev/null || true)
+if [ -n "$USAGE" ]; then
+  HARNESS_CONTEXT_USAGE_JSON="$USAGE" ./run-development.sh
+else
+  ./run-development.sh
+fi
+```
+
+Set `COPILOT_CONTEXT_WINDOW_TOKENS` or `HARNESS_CONTEXT_WINDOW_TOKENS` when
+the Copilot host exposes the active model window. Never guess this value.
+
 1. Write `{ "type": "text", "value": "start", "context": { "driver": "github copilot" } }` to
-   `.harness/inbox.json`, run `./run-development.sh` and keep the `stdout`. (The brief comes
+   `.harness/inbox.json`, execute the telemetry-aware invocation above and keep the `stdout`. (The brief comes
    from `docs/`; with no docs, `start` asks for the goal, the target directory, and the
    verification command.)
 2. While `stdout` is not exactly `stop`:
-   - execute the instruction from `<input>` (with the injected skill), respecting the hard
-     reset per feature;
-   - fill in the `<response>` JSON, write it to `.harness/inbox.json`, run
-     `./run-development.sh` and replace `stdout` with the new result.
+   - execute the instruction from `<input>` (with the injected skill), respecting the
+     optional context boundary marker;
+   - fill in the `<response>` JSON, write it to `.harness/inbox.json`, execute the
+     telemetry-aware invocation above and replace `stdout` with the new result.
 3. On seeing `stop`, all features pass (`.harness/feature_list.json`).
 4. Generate the session's usage and cost report:
    `skills/session-report/generate_report.py --driver copilot` (correlates

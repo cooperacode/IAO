@@ -295,7 +295,7 @@ set -euo pipefail
     assert "Feature #2" in progress
     assert "PASS: verify-feature.sh 2 passed" in progress
     assert ".harness/logs/verify-feature-2.log" in progress
-    assert "command: bash ./verify-feature.sh 2" in Path("src/app/.harness/logs/verify-feature-2.log").read_text()
+    assert "command: bash ./verify-feature.sh 2" in Path(".harness/logs/verify-feature-2.log").read_text()
 
 
 def test_implement_com_verify_feature_falhando_volta_para_fix():
@@ -312,7 +312,7 @@ exit 7
     assert "feature 2 quebrou" in result
     assert ".harness/logs/verify-feature-2.log" in result
     assert "LINHA DETALHADA QUE FICA SO NO LOG" not in result
-    log = Path("src/app/.harness/logs/verify-feature-2.log").read_text()
+    log = Path(".harness/logs/verify-feature-2.log").read_text()
     assert "FAIL: feature 2 quebrou" in log
     assert "LINHA DETALHADA QUE FICA SO NO LOG" in log
     assert '"value":"implement"' in result

@@ -146,7 +146,7 @@ func writeVerifyLog(targetDir, command string, featureId int, result verifyScrip
 	relativePath := filepath.Join(".harness", "logs", fmt.Sprintf("verify-feature-%d.log", featureId))
 	displayPath := strings.ReplaceAll(relativePath, "\\", "/")
 
-	fullPath := filepath.Join(targetDir, relativePath)
+	fullPath := relativePath
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return fmt.Sprintf("log unavailable (%s)", oneLine(err.Error(), ""))
 	}

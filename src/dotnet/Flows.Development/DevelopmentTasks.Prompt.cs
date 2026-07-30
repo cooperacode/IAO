@@ -115,8 +115,7 @@ public static partial class DevelopmentTasks
     private static string ImplementPrompt(Feature feature) =>
         PromptFormatter.Format(
             input: $"""
-            === NEW SESSION (clean context) ===
-
+            {ContextPolicy.NewFeaturePrefix()}
             Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond
             it:
             {BriefBlock()}

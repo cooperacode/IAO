@@ -3,5 +3,8 @@
   "maxInstructionChars": 0,
   "docsMaxChars": 40000,
   "docsFolder": "docs",
-  "timeoutMs": 30000
+  "timeoutMs": 30000,
+  "contextResetMode": "adaptive",
+  "contextResetThreshold": 0.7,
+  "contextFallbackFeatures": 1
 }

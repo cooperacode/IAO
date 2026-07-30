@@ -6,7 +6,7 @@ import sys
 import threading
 from typing import Callable, Mapping
 
-from harness_engine import harness_config, inbox, state_store, trace
+from harness_engine import context_policy, harness_config, inbox, state_store, trace
 from harness_engine.envelope import Envelope
 from harness_engine.envelope_validation import ValidationResult
 from harness_engine.errors import HarnessTimeoutError
@@ -60,6 +60,12 @@ def dispatch(
         if envelope.context:
             state_store.set_context(envelope.context)
 
+    observed_context_usage = (
+        envelope.context_usage if envelope is not None and envelope.context_usage is not None
+        else context_policy.ContextUsage.from_environment()
+    )
+    context_policy.observe(observed_context_usage)
+
     # Iteration guard — hard stop under the team's token budget.
     step = state_store.increment()
 
@@ -77,7 +83,7 @@ def dispatch(
     # re-read (not from the load() snapshot above) because the action itself may have
     # just set it (e.g. pick() choosing this step's feature).
     label = state_store.get(state_store.TRACE_LABEL_KEY) or ""
-    trace.append(step, command, outcome, result_bytes, label)
+    trace.append(step, command, outcome, result_bytes, label, observed_context_usage)
 
     # The emitted instruction's cost is only known here now — it feeds the accumulator
     # the next turn's guard will check.

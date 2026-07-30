@@ -182,7 +182,7 @@ fn write_verify_log(
         .collect();
     let display_path = relative_path.to_string_lossy().replace('\\', "/");
 
-    let full_path = target_dir.join(&relative_path);
+    let full_path = relative_path.clone();
     let write_result = full_path
         .parent()
         .map(std::fs::create_dir_all)

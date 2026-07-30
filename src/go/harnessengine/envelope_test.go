@@ -105,6 +105,19 @@ func TestEnvelope_ToJSON_WithoutContext_OmitsField(t *testing.T) {
 	}
 }
 
+func TestEnvelope_ContextUsage_RoundTrips(t *testing.T) {
+	original := NewEnvelope(EnvelopeType.Command, "start", nil)
+	original.ContextUsage = &ContextUsage{
+		Schema: "iao.context.v1", SessionID: "s1", ContextWindowTokens: 128000,
+		ContextUsedTokens: 84000, Source: "driver",
+	}
+
+	roundtrip := ParseEnvelope(original.ToJSON())
+	if roundtrip == nil || roundtrip.ContextUsage == nil || *roundtrip.ContextUsage != *original.ContextUsage {
+		t.Fatalf("unexpected context usage roundtrip: %+v", roundtrip)
+	}
+}
+
 func TestParseEnvelope_IgnoresUnknownFields(t *testing.T) {
 	e := ParseEnvelope(`{"type":"tool","value":"classify","args":["x"],"tokens":1234}`)
 	if e == nil || e.Value != "classify" {

@@ -65,9 +65,12 @@ class TraceEntry:
     timestamp: str  # ISO 8601 with offset, recorded as a string (parity with the wire JSON)
     prev_hash: str = ""
     label: str = ""
+    context_window_tokens: int | None = None
+    context_used_tokens: int | None = None
+    context_ratio: float | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "step": self.step,
             "command": self.command,
             "outcome": self.outcome,
@@ -76,6 +79,13 @@ class TraceEntry:
             "prevHash": self.prev_hash,
             "label": self.label,
         }
+        if self.context_window_tokens is not None:
+            data["contextWindowTokens"] = self.context_window_tokens
+        if self.context_used_tokens is not None:
+            data["contextUsedTokens"] = self.context_used_tokens
+        if self.context_ratio is not None:
+            data["contextRatio"] = self.context_ratio
+        return data
 
     @staticmethod
     def from_dict(payload: dict[str, object]) -> "TraceEntry":
@@ -87,6 +97,9 @@ class TraceEntry:
             timestamp=str(payload["timestamp"]),
             prev_hash=str(payload.get("prevHash") or ""),
             label=str(payload.get("label") or ""),
+            context_window_tokens=int(payload["contextWindowTokens"]) if payload.get("contextWindowTokens") is not None else None,
+            context_used_tokens=int(payload["contextUsedTokens"]) if payload.get("contextUsedTokens") is not None else None,
+            context_ratio=float(payload["contextRatio"]) if payload.get("contextRatio") is not None else None,
         )
 
 
@@ -98,11 +111,28 @@ def reset() -> None:
         print(f"[Trace] failed to clear: {ex}", file=sys.stderr)
 
 
-def append(step: int, command: str, outcome: str, instruction_chars: int, label: str = "") -> None:
+def append(
+    step: int,
+    command: str,
+    outcome: str,
+    instruction_chars: int,
+    label: str = "",
+    context_usage: object | None = None,
+) -> None:
     try:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         prev_hash = _last_entry_hash()
-        entry = TraceEntry(step, command, outcome, instruction_chars, _now_iso(), prev_hash, label)
+        window = getattr(context_usage, "context_window_tokens", None)
+        used = getattr(context_usage, "context_used_tokens", None)
+        ratio = None
+        if isinstance(window, int) and isinstance(used, int) and window > 0 and used >= 0:
+            ratio = min(max(used / window, 0.0), 1.0)
+        entry = TraceEntry(
+            step, command, outcome, instruction_chars, _now_iso(), prev_hash, label,
+            window if ratio is not None else None,
+            used if ratio is not None else None,
+            ratio,
+        )
         line = json.dumps(entry.to_dict(), separators=(",", ":")) + "\n"
         with open(_FILE_PATH, "a") as f:
             f.write(line)  # a single write() — the whole event is atomic at the line level

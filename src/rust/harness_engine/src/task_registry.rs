@@ -10,7 +10,7 @@ use crate::envelope::Envelope;
 use crate::envelope_validation::Validator;
 use crate::errors::HarnessTimeoutError;
 use crate::trace::trace_outcome;
-use crate::{harness_config, inbox, state_store, trace};
+use crate::{context_policy, harness_config, inbox, state_store, trace};
 
 /// `Arc` (not `Box`) on purpose: the time guard needs to move the action onto a detached,
 /// abandonable thread (see `run_with_timeout`) without depending on the caller's command
@@ -80,6 +80,17 @@ pub fn dispatch(
         }
     }
 
+    let observed_context_usage = if let Some(env) = &envelope {
+        if let Some(usage) = env.context_usage.as_ref() {
+            Some(usage.clone())
+        } else {
+            context_policy::ContextUsage::from_environment()
+        }
+    } else {
+        context_policy::ContextUsage::from_environment()
+    };
+    context_policy::observe(observed_context_usage.as_ref());
+
     // Iteration guard — hard stop under the team's token budget constraint.
     let step = state_store::increment();
 
@@ -103,7 +114,14 @@ pub fn dispatch(
     // read again (not from the load() snapshot above) because the action itself may have
     // just set it (e.g. pick() choosing this step's feature).
     let label = state_store::get(state_store::TRACE_LABEL_KEY).unwrap_or_default();
-    trace::append_with_label(step, &command, outcome, result.len() as i32, &label);
+    trace::append_with_context(
+        step,
+        &command,
+        outcome,
+        result.len() as i32,
+        &label,
+        observed_context_usage.as_ref(),
+    );
 
     // The cost of the instruction just emitted is only known here — it feeds into the
     // accumulator the next turn's guard will check.
