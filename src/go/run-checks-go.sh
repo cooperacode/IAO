@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# Local/CI gate for the harness: unit tests + deterministic golden set (0 tokens).
-# Propagates the first non-zero exit code. Reusable by CI (see .github/workflows/ci.yml) and by hand.
+# Local/CI gate for the Go port of the harness: go vet, tests with golden-case parity
+# against the other engines, and deterministic E2E smoke (0 tokens).
+# Propagates the first non-zero exit code.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-echo "==> dotnet test (Harness.Engine.Tests)"
-dotnet test src/dotnet/Harness.Engine.Tests/Harness.Engine.Tests.csproj -c Release
+command -v go >/dev/null 2>&1 || { echo "[checks] go not found — install via https://go.dev/dl/" >&2; exit 1; }
 
-echo "==> development flow smoke test (binary, end to end)"
-# Drives the Flows.Development binary through the inbox in a disposable workspace (doesn't
-# touch the repo's .harness/). Catches what the build alone doesn't: transport, inbox and
-# AOT serialization at runtime. Deterministic and 0 tokens — the "driver" here is this script.
-DEV_DLL="$DIR/src/dotnet/Flows.Development/bin/Release/net10.0/Flows.Development.dll"
-[[ -f "$DEV_DLL" ]] || { echo "[smoke] DLL not found: $DEV_DLL" >&2; exit 1; }
+echo "==> go vet && go test ./... (src/go)"
+go vet ./...
+go test ./...
+
+echo "==> development flow smoke test (Go, end to end)"
+# Drives the Go binary through the inbox in a disposable workspace (doesn't touch the
+# repo's .harness/). Catches what the unit test doesn't: transport, inbox and the real
+# binary. Deterministic and 0 tokens — the "driver" here is this script.
+mkdir -p "$DIR/bin"
+go build -o "$DIR/bin/flowsdevelopment" ./flowsdevelopment
+DEV_BIN="$DIR/bin/flowsdevelopment"
+[[ -x "$DEV_BIN" ]] || { echo "[smoke] binary not found or not executable: $DEV_BIN" >&2; exit 1; }
 
 SMOKE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_DIR"' EXIT
@@ -34,7 +40,7 @@ dev_step() {  # type value [args...] → writes the inbox (JSON) and runs one st
   fi
   json+='}'
   printf '%s' "$json" > "$SMOKE_DIR/.harness/inbox.json"
-  ( cd "$SMOKE_DIR" && dotnet "$DEV_DLL" 2>/dev/null )
+  ( cd "$SMOKE_DIR" && "$DEV_BIN" 2>/dev/null )
 }
 
 FEATURES='[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'
@@ -70,4 +76,4 @@ grep -Eq '"passes"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIR/.harness/feature_li
   || { echo "[smoke] verify-feature log was not created" >&2; exit 1; }
 echo "    loop closed on stop and all features pass ✓"
 
-echo "==> OK — tests green, golden set and smoke as expected."
+echo "==> OK — tests green and smoke as expected."

@@ -1,28 +1,19 @@
 #!/usr/bin/env bash
-# Local/CI gate for the Rust port of the harness: tests (cargo test --workspace, with golden
-# case parity against Harness.Engine.Tests/src/python/tests) + deterministic E2E smoke
-# (0 tokens). Propagates the first non-zero exit code. Mirrors run-checks.sh (.NET side) and
-# run-checks-py.sh (Python side).
+# Local/CI gate for the Python port of the harness: pytest tests + deterministic E2E smoke
+# (0 tokens). Propagates the first non-zero exit code. Mirrors run-checks.sh (.NET side).
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-if ! command -v cargo >/dev/null 2>&1; then
-  # shellcheck disable=SC1091
-  [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
-fi
-command -v cargo >/dev/null 2>&1 || { echo "[checks] cargo not found — install via https://rustup.rs" >&2; exit 1; }
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-echo "==> cargo test --workspace (src/rust)"
-( cd "$DIR/src/rust" && cargo test --workspace )
+echo "==> pytest (src/python/tests)"
+PYTHONPATH="$DIR" "$PYTHON_BIN" -m pytest "$DIR/tests" -q
 
-echo "==> development flow smoke test (Rust, end to end)"
-# Drives the Rust wrapper through the inbox in a disposable workspace (doesn't touch the
-# repo's .harness/). Catches what the unit test doesn't: transport, inbox and the real
-# binary. Deterministic and 0 tokens — the "driver" here is this script.
-WRAPPER="$DIR/run-development-rs.sh"
-[[ -x "$WRAPPER" ]] || { echo "[smoke] wrapper not found or not executable: $WRAPPER" >&2; exit 1; }
-
+echo "==> development flow smoke test (Python, end to end)"
+# Drives the Python engine through the inbox in a disposable workspace (doesn't touch the
+# repo's .harness/). Catches what the unit test doesn't: transport, inbox and the real CLI
+# process. Deterministic and 0 tokens — the "driver" here is this script.
 SMOKE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_DIR"' EXIT
 mkdir -p "$SMOKE_DIR/.harness"
@@ -42,7 +33,7 @@ dev_step() {  # type value [args...] → writes the inbox (JSON) and runs one st
   fi
   json+='}'
   printf '%s' "$json" > "$SMOKE_DIR/.harness/inbox.json"
-  ( cd "$SMOKE_DIR" && "$WRAPPER" 2>/dev/null )
+  ( cd "$SMOKE_DIR" && PYTHONPATH="$DIR" "$PYTHON_BIN" -m flows_development 2>/dev/null )
 }
 
 FEATURES='[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'

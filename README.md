@@ -171,13 +171,16 @@ Costs and trade-offs:
 
 ## Implementation
 
-This repository includes three protocol-compatible implementations:
+This repository includes four protocol-compatible implementations. The `run-*`
+scripts live beside the language they belong to; the repository root is packaging
+source, not an execution directory.
 
-| Runner | Requirement | Notes |
+| Engine | Package wrapper template | Local verification |
 |---|---|---|
-| `./run-development.sh` | .NET SDK compatible with `net10.0`, unless a Native AOT binary was already published | Default runner used by the included IDE adapters. Builds the DLL on demand when needed. |
-| `./run-development-py.sh` | Python 3.11+ | Protocol-compatible Python port. Uses the same `.harness/` files and inbox transport. |
-| `./run-development-rs.sh` | Rust toolchain (`cargo`), unless a release binary was already built | Protocol-compatible Rust port. Builds `cargo build --release` on demand; the resulting binary is already native, with no separate AOT step. |
+| .NET | `src/dotnet/run-development.sh` | `src/dotnet/run-checks.sh` |
+| Python | `src/python/run-development-py.sh` | `src/python/run-checks-py.sh` |
+| Rust | `src/rust/run-development-rs.sh` | `src/rust/run-checks-rs.sh` |
+| Go | `src/go/run-development-go.sh` | `src/go/run-checks-go.sh` |
 
 The `harness.json` file configures global limits such as `maxSteps`,
 `maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`.
@@ -186,7 +189,9 @@ For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
 `HARNESS_VERIFY_CMD` can override the values returned by the initializer, keeping
 those control-plane settings outside the model response.
 
-The included adapters call `./run-development.sh` by default:
+`package.sh` compiles or copies the selected engine and installs its wrapper template
+as `run-development.sh` in the generated package root. The included adapters call that
+packaged wrapper by default:
 
 | Agent | Adapter |
 |---|---|
@@ -195,11 +200,8 @@ The included adapters call `./run-development.sh` by default:
 | GitHub Copilot | `.github/prompts/development.prompt.md` |
 | Devin | `.devin/workflows/development.md` |
 
-To run through Python or Rust, point the agent to `./run-development-py.sh` or
-`./run-development-rs.sh` while keeping the same `.harness/inbox.json`
-protocol. Each port has its own local verification script
-(`./run-checks.sh`, `./run-checks-py.sh`, `./run-checks-rs.sh`) acting as a
-parity gate against the others.
+Every package uses the same `.harness/inbox.json` protocol. Each port keeps its
+original `run-checks*.sh` parity gate in the corresponding language directory.
 
 ## Example Usage
 
@@ -213,20 +215,21 @@ Intended IDE-agent usage:
    requested JSON format.
 6. The harness drives the next steps until it emits `stop`.
 
-Manual protocol check:
+Build a package (replace the engine and target as needed):
 
 ```bash
+./package.sh --engine python --ide codex
+cd dist/flows-python-v1.0.0
 ./run-development.sh '{ "type": "text", "value": "start" }'
-./run-development-py.sh '{ "type": "text", "value": "start" }'
-./run-development-rs.sh '{ "type": "text", "value": "start" }'
 ```
 
 Local verification:
 
 ```bash
-./run-checks.sh
-./run-checks-py.sh
-./run-checks-rs.sh
+src/dotnet/run-checks.sh
+src/python/run-checks-py.sh
+src/rust/run-checks-rs.sh
+src/go/run-checks-go.sh
 ```
 
 ## Known Uses

@@ -1145,9 +1145,9 @@
             runner: {
                 title: "run-development.sh", icon: "fa-play", badge: "FLOW", badgeClass: "b-novo",
                 color: "bg-cyan-900/50 text-cyan-400 border border-cyan-500/50",
-                desc: "Wrapper estável usado pelo agente e pelo curso.",
-                list: ["Procura binário publicado em Release", "Fallback para dotnet + DLL", "Lê o envelope do inbox por convenção do harness"],
-                files: "run-development.sh"
+                desc: "Wrapper estável instalado na raiz do pacote compilado.",
+                list: ["Cada engine mantém seu template run-development*.sh na pasta da linguagem", "package.sh copia o template selecionado para o pacote", "Lê o envelope do inbox por convenção do harness"],
+                files: "src/&lt;linguagem&gt;/run-development*.sh → pacote/run-development.sh"
             },
             skills: {
                 title: "Skills dev-*", icon: "fa-graduation-cap", badge: "FLOW", badgeClass: "b-novo",
@@ -1216,8 +1216,8 @@
                 title: "Ports & Adapters", icon: "fa-plug-circle-bolt", badge: "PADRÃO", badgeClass: "b-pattern",
                 color: "bg-cyan-900/50 text-cyan-400 border border-cyan-500/50",
                 desc: "O runner de shell e os adaptadores de IDE isolam o protocolo do agente concreto — o mesmo contrato de inbox/stdout roda atrás de qualquer driver ou runtime.",
-                list: ["Porta: run-development.sh (.NET) e run-development-py.sh (Python) — mesmo protocolo, runtimes diferentes", "Adaptadores: .codex/agents/development.toml, .claude/agents/development.agent.md, .github/prompts/development.prompt.md, .devin/workflows/development.md", "Trocar de IDE agent não exige tocar no harness"],
-                files: "run-development.sh · run-development-py.sh · .codex/ · .claude/ · .github/ · .devin/"
+                list: ["Porta: cada runtime fornece seu run-development*.sh na pasta da linguagem; o pacote expõe o selecionado como run-development.sh", "Adaptadores: .codex/agents/development.toml, .claude/agents/development.agent.md, .github/prompts/development.prompt.md, .devin/workflows/development.md", "Trocar de IDE agent não exige tocar no harness"],
+                files: "src/&lt;linguagem&gt;/run-development*.sh · .codex/ · .claude/ · .github/ · .devin/"
             },
             patWorkflowEngine: {
                 title: "Workflow Engine / Process Manager", icon: "fa-gears", badge: "PADRÃO", badgeClass: "b-pattern",

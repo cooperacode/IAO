@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# Local/CI gate for the Python port of the harness: pytest tests + deterministic E2E smoke
-# (0 tokens). Propagates the first non-zero exit code. Mirrors run-checks.sh (.NET side).
+# Local/CI gate for the harness: unit tests + deterministic golden set (0 tokens).
+# Propagates the first non-zero exit code. Reusable by CI (see .github/workflows/ci.yml) and by hand.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+echo "==> dotnet test (Harness.Engine.Tests)"
+dotnet test Harness.Engine.Tests/Harness.Engine.Tests.csproj -c Release
 
-echo "==> pytest (src/python/tests)"
-PYTHONPATH="$DIR/src/python" "$PYTHON_BIN" -m pytest "$DIR/src/python/tests" -q
-
-echo "==> development flow smoke test (Python, end to end)"
-# Drives the Python wrapper through the inbox in a disposable workspace (doesn't touch the
-# repo's .harness/). Catches what the unit test doesn't: transport, inbox and the real CLI
-# process. Deterministic and 0 tokens — the "driver" here is this script.
-WRAPPER="$DIR/run-development-py.sh"
-[[ -x "$WRAPPER" ]] || { echo "[smoke] wrapper not found or not executable: $WRAPPER" >&2; exit 1; }
+echo "==> development flow smoke test (binary, end to end)"
+# Drives the Flows.Development binary through the inbox in a disposable workspace (doesn't
+# touch the repo's .harness/). Catches what the build alone doesn't: transport, inbox and
+# AOT serialization at runtime. Deterministic and 0 tokens — the "driver" here is this script.
+DEV_DLL="$DIR/Flows.Development/bin/Release/net10.0/Flows.Development.dll"
+[[ -f "$DEV_DLL" ]] || { echo "[smoke] DLL not found: $DEV_DLL" >&2; exit 1; }
 
 SMOKE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_DIR"' EXIT
@@ -36,7 +34,7 @@ dev_step() {  # type value [args...] → writes the inbox (JSON) and runs one st
   fi
   json+='}'
   printf '%s' "$json" > "$SMOKE_DIR/.harness/inbox.json"
-  ( cd "$SMOKE_DIR" && "$WRAPPER" 2>/dev/null )
+  ( cd "$SMOKE_DIR" && dotnet "$DEV_DLL" 2>/dev/null )
 }
 
 FEATURES='[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'
@@ -68,8 +66,8 @@ done
 grep -Eq '"passes"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIR/.harness/feature_list.json" \
   && ! grep -Eq '"passes"[[:space:]]*:[[:space:]]*false' "$SMOKE_DIR/.harness/feature_list.json" \
   || { echo "[smoke] feature_list.json did not close with all features passing" >&2; exit 1; }
-[[ -s "$SMOKE_DIR/app/.harness/logs/verify-feature-2.log" ]] \
+[[ -s "$SMOKE_DIR/.harness/logs/verify-feature-2.log" ]] \
   || { echo "[smoke] verify-feature log was not created" >&2; exit 1; }
 echo "    loop closed on stop and all features pass ✓"
 
-echo "==> OK — tests green and smoke as expected."
+echo "==> OK — tests green, golden set and smoke as expected."

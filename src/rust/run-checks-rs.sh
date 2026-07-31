@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-# Local/CI gate for the Go port of the harness: tests (go test ./..., with golden case
-# parity against Harness.Engine.Tests/src/python/tests/src/rust) + deterministic E2E smoke
-# (0 tokens). Propagates the first non-zero exit code. Mirrors run-checks.sh (.NET side),
-# run-checks-py.sh (Python side) and run-checks-rs.sh (Rust side).
+# Local/CI gate for the Rust port of the harness: tests (cargo test --workspace, with golden
+# case parity against the other engines) + deterministic E2E smoke (0 tokens).
+# Propagates the first non-zero exit code.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-command -v go >/dev/null 2>&1 || { echo "[checks] go not found — install via https://go.dev/dl/" >&2; exit 1; }
+if ! command -v cargo >/dev/null 2>&1; then
+  # shellcheck disable=SC1091
+  [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+fi
+command -v cargo >/dev/null 2>&1 || { echo "[checks] cargo not found — install via https://rustup.rs" >&2; exit 1; }
 
-echo "==> go vet && go test ./... (src/go)"
-( cd "$DIR/src/go" && go vet ./... && go test ./... )
+echo "==> cargo test --workspace (src/rust)"
+cargo test --workspace
 
-echo "==> development flow smoke test (Go, end to end)"
-# Drives the Go wrapper through the inbox in a disposable workspace (doesn't touch the
+echo "==> development flow smoke test (Rust, end to end)"
+# Drives the Rust binary through the inbox in a disposable workspace (doesn't touch the
 # repo's .harness/). Catches what the unit test doesn't: transport, inbox and the real
 # binary. Deterministic and 0 tokens — the "driver" here is this script.
-WRAPPER="$DIR/run-development-go.sh"
-[[ -x "$WRAPPER" ]] || { echo "[smoke] wrapper not found or not executable: $WRAPPER" >&2; exit 1; }
+cargo build --release --bin flows_development
+DEV_BIN="$DIR/target/release/flows_development"
+[[ -x "$DEV_BIN" ]] || { echo "[smoke] binary not found or not executable: $DEV_BIN" >&2; exit 1; }
 
 SMOKE_DIR="$(mktemp -d)"
 trap 'rm -rf "$SMOKE_DIR"' EXIT
@@ -38,7 +42,7 @@ dev_step() {  # type value [args...] → writes the inbox (JSON) and runs one st
   fi
   json+='}'
   printf '%s' "$json" > "$SMOKE_DIR/.harness/inbox.json"
-  ( cd "$SMOKE_DIR" && "$WRAPPER" 2>/dev/null )
+  ( cd "$SMOKE_DIR" && "$DEV_BIN" 2>/dev/null )
 }
 
 FEATURES='[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'

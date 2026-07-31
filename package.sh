@@ -103,6 +103,17 @@ esac; }
 wrapper_for() { case "$1" in
   development) echo "run-development.sh";;
 esac; }
+# Each engine owns the wrapper installed at the package root. Keeping these templates
+# beside their implementation avoids executable entry points at the repository root.
+wrapper_source_for() {
+  local engine="$1" flow="$2"
+  case "$engine:$flow" in
+    dotnet:development) echo "src/dotnet/run-development.sh";;
+    python:development) echo "src/python/run-development-py.sh";;
+    rust:development) echo "src/rust/run-development-rs.sh";;
+    go:development) echo "src/go/run-development-go.sh";;
+  esac
+}
 # --engine python only: name of the package under src/python/ that implements the flow.
 python_module_for() { case "$1" in
   development) echo "flows_development";;
@@ -158,6 +169,11 @@ contains "$IDE" "${IDES[@]}" || { echo "invalid IDE: '$IDE' (use: ${IDES[*]})" >
 for flow in "${FLOWS[@]}"; do
   IFS=$'\t' read -r src _rel < <(adapter_for "$IDE" "$flow")
   [[ -f "$src" ]] || { echo "adapter not found: $src (ide=$IDE, flow=$flow)" >&2; exit 1; }
+  wrapper_src="$(wrapper_source_for "$ENGINE" "$flow")"
+  [[ -f "$wrapper_src" ]] || {
+    echo "wrapper not found: $wrapper_src (engine=$ENGINE, flow=$flow)" >&2
+    exit 1
+  }
 done
 
 if [[ "$ENGINE" == "dotnet" ]]; then
@@ -213,6 +229,7 @@ fi
 AOT_FALLBACK_FLOWS=()
 for flow in "${FLOWS[@]}"; do
   wrapper="$(wrapper_for "$flow")"
+  wrapper_src="$(wrapper_source_for "$ENGINE" "$flow")"
 
   if [[ "$ENGINE" == "dotnet" ]]; then
     project="$(project_for "$flow")"
@@ -247,18 +264,6 @@ for flow in "${FLOWS[@]}"; do
       cp "$pubdir/$bin" "$OUT/bin/"
     fi
 
-    # .sh wrapper
-    cat > "$OUT/$wrapper" <<EOF
-#!/usr/bin/env bash
-# Starts one step of the '$flow' flow. Run it from this folder (state and skills are
-# relative to it). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
-set -euo pipefail
-DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-cd "\$DIR"
-exec "./bin/$bin" "\$@"
-EOF
-    chmod +x "$OUT/$wrapper"
-
     # .cmd wrapper (Windows)
     if [[ "$RID" == win-* ]]; then
       cmd="${wrapper%.sh}.cmd"
@@ -285,18 +290,6 @@ EOF
     [[ -f "$pubbin" ]] || { echo "[error] binary not found at $pubbin" >&2; exit 1; }
     cp "$pubbin" "$OUT/bin/"
 
-    # .sh wrapper — same convention as dotnet: cwd at the package root, calls ./bin/<bin>.
-    cat > "$OUT/$wrapper" <<EOF
-#!/usr/bin/env bash
-# Starts one step of the '$flow' flow. Run it from this folder (state and skills are
-# relative to it). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
-set -euo pipefail
-DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-cd "\$DIR"
-exec "./bin/$bin" "\$@"
-EOF
-    chmod +x "$OUT/$wrapper"
-
     # .cmd wrapper — only makes sense if the binary was compiled on a Windows host (cargo
     # itself doesn't cross-compile here, so there's no "win RID on a non-Windows host" case).
     if [[ "$WINEXT" == ".exe" ]]; then
@@ -320,18 +313,6 @@ EOF
     [[ -f "$pubbin" ]] || { echo "[error] binary not found at $pubbin" >&2; exit 1; }
     cp "$pubbin" "$OUT/bin/"
 
-    # .sh wrapper — same convention as dotnet/rust: cwd at the package root, calls ./bin/<bin>.
-    cat > "$OUT/$wrapper" <<EOF
-#!/usr/bin/env bash
-# Starts one step of the '$flow' flow. Run it from this folder (state and skills are
-# relative to it). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
-set -euo pipefail
-DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-cd "\$DIR"
-exec "./bin/$bin" "\$@"
-EOF
-    chmod +x "$OUT/$wrapper"
-
     # .cmd wrapper — only makes sense if the binary was compiled on a Windows host (this
     # script doesn't cross-compile GOOS/GOARCH, so there's no "win RID on a non-Windows
     # host" case).
@@ -350,20 +331,6 @@ EOF
     cp -R "src/python/$module" "$OUT/engine/$module"
     find "$OUT/engine/$module" -name "__pycache__" -type d -exec rm -rf {} +
 
-    # .sh wrapper — PYTHONPATH points at engine/ (harness_engine + the flow's module,
-    # sibling packages); cwd stays at the package root, the same convention as the .NET
-    # wrapper, since .harness/ and docs/ are relative to cwd.
-    cat > "$OUT/$wrapper" <<EOF
-#!/usr/bin/env bash
-# Starts one step of the '$flow' flow. Run it from this folder (state and skills are
-# relative to it). Ex.: ./$wrapper '{ "type": "text", "value": "start" }'
-set -euo pipefail
-DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-cd "\$DIR"
-PYTHONPATH="\$DIR/engine\${PYTHONPATH:+:\$PYTHONPATH}" exec python3 -m $module "\$@"
-EOF
-    chmod +x "$OUT/$wrapper"
-
     # .cmd wrapper — always generated (the python engine runs on any OS, unlike the .NET
     # binary which only gets a .cmd when the RID is win-*). Uses "python" (the convention of
     # the official Windows installer), not "python3" (used in the .sh for macOS/Linux).
@@ -375,6 +342,11 @@ set PYTHONPATH=%~dp0engine;%PYTHONPATH%
 python -m $module %*
 EOF
   fi
+
+  # Install the engine-owned wrapper only in the assembled package. The repository root
+  # deliberately has no run-* entry point.
+  cp "$wrapper_src" "$OUT/$wrapper"
+  chmod +x "$OUT/$wrapper"
 
   # IDE adapter (at the path it expects)
   IFS=$'\t' read -r src rel < <(adapter_for "$IDE" "$flow")

@@ -1,6 +1,6 @@
 """File-based input channel — an alternative to argv for the turn's envelope.
 
-The single-quoted argument transport (`./run-development-py.sh '<JSON>'`) has a
+The single-quoted argument transport (`./run-development.sh '<JSON>'`) has a
 structural flaw: if the LLM driver forgets the closing quote, the shell enters
 continuation mode and hangs BEFORE the process runs — no engine validation can catch it.
 The inbox takes the payload out of shell quoting syntax: the agent writes the JSON here

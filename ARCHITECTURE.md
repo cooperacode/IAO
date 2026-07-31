@@ -14,10 +14,10 @@ available in [`arquitetura-v2.html`](assets/arquitetura-v2.html) (Portuguese).
 **Scope.** The walkthrough below follows the .NET implementation
 (`src/dotnet/Harness.Engine` + `src/dotnet/Flows.Development`), the primary and
 most complete realization in this repository. Protocol-compatible ports live in
-`src/python`, `src/rust`, and `src/go`, driven the same way through
-`run-development-py.sh`, `run-development-rs.sh`, and `run-development-go.sh`
-respectively — same `.harness/` files, same inbox transport, same state
-machine.
+`src/python`, `src/rust`, and `src/go`. Each engine owns its `run-development*.sh`
+package template in the corresponding language directory; `package.sh` installs
+the selected one as `run-development.sh` in the generated package — same
+`.harness/` files, same inbox transport, same state machine.
 
 ## The pattern in one paragraph
 
@@ -298,10 +298,9 @@ binary and, from there, to the repository being changed.
 - **`.harness/inbox.json`** — file transport. Avoids escaped JSON on the
   command line (one forgotten quote can hang a shell before the program even
   runs) and keeps `stdout` exclusive to control.
-- **`run-development.sh`** — the stable wrapper: looks for a published Release
-  binary and falls back to `dotnet` + DLL. `run-development-py.sh`,
-  `run-development-rs.sh`, and `run-development-go.sh` are the Python-,
-  Rust-, and Go-runtime equivalents, same inbox protocol.
+- **`run-development.sh`** — the stable wrapper at the root of a generated
+  package. Its engine-specific template lives in `src/dotnet`, `src/python`,
+  `src/rust`, or `src/go` and is copied into place by `package.sh`.
 
 **Flow composition** (what registers the state machine in Figure 6):
 
@@ -357,12 +356,9 @@ black box is a terminal state.
   3, 4, and 5.
 - `src/dotnet/Flows.Development/` — the state machine described in Figures 6
   and 7.
-- `src/python/` — the protocol-compatible Python port, driven through
-  `run-development-py.sh`.
-- `src/rust/` — the protocol-compatible Rust port, driven through
-  `run-development-rs.sh`.
-- `src/go/` — the protocol-compatible Go port, driven through
-  `run-development-go.sh`.
+- `src/python/` — the protocol-compatible Python port and its package wrapper.
+- `src/rust/` — the protocol-compatible Rust port and its package wrapper.
+- `src/go/` — the protocol-compatible Go port and its package wrapper.
 
 ## References
 
