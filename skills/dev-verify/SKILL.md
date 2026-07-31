@@ -1,26 +1,18 @@
 ---
 name: dev-verify
-description: "E2E self-verify of the feature as a user would"
+description: "repair the deterministic feature verifier when the harness cannot execute it"
 ---
 
-# SKILL: E2E self-verify
+# Repair deterministic verification
 
-Verify the feature **as a user would**, not just that the code compiles. The goal is to prove
-the behavior end-to-end before declaring the feature done.
+The harness could not execute its verifier. Repair the verification setup; the harness will
+rerun it and decide from the process result.
 
-- If there's a `verify-feature.sh` in the target directory, run
-  `./verify-feature.sh <feature-id>`; it's the harness's preferred wrapper and may run the full
-  suite. When running it manually, redirect full output to `.harness/logs/verify-<id>.log`.
-- If there's no wrapper, run the project's verification command (`$VERIFY_CMD`) in the target
-  directory and observe the actual result — don't assume it passed. Also redirect full output
-  to `.harness/logs/verify-<id>.log`.
-- Read only the necessary excerpt of the log into context (`tail -n 80`, first failure,
-  relevant stack trace). Don't paste whole logs.
-- When it makes sense, exercise the actual user path (the route, the screen, the call), not
-  just the unit test.
-- Be honest: a false "passed" only pushes the problem to the next session, which starts
-  without your context and will have a harder time finding the cause.
-
-Answer in `$RESULT` starting with:
-- `PASS: <short summary>. Log: <path>` — everything green, behavior confirmed; or
-- `FAIL: <short reason>. Log: <path>` — what failed (this becomes the hook for the fix).
+- Inspect the reported failure and the relevant verifier log excerpt.
+- Prefer repairing `verify-feature.sh <feature-id>`; otherwise repair the configured
+  verification command or target path.
+- Preserve the project's established verification convention. Do not replace it with a
+  weaker compile-only check.
+- Run the repaired verifier locally when possible, keeping full output under `.harness/logs/`.
+- Do not claim `PASS` or `FAIL` as evidence. The harness accepts only its own deterministic
+  execution result.

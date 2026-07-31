@@ -5,6 +5,9 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
+echo "==> development contract"
+bash "$DIR/../../scripts/check-development-contracts.sh"
+
 echo "==> dotnet test (Harness.Engine.Tests)"
 dotnet test Harness.Engine.Tests/Harness.Engine.Tests.csproj -c Release
 

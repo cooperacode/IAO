@@ -41,10 +41,11 @@ const (
 	currentFeatureTitleKey   = "current_feature_title"
 	currentFeatureSummaryKey = "current_feature_summary"
 	currentFeatureVerifyKey  = "current_feature_verify"
+	currentBearingsKey       = "current_bearings"
 	featureStepsKey          = "feature_steps"
 
 	// briefArtifactName is the brief artifact's name in the ArtifactStore (.harness/brief.md)
-	// — persisted in Start() so it can be reinjected into bearings/implement (prompts.go).
+	// — persisted in Start() so it can be reinjected into the implement prompt.
 	briefArtifactName = "brief"
 )
 
@@ -87,7 +88,7 @@ func Start() string {
 	}
 
 	content, files := engine.ReadDocs(docsFolder())
-	// Persisted to be reinjected into bearings/implement (prompts.go) — before this
+	// Persisted to be reinjected into the implement prompt — before this
 	// feature, "content" was just a local variable of this turn, discarded as soon as the
 	// initializer finished.
 	engine.WriteArtifact(briefArtifactName, content)
@@ -262,7 +263,7 @@ func Verify(_ *engine.Envelope) string {
 func Handoff(_ *engine.Envelope) string {
 	result := state(currentFeatureVerifyKey)
 	if !strings.HasPrefix(strings.ToUpper(result), "PASS") {
-		return HandoffRetryPrompt()
+		return VerifyRetryPrompt()
 	}
 	return completeVerifiedFeature(result)
 }
@@ -328,7 +329,7 @@ func captureBearings() {
 	}
 	log := engine.RunGitCommand(target, "log", "-n", "10", "--oneline")
 	evidence := fmt.Sprintf("cwd: %s\nprogress tail:\n%s\ngit log:\n%s", target, strings.Join(lines, "\n"), oneLine(log.Output, "no git history"))
-	engine.SetState("bearings", evidence)
+	engine.SetState(currentBearingsKey, evidence)
 }
 
 func runSmoke() string {

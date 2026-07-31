@@ -1,19 +1,14 @@
 ---
 name: dev-smoke
-description: "smoke test the baseline before implementing"
+description: "repair the target setup after the harness's deterministic baseline smoke test cannot run or fails"
 ---
 
-# SKILL: smoke test
+# Repair the baseline smoke setup
 
-Before touching any feature, confirm the baseline is healthy — that way, if something breaks
-later, you know it was your change and not an inherited broken state.
+The harness already ran the baseline smoke test and reported a failure. Repair only the
+environment or setup responsible for that failure; do not start implementing the feature.
 
-- Run `./init.sh` in the target directory with full output redirected to
-  `.harness/logs/smoke.log` (create the folder if needed).
-- Verify the app comes up/builds without error (the bare minimum that should work, works).
-- If it fails, read only the relevant excerpt of the log (e.g. the first failure, `tail -n 80`,
-  the file cited by the stack trace). Don't paste the whole log into context.
-
-If the smoke test **fails**, the baseline is broken: fix that first — don't stack a new
-feature on unstable ground. Report the result in `$SMOKE` as `ok` or
-`FAIL: <main error>. Log: <path>`.
+- Inspect the reported failure and only the relevant excerpt of `.harness/logs/smoke.log`.
+- Fix `init.sh`, missing prerequisites, paths, permissions, or equivalent bootstrap setup.
+- Run `./init.sh` in the target directory to confirm the repair.
+- Keep detailed output in `.harness/logs/smoke.log`; do not paste full logs into the response.

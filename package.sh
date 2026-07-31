@@ -165,6 +165,8 @@ fi
 contains "$IDE" "${IDES[@]}" || { echo "invalid IDE: '$IDE' (use: ${IDES[*]})" >&2; exit 1; }
 [[ -n "$VERSION" ]] || { echo "empty version" >&2; exit 1; }
 
+bash "$DIR/scripts/check-development-contracts.sh"
+
 # the flow's adapter must exist for the chosen IDE
 for flow in "${FLOWS[@]}"; do
   IFS=$'\t' read -r src _rel < <(adapter_for "$IDE" "$flow")

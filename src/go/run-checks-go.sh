@@ -8,6 +8,9 @@ cd "$DIR"
 
 command -v go >/dev/null 2>&1 || { echo "[checks] go not found — install via https://go.dev/dl/" >&2; exit 1; }
 
+echo "==> development contract"
+bash "$DIR/../../scripts/check-development-contracts.sh"
+
 echo "==> go vet && go test ./... (src/go)"
 go vet ./...
 go test ./...

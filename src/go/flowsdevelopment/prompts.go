@@ -13,11 +13,6 @@ const (
 	tokenFeatures  = "$FEATURES"
 	tokenVerifyCmd = "$VERIFY_CMD"
 	tokenTargetDir = "$TARGET_DIR"
-	tokenNote      = "$NOTE"
-	tokenSmoke     = "$SMOKE"
-	tokenSummary   = "$SUMMARY"
-	tokenResult    = "$RESULT"
-	tokenCommit    = "$COMMIT"
 )
 
 // featuresShape is the feature_list shape embedded verbatim in the prompts.
@@ -39,9 +34,9 @@ func featureContextBlock(feature engine.Feature) string {
 	return fmt.Sprintf("Description: %s\nBrief references: %s\n\n", feature.Description, references)
 }
 
-// briefBlock reinjects the persisted brief (ArtifactStore, briefArtifactName) at the two
-// points of the loop that actually reason about "what to build" — bearings and implement,
-// and only there: smoke/pick/verify/fix/handoff just run a script or do bookkeeping, with
+// briefBlock reinjects the persisted brief (ArtifactStore, briefArtifactName) at the point
+// of the loop that actually reasons about "what to build" — implement. The
+// smoke/pick/verify/fix/handoff steps only repair setup or do bookkeeping, with
 // no need for scope context. "" when the run started in interactive mode (no docs/) or is
 // resuming a run from before this feature — in that case the block disappears, it doesn't
 // stay empty.
@@ -56,13 +51,19 @@ func briefBlock() string {
 	return fmt.Sprintf("<brief>%s</brief>", singleLine)
 }
 
+func bearingsBlock() string {
+	bearings := state(currentBearingsKey)
+	if strings.TrimSpace(bearings) == "" {
+		return ""
+	}
+	return fmt.Sprintf("<bearings>%s</bearings>\n", bearings)
+}
+
 // --- session 0: initializer -----------------------------------------
 
 func InitializerPrompt(content string, files []string) string {
-	input := fmt.Sprintf(`You are the INITIALIZER (session 0). From the brief below:
-1. Ensure there is a Git repository in the target directory (run `+"`git init`"+` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
-2. Scaffold the target project's environment: create an idempotent `+"`init.sh`"+` that installs dependencies and brings up/builds the app, an idempotent `+"`verify-feature.sh <id>`"+` that verifies a feature, and the minimal folder structure.
-3. Expand the brief into a PRIORITIZED list of small, verifiable features, each independently implementable and testable. Number the priority (1 = highest). If a feature only makes sense after another one (e.g. it needs a schema another feature creates), record their ids in `+"`dependsOn`"+` — empty array when there is no dependency. The harness honors this order in addition to priority. Also fill in, for each feature: `+"`description`"+`, an objective description of what it does (up to %d characters); and `+"`references`"+`, the explicit codes cited in the brief that relate to it (e.g. "RF-003", "JIRA-142", a named section) — empty array if the brief cites no explicit code for that feature (do not invent one).
+	input := fmt.Sprintf(`Initialize the development run from this brief by following the injected
+`+"`dev-initializer`"+` skill:
 
 <brief sources="%s">
 %s
@@ -73,7 +74,7 @@ Store a JSON ARRAY in '%s': %s
 command in '%s' (e.g. `+"`dotnet test`"+`, `+"`npm test`"+`) and the target directory
 in '%s'. `+"`verify-feature.sh`"+` may run the full suite at the start:
 `+"`./init.sh`"+`, then `+"`$VERIFY_CMD`"+`, print `+"`PASS: feature <id> ...`"+` and exit 0.`,
-		engine.DescriptionMaxChars, strings.Join(files, ", "), content, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
+		strings.Join(files, ", "), content, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "plan", []string{tokenFeatures, tokenVerifyCmd, tokenTargetDir}),
@@ -81,17 +82,13 @@ in '%s'. `+"`verify-feature.sh`"+` may run the full suite at the start:
 }
 
 func InitializerInteractive() string {
-	input := fmt.Sprintf(`You are the INITIALIZER (session 0). Use the #tool:askQuestions and ask the user:
-(a) what to build (the app's goal), (b) the target directory, and (c) the verify
-command (e.g. `+"`dotnet test`"+`, `+"`npm test`"+`). Then:
-1. Ensure there is a Git repository in the target directory (run `+"`git init`"+` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
-2. Scaffold the environment: create an idempotent `+"`init.sh`"+` and an idempotent `+"`verify-feature.sh <id>`"+` in the target directory.
-3. Expand the goal into a PRIORITIZED list of small, verifiable features. If one depends on another, record their ids in `+"`dependsOn`"+` (empty array when there is none). Also fill in `+"`description`"+` (up to %d characters) and `+"`references`"+` (explicit codes cited by the user for that feature; empty array if there are none).
+	input := fmt.Sprintf(`No brief was supplied. Ask the user for the goal, target directory, and
+established verification command, then follow the injected `+"`dev-initializer`"+` skill.
 
 Store a JSON ARRAY in '%s' %s,
 the command in '%s' and the directory in '%s'. `+"`verify-feature.sh`"+` may run the full suite at the start:
 `+"`./init.sh`"+`, then `+"`$VERIFY_CMD`"+`, print `+"`PASS: feature <id> ...`"+` and exit 0.`,
-		engine.DescriptionMaxChars, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
+		tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "plan", []string{tokenFeatures, tokenVerifyCmd, tokenTargetDir}),
@@ -109,17 +106,15 @@ Repeat the command '%s' and '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd
 }
 
 func SmokeFixPrompt(failure string) string {
-	input := fmt.Sprintf("Smoke failed deterministically: %s\nFix the target setup, then return `smoke` without arguments.", failure)
+	input := fmt.Sprintf("The deterministic smoke test failed: %s\nRepair the target setup using `dev-smoke`, then return `smoke` without arguments. The harness will rerun `init.sh` and decide from its exit code.", failure)
 	return engine.Format(input, engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{}), engine.Skills("dev-smoke"))
 }
 
 func ImplementPrompt(feature engine.Feature) string {
 	input := fmt.Sprintf("%s"+
-		"Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n"+
-		"it:\n%s\nFeature #%d (priority %d): %s\n%sWork in the target directory (%s). If you run commands with\n"+
-		"long output, save it to `.harness/logs/`. Return `implement` without arguments when done;\n"+
-		"the harness derives the summary from the actual Git diff.",
-		engine.NewFeaturePrefix(), briefBlock(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
+		"Follow `dev-implement` for this feature:\n%s\n%sFeature #%d (priority %d): %s\n%sTarget directory: %s\n\n"+
+		"Return `implement` without arguments when done. The harness derives the summary from Git.",
+		engine.NewFeaturePrefix(), briefBlock(), bearingsBlock(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
 		engine.LoadRunConfig().TargetDir)
 
 	return engine.Format(input,
@@ -130,20 +125,20 @@ func ImplementPrompt(feature engine.Feature) string {
 func VerifyPrompt() string {
 	config := engine.LoadRunConfig()
 	input := fmt.Sprintf("The deterministic verifier could not be started for feature #%s (%s) in %s.\n"+
-		"Repair the verification setup and return `implement` without arguments.", state(currentFeatureIdKey), state(currentFeatureTitleKey), config.TargetDir)
+		"Repair it using `dev-verify`, then return `verify` without arguments. The harness reruns the verifier and decides from its process result.", state(currentFeatureIdKey), state(currentFeatureTitleKey), config.TargetDir)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "verify", []string{}),
 		engine.Skills("dev-verify"))
 }
 
 func VerifyRetryPrompt() string {
 	config := engine.LoadRunConfig()
 	input := fmt.Sprintf("The deterministic verifier is unavailable for feature #%s in %s.\n"+
-		"Repair or create it and return `implement` without arguments.", state(currentFeatureIdKey), config.TargetDir)
+		"Repair it using `dev-verify`, then return `verify` without arguments for another harness-controlled attempt.", state(currentFeatureIdKey), config.TargetDir)
 
 	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
+		engine.NewEnvelope(engine.EnvelopeType.Command, "verify", []string{}),
 		engine.Skills("dev-verify"))
 }
 
@@ -153,8 +148,8 @@ func FixPrompt(verifyFailure string) string {
 		failure = fmt.Sprintf("Failure observed: %s\n\n", verifyFailure)
 	}
 
-	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s). %sFix the implementation (still ONLY this feature).\n"+
-		"If you check logs, read only the relevant excerpt. Return `implement` without arguments; the harness derives the new summary from Git.",
+	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s). %sFollow `dev-implement` to fix only this feature.\n"+
+		"Return `implement` without arguments; the harness derives the new summary from Git.",
 		state(currentFeatureIdKey), state(currentFeatureTitleKey), failure)
 
 	return engine.Format(input,
@@ -168,15 +163,7 @@ func HandoffPrompt(automaticFailure string) string {
 		failure = fmt.Sprintf("Automatic handoff failed: %s\n\n", automaticFailure)
 	}
 
-	input := fmt.Sprintf("%sAutomatic handoff requires a deterministic PASS. Return `handoff` without arguments so the harness can retry the real progress/git operation.", failure)
-
-	return engine.Format(input,
-		engine.NewEnvelope(engine.EnvelopeType.Command, "handoff", []string{}),
-		engine.Skills("dev-handoff"))
-}
-
-func HandoffRetryPrompt() string {
-	input := "The handoff is deterministic and only runs after a recorded PASS. Return `handoff` without arguments after verification passes."
+	input := fmt.Sprintf("%sRepair the repository/progress state using `dev-handoff`, then return `handoff` without arguments. The harness will inspect the repository and retry the real handoff.", failure)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "handoff", []string{}),

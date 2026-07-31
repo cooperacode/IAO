@@ -111,7 +111,7 @@ def test_start_com_feature_pendente_preserva_o_run_id_do_plan_anterior():
     assert run_config_store.load().run_id == run_id_antes_do_start
 
 
-# --- brief: persistência em start() e reinjeção em bearings/implement -------------
+# --- brief: persistência em start() e reinjeção em implement ----------------------
 
 
 def test_start_com_docs_populados_persiste_o_brief_no_artifact_store():
@@ -329,12 +329,12 @@ def test_verify_veredito_invalido_reemite_verify():
     assert "FAILED" in result
 
 
-def test_handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando():
+def test_handoff_sem_pass_deterministico_retorna_para_verify():
     _advance_to_verify()
 
     result = tasks.handoff(_cmd("handoff", ""))
 
-    assert '"value":"handoff"' in result
+    assert '"value":"verify"' in result
     assert feature_store.pending_count() == 2
 
 
@@ -354,12 +354,12 @@ def test_handoff_com_pendencia_abre_nova_sessao_com_tudo_passando_encerra():
     assert feature_store.all_passing()
 
 
-def test_handoff_legado_com_hash_marca_feature_como_passando():
+def test_handoff_hash_textual_nao_substitui_verify_deterministico():
     _advance_to_verify()
 
     result = tasks.handoff(_cmd("handoff", "abc123"))
 
-    assert '"value":"handoff"' in result
+    assert '"value":"verify"' in result
     assert feature_store.pending_count() == 2
 
 

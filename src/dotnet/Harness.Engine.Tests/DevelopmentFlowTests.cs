@@ -215,7 +215,7 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Equal(runIdBeforeStart, RunConfigStore.Load().RunId);
     }
 
-    // --- brief: persistence in Start() and reinjection in bearings/implement --------------
+    // --- brief: persistence in Start() and reinjection in implement -----------------------
 
     [Fact]
     public void Start_ComDocsPopulados_PersisteOBriefNoArtifactStore()
@@ -464,13 +464,13 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Handoff_Vazio_ReemiteHandoffENaoMarcaFeatureComoPassando()
+    public void Handoff_SemPassDeterministico_RetornaParaVerify()
     {
         AdvanceToVerify();
 
         var result = DevelopmentTasks.Handoff(Cmd("handoff", ""));
 
-        Assert.Contains("\"value\":\"handoff\"", result);
+        Assert.Contains("\"value\":\"verify\"", result);
         Assert.Equal(2, FeatureStore.PendingCount());
     }
 
@@ -494,13 +494,13 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Handoff_LegadoComHash_MarcaFeatureComoPassando()
+    public void Handoff_HashTextualNaoSubstituiVerifyDeterministico()
     {
         AdvanceToVerify();
 
         var result = DevelopmentTasks.Handoff(Cmd("handoff", "abc123"));
 
-        Assert.Contains("\"value\":\"handoff\"", result);
+        Assert.Contains("\"value\":\"verify\"", result);
         Assert.Equal(2, FeatureStore.PendingCount());
     }
 

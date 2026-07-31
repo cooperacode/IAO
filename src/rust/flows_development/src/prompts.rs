@@ -3,18 +3,21 @@
 //! same name the driver fills in and returns as the next envelope's arg.
 
 use harness_engine::envelope::{Envelope, envelope_type};
-use harness_engine::feature_store::{DESCRIPTION_MAX_CHARS, Feature};
-use harness_engine::{artifact_store, context_policy, prompt_formatter, run_config_store, state_store};
+use harness_engine::feature_store::Feature;
+use harness_engine::{
+    artifact_store, context_policy, prompt_formatter, run_config_store, state_store,
+};
 
-use crate::tasks::{BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY};
+use crate::tasks::{
+    BRIEF_ARTIFACT_NAME, CURRENT_BEARINGS_KEY, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY,
+};
 
 // Output tokens (the driver stores the step's artifact in these and returns them as args).
 const FEATURES: &str = "$FEATURES";
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
 
-const FEATURES_SHAPE: &str =
-    r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]"#;
+const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]"#;
 
 // Reinjects description/references (feature_store::Feature) into the implement prompt —
 // the only point of the loop that receives the whole Feature object, not just title/id via
@@ -40,9 +43,9 @@ fn state(key: &str) -> String {
     state_store::get(key).unwrap_or_default()
 }
 
-// Reinjects the persisted brief (artifact_store, BRIEF_ARTIFACT_NAME) at the two points of
-// the loop that actually reason about "what to build" — bearings and implement — and only
-// there: smoke/pick/verify/fix/handoff just run a script or do bookkeeping, with no need
+// Reinjects the persisted brief (artifact_store, BRIEF_ARTIFACT_NAME) at the point of
+// the loop that actually reasons about "what to build" — implement. The
+// smoke/pick/verify/fix/handoff steps only repair setup or do bookkeeping, with no need
 // for scope context. Returns a blank line (the same paragraph break as before this
 // feature) when there's no persisted brief — interactive mode, or resuming a run from
 // before this feature — or the "<brief>" block when there is one. Same treatment as the
@@ -62,15 +65,22 @@ fn brief_block() -> String {
     format!("<brief>{single_line}</brief>\n")
 }
 
+fn bearings_block() -> String {
+    let bearings = state(CURRENT_BEARINGS_KEY);
+    if bearings.trim().is_empty() {
+        String::new()
+    } else {
+        format!("<bearings>{bearings}</bearings>\n")
+    }
+}
+
 // --- session 0: initializer -------------------------------------------------
 
 pub fn initializer_prompt(content: &str, files: &[String]) -> String {
     let sources = files.join(", ");
     let input = format!(
-        "You are the INITIALIZER (session 0). From the brief below:\n\
-1. Ensure there is a Git repository in the target directory (run `git init` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).\n\
-2. Scaffold the target project's environment: create an idempotent `init.sh` that installs dependencies and brings up/builds the app, an idempotent `verify-feature.sh <id>` that verifies a feature, and the minimal folder structure.\n\
-3. Expand the brief into a PRIORITIZED list of small, verifiable features, each independently implementable and testable. Number the priority (1 = highest). If a feature only makes sense after another one (e.g. it needs a schema another feature creates), record their ids in `dependsOn` — empty array when there is no dependency. The harness honors this order in addition to priority. Also fill in, for each feature: `description`, an objective description of what it does (up to {DESCRIPTION_MAX_CHARS} characters); and `references`, the explicit codes cited in the brief that relate to it (e.g. \"RF-003\", \"JIRA-142\", a named section) — empty array if the brief cites no explicit code for that feature (do not invent one).\n\
+        "Initialize the development run from this brief by following the injected\n\
+`dev-initializer` skill:\n\
 \n\
 <brief sources=\"{sources}\">\n\
 {content}\n\
@@ -100,12 +110,8 @@ in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:\
 
 pub fn initializer_interactive() -> String {
     let input = format!(
-        "You are the INITIALIZER (session 0). Use the #tool:askQuestions and ask the user:\n\
-(a) what to build (the app's goal), (b) the target directory, and (c) the verify\n\
-command (e.g. `dotnet test`, `npm test`). Then:\n\
-1. Ensure there is a Git repository in the target directory (run `git init` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).\n\
-2. Scaffold the environment: create an idempotent `init.sh` and an idempotent `verify-feature.sh <id>` in the target directory.\n\
-3. Expand the goal into a PRIORITIZED list of small, verifiable features. If one depends on another, record their ids in `dependsOn` (empty array when there is none). Also fill in `description` (up to {DESCRIPTION_MAX_CHARS} characters) and `references` (explicit codes cited by the user for that feature; empty array if there are none).\n\
+        "No brief was supplied. Ask the user for the goal, target directory, and\n\
+established verification command, then follow the injected `dev-initializer` skill.\n\
 \n\
 Store a JSON ARRAY in '{FEATURES}' {FEATURES_SHAPE},\n\
 the command in '{VERIFY_CMD}' and the directory in '{TARGET_DIR}'. The `verify-feature.sh`\n\
@@ -151,34 +157,40 @@ Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."
 }
 
 pub fn smoke_fix_prompt(failure: &str) -> String {
-    let input = format!("Smoke failed deterministically: {failure}\nFix the target setup, then return `smoke` without arguments.");
-    prompt_formatter::format(&input, &Envelope::new(envelope_type::COMMAND, "smoke", vec![]), Some(&prompt_formatter::skills(&["dev-smoke"])))
+    let input = format!(
+        "The deterministic smoke test failed: {failure}\nRepair the target setup using `dev-smoke`, then return `smoke` without arguments. The harness will rerun `init.sh` and decide from its exit code."
+    );
+    prompt_formatter::format(
+        &input,
+        &Envelope::new(envelope_type::COMMAND, "smoke", vec![]),
+        Some(&prompt_formatter::skills(&["dev-smoke"])),
+    )
 }
 
 pub fn implement_prompt(feature: &Feature) -> String {
     let target_dir = run_config_store::load().target_dir;
     let brief = brief_block();
+    let bearings = bearings_block();
     let context = feature_context_block(feature);
     let input = format!(
         "{}\
-Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond\n\
-it:\n\
+Follow `dev-implement` for this feature:\n\
 {brief}\
+{bearings}\
 Feature #{} (priority {}): {}\n\
 {context}\
-Work in the target directory ({target_dir}). If you run commands with\n\
-long output, save it to `.harness/logs/`. Return `implement` without arguments when done;\n\
-the harness derives the summary from the actual Git diff.",
-        context_policy::new_feature_prefix(), feature.id, feature.priority, feature.title
+Target directory: {target_dir}\n\
+\n\
+Return `implement` without arguments when done. The harness derives the summary from Git.",
+        context_policy::new_feature_prefix(),
+        feature.id,
+        feature.priority,
+        feature.title
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(
-            envelope_type::COMMAND,
-            "implement",
-            vec![],
-        ),
+        &Envelope::new(envelope_type::COMMAND, "implement", vec![]),
         Some(&prompt_formatter::skills(&["dev-implement"])),
     )
 }
@@ -187,14 +199,14 @@ pub fn verify_prompt() -> String {
     let config = run_config_store::load();
     let feature_id = state(CURRENT_FEATURE_ID_KEY);
     let input = format!(
-        "The deterministic verifier could not be started for feature #{feature_id} ({}) in target directory ({}). Repair the verification setup and return `implement` without arguments.",
+        "The deterministic verifier could not be started for feature #{feature_id} ({}) in target directory ({}). Repair it using `dev-verify`, then return `verify` without arguments. The harness reruns the verifier and decides from its process result.",
         state(CURRENT_FEATURE_TITLE_KEY),
         config.target_dir
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "implement", vec![]),
+        &Envelope::new(envelope_type::COMMAND, "verify", vec![]),
         Some(&prompt_formatter::skills(&["dev-verify"])),
     )
 }
@@ -203,13 +215,13 @@ pub fn verify_retry_prompt() -> String {
     let config = run_config_store::load();
     let feature_id = state(CURRENT_FEATURE_ID_KEY);
     let input = format!(
-        "The deterministic verifier is unavailable for feature #{feature_id} in target directory ({}). Repair or create it and return `implement` without arguments.",
+        "The deterministic verifier is unavailable for feature #{feature_id} in target directory ({}). Repair it using `dev-verify`, then return `verify` without arguments for another harness-controlled attempt.",
         config.target_dir
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(envelope_type::COMMAND, "implement", vec![]),
+        &Envelope::new(envelope_type::COMMAND, "verify", vec![]),
         Some(&prompt_formatter::skills(&["dev-verify"])),
     )
 }
@@ -222,20 +234,15 @@ pub fn fix_prompt(verify_failure: Option<&str>) -> String {
 
     let input = format!(
         "Verification FAILED on feature #{}\n\
-({}). {failure}Fix the implementation (still ONLY this feature).\n\
-If you check logs, read only the relevant excerpt. Return `implement` without arguments;\n\
-the harness derives the new summary from Git.",
+({}). {failure}Follow `dev-implement` to fix only this feature.\n\
+Return `implement` without arguments; the harness derives the new summary from Git.",
         state(CURRENT_FEATURE_ID_KEY),
         state(CURRENT_FEATURE_TITLE_KEY)
     );
 
     prompt_formatter::format(
         &input,
-        &Envelope::new(
-            envelope_type::COMMAND,
-            "implement",
-            vec![],
-        ),
+        &Envelope::new(envelope_type::COMMAND, "implement", vec![]),
         Some(&prompt_formatter::skills(&["dev-implement"])),
     )
 }
@@ -247,19 +254,9 @@ pub fn handoff_prompt(automatic_failure: Option<&str>) -> String {
     };
 
     let input = format!(
-        "{failure}Automatic handoff requires a deterministic PASS. Return `handoff` without arguments\n\
-so the harness can retry the real progress/git operation."
+        "{failure}Repair the repository/progress state using `dev-handoff`, then return\n\
+`handoff` without arguments. The harness will inspect the repository and retry the real handoff."
     );
-
-    prompt_formatter::format(
-        &input,
-        &Envelope::new(envelope_type::COMMAND, "handoff", vec![]),
-        Some(&prompt_formatter::skills(&["dev-handoff"])),
-    )
-}
-
-pub fn handoff_retry_prompt() -> String {
-    let input = "The handoff is deterministic and only runs after a recorded PASS. Return `handoff` without arguments after verification passes.";
 
     prompt_formatter::format(
         &input,

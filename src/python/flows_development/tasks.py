@@ -83,7 +83,7 @@ def start() -> str:
         return prompts.initializer_interactive()
 
     content, files = docs_reader.read(_docs_folder())
-    # Persisted to be reinjected into bearings/implement (prompts.py) — before this
+    # Persisted to be reinjected into the implement prompt — before this
     # feature, "content" was just a local variable of this turn, discarded as soon as the
     # initializer finished.
     artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
@@ -199,7 +199,7 @@ def verify(envelope: Envelope | None) -> str:
 
 def handoff(envelope: Envelope | None) -> str:
     if not _state(state_keys.CURRENT_FEATURE_VERIFY).upper().startswith("PASS"):
-        return prompts.handoff_retry_prompt()
+        return prompts.verify_retry_prompt()
     return _complete_verified_feature(_state(state_keys.CURRENT_FEATURE_VERIFY))
 
 
@@ -364,9 +364,12 @@ def _capture_bearings() -> None:
         log = git_command.run(target, "log", "-n", "10", "--oneline")
         evidence = f"cwd: {target}\nprogress tail:\n" + "\n".join(tail)
         evidence += "\ngit log:\n" + _one_line(log.output, "no git history")
-        state_store.set("bearings", evidence[:4000])
+        state_store.set(state_keys.CURRENT_BEARINGS, evidence[:4000])
     except Exception as ex:
-        state_store.set("bearings", f"bearings unavailable: {_one_line(str(ex))}")
+        state_store.set(
+            state_keys.CURRENT_BEARINGS,
+            f"bearings unavailable: {_one_line(str(ex))}",
+        )
 
 
 def _run_smoke() -> tuple[bool, str]:

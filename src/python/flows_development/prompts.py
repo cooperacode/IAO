@@ -8,17 +8,12 @@ from __future__ import annotations
 from flows_development import state_keys
 from harness_engine import artifact_store, context_policy, prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
-from harness_engine.feature_store import DESCRIPTION_MAX_CHARS, Feature
+from harness_engine.feature_store import Feature
 
 # Output tokens (the driver stores the step's artifact in these and returns them as args).
 FEATURES = "$FEATURES"
 VERIFY_CMD = "$VERIFY_CMD"
 TARGET_DIR = "$TARGET_DIR"
-NOTE = "$NOTE"
-SMOKE = "$SMOKE"
-SUMMARY = "$SUMMARY"
-RESULT = "$RESULT"
-COMMIT = "$COMMIT"
 
 # Shape of the feature_list embedded in the prompts.
 FEATURES_SHAPE = (
@@ -32,8 +27,8 @@ def _state(key: str) -> str:
 
 def _brief_block() -> str:
     """Reinjects the persisted brief (artifact_store, state_keys.BRIEF_ARTIFACT_NAME) at the
-    two points of the loop that actually reason about "what to build" — bearings and
-    implement, and only there: smoke/pick/verify/fix/handoff just run a script or do
+    point of the loop that actually reasons about "what to build" — implement. The
+    smoke/pick/verify/fix/handoff steps only repair setup or do
     bookkeeping, with no need for scope context. Returns a blank line (the same paragraph
     break as before this feature) when there's no persisted brief — interactive mode, or
     resuming a run from before this feature —, or the "<brief>" block when there is one.
@@ -49,6 +44,11 @@ def _brief_block() -> str:
         return "\n"
     single_line = brief.replace("\r\n", "\\n").replace("\n", "\\n")
     return f"<brief>{single_line}</brief>\n"
+
+
+def _bearings_block() -> str:
+    bearings = _state(state_keys.CURRENT_BEARINGS)
+    return f"<bearings>{bearings}</bearings>\n" if bearings.strip() else ""
 
 
 def _feature_context_block(feature: Feature) -> str:
@@ -67,10 +67,8 @@ def _feature_context_block(feature: Feature) -> str:
 
 
 def initializer_prompt(content: str, files: list[str]) -> str:
-    input_text = f"""You are the INITIALIZER (session 0). From the brief below:
-1. Ensure there is a Git repository in the target directory (run `git init` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
-2. Scaffold the target project's environment: create an idempotent `init.sh` that installs dependencies and brings up/builds the app, an idempotent `verify-feature.sh <id>` that verifies a feature, and the minimal folder structure.
-3. Expand the brief into a PRIORITIZED list of small, verifiable features, each independently implementable and testable. Number the priority (1 = highest). If a feature only makes sense after another one (e.g. it needs a schema another feature creates), record their ids in `dependsOn` — empty array when there is no dependency. The harness honors this order in addition to priority. Also fill in, for each feature: `description`, an objective description of what it does (up to {DESCRIPTION_MAX_CHARS} characters); and `references`, the explicit codes cited in the brief that relate to it (e.g. "RF-003", "JIRA-142", a named section) — empty array if the brief cites no explicit code for that feature (do not invent one).
+    input_text = f"""Initialize the development run from this brief by following the injected
+`dev-initializer` skill:
 
 <brief sources="{', '.join(files)}">
 {content}
@@ -89,12 +87,8 @@ in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:
 
 
 def initializer_interactive() -> str:
-    input_text = f"""You are the INITIALIZER (session 0). Use the #tool:askQuestions and ask the user:
-(a) what to build (the app's goal), (b) the target directory, and (c) the verify
-command (e.g. `dotnet test`, `npm test`). Then:
-1. Ensure there is a Git repository in the target directory (run `git init` if needed) and create/reuse a dedicated working branch (never commit straight to main/master).
-2. Scaffold the environment: create an idempotent `init.sh` and an idempotent `verify-feature.sh <id>` in the target directory.
-3. Expand the goal into a PRIORITIZED list of small, verifiable features. If one depends on another, record their ids in `dependsOn` (empty array when there is none). Also fill in `description` (up to {DESCRIPTION_MAX_CHARS} characters) and `references` (explicit codes cited by the user for that feature; empty array if there are none).
+    input_text = f"""No brief was supplied. Ask the user for the goal, target directory, and
+established verification command, then follow the injected `dev-initializer` skill.
 
 Store a JSON ARRAY in '{FEATURES}' {FEATURES_SHAPE},
 the command in '{VERIFY_CMD}' and the directory in '{TARGET_DIR}'. The `verify-feature.sh`
@@ -118,19 +112,27 @@ Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."""
 
 
 def smoke_fix_prompt(failure: str) -> str:
-    input_text = f"Smoke failed deterministically: {failure}\nFix the target setup, then return `smoke` without arguments."
-    return prompt_formatter.format(input_text, Envelope(EnvelopeType.COMMAND, "smoke", ()), prompt_formatter.skills("dev-smoke"))
+    input_text = f"""The deterministic smoke test failed: {failure}
+Repair the target setup using `dev-smoke`, then return `smoke` without arguments. The harness
+will rerun `init.sh` and decide from its exit code."""
+    return prompt_formatter.format(
+        input_text,
+        Envelope(EnvelopeType.COMMAND, "smoke", ()),
+        prompt_formatter.skills("dev-smoke"),
+    )
+
+
 def implement_prompt(feature: Feature) -> str:
     brief = _brief_block()
+    bearings = _bearings_block()
     context = _feature_context_block(feature)
     input_text = f"""{context_policy.new_feature_prefix()}
 
-Implement EXCLUSIVELY this feature, incrementally and minimally — nothing beyond
-it:
-{brief}Feature #{feature.id} (priority {feature.priority}): {feature.title}
-{context}Work in the target directory ({run_config_store.load().target_dir}). If you run commands with
-long output, save it to `.harness/logs/`. Return `implement` without arguments when done;
-the harness derives the summary from the actual Git diff."""
+Follow `dev-implement` for this feature:
+{brief}{bearings}Feature #{feature.id} (priority {feature.priority}): {feature.title}
+{context}Target directory: {run_config_store.load().target_dir}
+
+Return `implement` without arguments when done. The harness derives the summary from Git."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "implement", ()),
@@ -143,10 +145,11 @@ def verify_prompt() -> str:
 ({_state(state_keys.CURRENT_FEATURE_TITLE)}). Repair the verification setup in the target directory
 ({run_config_store.load().target_dir}).
 
-Return `implement` without arguments. A model-authored PASS/FAIL is never accepted."""
+Repair it using `dev-verify`, then return `verify` without arguments. The harness reruns the
+verifier and decides from its process result."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "implement", ()),
+        Envelope(EnvelopeType.COMMAND, "verify", ()),
         prompt_formatter.skills("dev-verify"),
     )
 
@@ -155,10 +158,11 @@ def verify_retry_prompt() -> str:
     input_text = f"""The deterministic verifier is unavailable for feature #{_state(state_keys.CURRENT_FEATURE_ID)}
 ({_state(state_keys.CURRENT_FEATURE_TITLE)}). Repair or create it in the target directory
 ({run_config_store.load().target_dir}).
-Repair the setup and return `implement` without arguments for another harness-controlled attempt."""
+Repair it using `dev-verify`, then return `verify` without arguments for another
+harness-controlled attempt."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "implement", ()),
+        Envelope(EnvelopeType.COMMAND, "verify", ()),
         prompt_formatter.skills("dev-verify"),
     )
 
@@ -170,9 +174,8 @@ def fix_prompt(verify_failure: str | None = None) -> str:
 
 """
     input_text = f"""Verification FAILED on feature #{_state(state_keys.CURRENT_FEATURE_ID)}
-({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Fix the implementation (still ONLY this feature).
-If you check logs, read only the relevant excerpt. Return `implement` without arguments; the
-harness derives the new summary from Git."""
+({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Follow `dev-implement` to fix only this
+feature. Return `implement` without arguments; the harness derives the new summary from Git."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "implement", ()),
@@ -186,18 +189,9 @@ def handoff_prompt(automatic_failure: str | None = None) -> str:
         failure = f"""Automatic handoff failed: {automatic_failure}
 
 """
-    input_text = f"""{failure}Automatic handoff requires a deterministic PASS. Return `handoff` without
-arguments so the harness can retry the real progress/git operation."""
-    return prompt_formatter.format(
-        input_text,
-        Envelope(EnvelopeType.COMMAND, "handoff", ()),
-        prompt_formatter.skills("dev-handoff"),
-    )
-
-
-def handoff_retry_prompt() -> str:
-    input_text = f"""The handoff confirmation came back empty. Update `progress.txt` in the target directory
-({run_config_store.load().target_dir}). Return `handoff` without arguments after a deterministic PASS."""
+    input_text = f"""{failure}Repair the repository/progress state using `dev-handoff`, then return
+`handoff` without arguments. The harness will inspect the repository and retry the real
+handoff."""
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "handoff", ()),

@@ -1,4 +1,4 @@
-//! Automatic self-verify: runs `verify-feature.sh <id>` in the target directory, with a
+//! Automatic verification: runs `verify-feature.sh <id>` in the target directory, with a
 //! time ceiling (derived from `harness_config.timeout_ms`) and a full log in
 //! `.harness/logs/`.
 

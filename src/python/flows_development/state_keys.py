@@ -8,6 +8,7 @@ CURRENT_FEATURE_ID = "current_feature_id"
 CURRENT_FEATURE_TITLE = "current_feature_title"
 CURRENT_FEATURE_SUMMARY = "current_feature_summary"
 CURRENT_FEATURE_VERIFY = "current_feature_verify"
+CURRENT_BEARINGS = "current_bearings"
 FEATURE_STEPS = "feature_steps"
 
 # Not a state_store key — it's the brief artifact's name in artifact_store

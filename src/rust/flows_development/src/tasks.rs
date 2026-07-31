@@ -37,10 +37,11 @@ pub const CURRENT_FEATURE_ID_KEY: &str = "current_feature_id";
 pub const CURRENT_FEATURE_TITLE_KEY: &str = "current_feature_title";
 pub const CURRENT_FEATURE_SUMMARY_KEY: &str = "current_feature_summary";
 pub const CURRENT_FEATURE_VERIFY_KEY: &str = "current_feature_verify";
+pub const CURRENT_BEARINGS_KEY: &str = "current_bearings";
 pub const FEATURE_STEPS_KEY: &str = "feature_steps";
 
 // Name of the brief artifact in artifact_store (.harness/brief.md) — persisted in start()
-// so it can be reinjected into bearings/implement (prompts.rs), since the content read
+// so it can be reinjected into the implement prompt, since the content read
 // from docs/ used to exist only as a local variable of the initializer's turn.
 pub const BRIEF_ARTIFACT_NAME: &str = "brief";
 
@@ -81,7 +82,7 @@ pub fn start() -> String {
     }
 
     let (content, files) = docs_reader::read(&folder);
-    // Persisted so it can be reinjected into bearings/implement (prompts.rs) — before
+    // Persisted so it can be reinjected into the implement prompt — before
     // this feature, "content" was only a local variable of this turn, discarded as soon
     // as the initializer finished.
     artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
@@ -226,7 +227,7 @@ pub fn verify(_envelope: Option<&Envelope>) -> String {
 
 pub fn handoff_task(_envelope: Option<&Envelope>) -> String {
     let result = state(CURRENT_FEATURE_VERIFY_KEY);
-    if !result.to_uppercase().starts_with("PASS") { return prompts::handoff_retry_prompt(); }
+    if !result.to_uppercase().starts_with("PASS") { return prompts::verify_retry_prompt(); }
     handoff::complete_verified_feature(&result)
 }
 
@@ -236,7 +237,7 @@ fn capture_bearings() {
         let tail = progress.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
         let log = harness_engine::git_command::run(&target, &["log", "-n", "10", "--oneline"]);
         let evidence = format!("cwd: {}\nprogress tail:\n{}\ngit log:\n{}", target.display(), tail, handoff::one_line(&log.output, "no git history"));
-        state_store::set("bearings", &evidence.chars().take(4000).collect::<String>());
+        state_store::set(CURRENT_BEARINGS_KEY, &evidence.chars().take(4000).collect::<String>());
     }
 }
 
@@ -438,7 +439,7 @@ mod tests {
         assert_eq!(run_config_store::load().run_id, run_id_before_start);
     }
 
-    // --- brief: persistence in start() and reinjection in bearings/implement -------------
+    // --- brief: persistence in start() and reinjection in implement ----------------------
 
     fn given_docs_brief(content: &str) {
         std::fs::create_dir_all("docs").unwrap();
@@ -790,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    fn handoff_vazio_reemite_handoff_e_nao_marca_feature_como_passando() {
+    fn handoff_sem_pass_deterministico_retorna_para_verify() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
@@ -798,12 +799,12 @@ mod tests {
 
         let result = handoff_task(Some(&cmd("handoff", vec![""])));
 
-        assert!(result.contains(r#""value":"handoff"#));
+        assert!(result.contains(r#""value":"verify"#));
         assert_eq!(feature_store::pending_count(), 2);
     }
 
     #[test]
-    fn handoff_legado_com_hash_marca_feature_como_passando() {
+    fn handoff_hash_textual_nao_substitui_verify_deterministico() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
@@ -811,7 +812,7 @@ mod tests {
 
         let result = handoff_task(Some(&cmd("handoff", vec!["abc123"])));
 
-        assert!(result.contains(r#""value":"handoff"#));
+        assert!(result.contains(r#""value":"verify"#));
         assert_eq!(feature_store::pending_count(), 2);
     }
 

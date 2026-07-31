@@ -137,8 +137,9 @@ What leaves the harness each turn: an instruction block with `input`, a
 `response` contract, and only the skill required by the current step.
 
 - **`PromptFormatter`** — composes the block handed to the driver and
-  substitutes the tokens of the current state (`$FEATURES`, `$VERIFY_CMD`,
-  `$TARGET_DIR`, `$SMOKE`, `$SUMMARY`, `$RESULT`). It
+  substitutes the planning tokens (`$FEATURES`, `$VERIFY_CMD`, `$TARGET_DIR`). Later
+  commands carry no model-authored evidence: summaries come from Git and verification/
+  handoff are inspected deterministically. It
   re-injects the driver context captured at `start` (e.g. `{"driver": "codex"}`)
   into every output, so the harness never forgets who it is talking to.
   (`src/dotnet/Harness.Engine/PromptFormatter.cs`)

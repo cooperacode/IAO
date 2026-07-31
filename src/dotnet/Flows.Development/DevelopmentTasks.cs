@@ -41,7 +41,7 @@ public static partial class DevelopmentTasks
     private const string BearingsKey = "current_bearings";
 
     // Name of the brief artifact in ArtifactStore (.harness/brief.md) — persisted in
-    // Start() so it can be reinjected into bearings/implement (DevelopmentTasks.Prompt.cs),
+    // Start() so it can be reinjected into the implement prompt,
     // since the content read from docs/ used to exist only as a local variable of the
     // initializer's turn.
     private const string BriefArtifactName = "brief";
@@ -216,7 +216,7 @@ public static partial class DevelopmentTasks
     {
         var verified = State(CurrentFeatureVerifyKey);
         if (!verified.StartsWith("PASS", StringComparison.OrdinalIgnoreCase))
-            return HandoffPrompt("no deterministic PASS is recorded for the current feature");
+            return VerifyRetryPrompt();
 
         // A driver-supplied hash is not evidence. Retry the actual deterministic handoff
         // and inspect the repository state before marking the feature as passed.

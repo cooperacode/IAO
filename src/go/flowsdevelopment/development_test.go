@@ -457,13 +457,13 @@ func TestVerify_InvalidVerdict_ReemitsVerify(t *testing.T) {
 	}
 }
 
-func TestHandoff_Empty_ReemitsHandoffAndDoesNotMarkFeaturePassed(t *testing.T) {
+func TestHandoff_WithoutDeterministicPass_ReturnsToVerify(t *testing.T) {
 	targetDir, _ := isolate(t)
 	advanceToVerify(targetDir)
 
 	result := Handoff(cmd("handoff", ""))
 
-	if !strings.Contains(result, `"value":"handoff"`) {
+	if !strings.Contains(result, `"value":"verify"`) {
 		t.Fatalf("unexpected result: %s", result)
 	}
 	if engine.PendingFeatureCount() != 2 {
@@ -489,13 +489,13 @@ func TestHandoff_WithPending_OpensNewSession_AllPassing_Stops(t *testing.T) {
 	}
 }
 
-func TestHandoff_LegacyWithHash_MarksFeaturePassed(t *testing.T) {
+func TestHandoff_TextualHashDoesNotReplaceDeterministicVerify(t *testing.T) {
 	targetDir, _ := isolate(t)
 	advanceToVerify(targetDir)
 
 	result := Handoff(cmd("handoff", "abc123"))
 
-	if !strings.Contains(result, `"value":"handoff"`) || engine.PendingFeatureCount() != 2 {
+	if !strings.Contains(result, `"value":"verify"`) || engine.PendingFeatureCount() != 2 {
 		t.Fatalf("unexpected result: %s", result)
 	}
 }
