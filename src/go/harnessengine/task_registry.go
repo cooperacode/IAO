@@ -27,6 +27,13 @@ func Dispatch(
 	maxSteps *int,
 	shouldResetOnStart func() bool,
 ) string {
+	// A timeout/budget stop is terminal across process boundaries. Check this before
+	// handling `start`, otherwise the driver could reopen the run after a hard stop.
+	if terminal := TerminalReason(); terminal != "" {
+		fmt.Fprintf(os.Stderr, "[harness] run already stopped (%s); refusing another turn.\n", terminal)
+		return "stop"
+	}
+
 	// Argv present → classic transport (backward compatible). Empty argv → reads the
 	// envelope from the file-based inbox, the transport that eliminates the shell-quoting
 	// hang (see Inbox).
@@ -133,6 +140,7 @@ func resolve(
 	}
 	if step > effectiveMaxSteps {
 		fmt.Fprintf(os.Stderr, "[harness] step limit of %d reached; stopping.\n", effectiveMaxSteps)
+		MarkTerminal("budget")
 		return "stop", TraceOutcome.Budget
 	}
 
@@ -143,6 +151,7 @@ func resolve(
 	if config.MaxInstructionChars > 0 && costChars > config.MaxInstructionChars {
 		fmt.Fprintf(os.Stderr, "[harness] instruction char limit of %d reached (%d); stopping.\n",
 			config.MaxInstructionChars, costChars)
+		MarkTerminal("budget")
 		return "stop", TraceOutcome.Budget
 	}
 
@@ -176,6 +185,7 @@ func resolve(
 	result, err := runWithTimeout(action, envelope, config.TimeoutMs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[harness] %s\n", err)
+		MarkTerminal("timeout")
 		return "stop", TraceOutcome.Timeout
 	}
 

@@ -70,7 +70,7 @@ The shipped baseline is:
 | `maxInstructionChars` | Maximum size of an instruction emitted to the driver. | Non-negative integer; `0` disables this guard. Use it to prevent oversized prompts from consuming the context window. |
 | `docsMaxChars` | Maximum number of characters read from the documents folder. | Positive integer. Increase only when the brief genuinely needs it; prefer splitting large documents. |
 | `docsFolder` | Folder containing the brief files read by `start`. | Relative or absolute path. The default is `docs`; supported source files are Markdown and text documents. |
-| `timeoutMs` | Per-task execution timeout. | `0` disables the timeout; positive values are milliseconds. Values above five minutes are clamped. `30000` means 30 seconds. |
+| `timeoutMs` | Per-task execution timeout. | Positive values are milliseconds. Missing, zero, or negative values fall back to 30 seconds; values above five minutes are clamped. `30000` means 30 seconds. The guard cannot be disabled from the workspace config. |
 | `contextResetMode` | Policy for requesting a clean driver context between features. | `adaptive`, `per-feature`, or `never`. `adaptive` is recommended when the driver can report usage. |
 | `contextResetThreshold` | Usage ratio that triggers an adaptive reset. | Number greater than `0` and at most `1`; `0.7` means 70% of the reported context window. |
 | `contextFallbackFeatures` | Number of feature boundaries used as a deterministic fallback when no context telemetry is available. | Positive integer. `1` preserves a per-feature boundary when telemetry is absent. |
@@ -80,7 +80,8 @@ Recommended choices:
 - Keep `maxInstructionChars` at `0` unless the environment has a strict prompt
   budget.
 - Keep `timeoutMs` around `30000` for normal local commands; raise it only for
-  a known slow build/test command, and never beyond the five-minute ceiling.
+  a known slow build/test command, and never beyond the five-minute ceiling. A timeout
+  is terminal for the current run; changing `harness.json` cannot reopen it.
 - Use `adaptive` with `contextResetThreshold: 0.7` when the driver supplies
   `contextUsage` or `HARNESS_CONTEXT_USAGE_JSON`.
 - Use `per-feature` when every feature must start in a clean context regardless

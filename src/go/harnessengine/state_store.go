@@ -141,3 +141,15 @@ func SetContext(context map[string]string) {
 func GetContext() map[string]string {
 	return LoadState().Context
 }
+
+// MarkTerminal latches a hard-stop reason across process boundaries.
+func MarkTerminal(reason string) {
+	state := LoadState()
+	state.TerminalReason = reason
+	SaveState(state)
+}
+
+// TerminalReason returns the latched hard-stop reason, if any.
+func TerminalReason() string {
+	return LoadState().TerminalReason
+}

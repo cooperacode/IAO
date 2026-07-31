@@ -13,7 +13,7 @@ func TestConfig_Load_MissingFile_UsesDefaults(t *testing.T) {
 	if config != DefaultHarnessConfig() {
 		t.Fatalf("unexpected config: %+v", config)
 	}
-	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.TimeoutMs != 0 {
+	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.TimeoutMs != 30_000 {
 		t.Fatalf("unexpected config: %+v", config)
 	}
 }
@@ -26,9 +26,9 @@ func TestConfig_Load_WithTimeout_ReadsAndNormalizes(t *testing.T) {
 		t.Fatalf("unexpected timeout: %d", got)
 	}
 
-	// Negative value is normalized to 0 (disabled), same as the cost ceiling.
+	// Negative value falls back to the enabled default; timeout cannot be disabled.
 	os.WriteFile("harness.json", []byte(`{"timeoutMs":-5}`), 0o644)
-	if got := LoadConfig().TimeoutMs; got != 0 {
+	if got := LoadConfig().TimeoutMs; got != 30_000 {
 		t.Fatalf("unexpected timeout: %d", got)
 	}
 }

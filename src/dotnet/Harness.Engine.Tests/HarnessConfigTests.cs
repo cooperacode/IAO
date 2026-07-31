@@ -2,8 +2,8 @@ namespace Harness.Engine.Tests;
 
 /// <summary>
 /// External config (`harness.json`): missing or invalid NEVER brings down the run — falls
-/// back to defaults; partial only fills in what came in (zero = disabled, only for the
-/// cost ceilings).
+/// back to defaults; partial only fills in what came in (zero disables only cost ceilings;
+/// the timeout remains enabled).
 /// </summary>
 public class HarnessConfigTests : IDisposable
 {
@@ -28,7 +28,7 @@ public class HarnessConfigTests : IDisposable
         Assert.Equal(HarnessConfig.Default, config);
         Assert.Equal(12, config.MaxSteps);
         Assert.Equal(0, config.MaxInstructionChars); // cost ceiling disabled by default
-        Assert.Equal(0, config.TimeoutMs);           // time guard disabled by default
+        Assert.Equal(30000, config.TimeoutMs);       // time guard is always enabled
     }
 
     [Fact]
@@ -38,9 +38,9 @@ public class HarnessConfigTests : IDisposable
 
         Assert.Equal(30000, HarnessConfig.Load().TimeoutMs);
 
-        // A negative value is normalized to 0 (disabled), like the cost ceiling.
+        // A negative value falls back to the enabled default; timeout cannot be disabled.
         File.WriteAllText(ConfigPath, """{"timeoutMs":-5}""");
-        Assert.Equal(0, HarnessConfig.Load().TimeoutMs);
+        Assert.Equal(30000, HarnessConfig.Load().TimeoutMs);
     }
 
     [Fact]

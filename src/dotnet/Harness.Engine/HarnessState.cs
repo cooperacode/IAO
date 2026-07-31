@@ -20,4 +20,7 @@ public record HarnessState(int Step, Dictionary<string, string> Data)
     /// reinject it into every output without each task passing it along manually.
     /// </summary>
     public Dictionary<string, string>? Context { get; init; }
+
+    /// <summary>Hard-stop latch that survives the next fresh process invocation.</summary>
+    public string? TerminalReason { get; init; }
 }

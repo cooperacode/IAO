@@ -16,6 +16,7 @@ const FILE_PATH: &str = "harness.json";
 // without this ceiling, the agent could edit the file to grant itself an arbitrarily high
 // timeout and never get cut off by the time guard (see task_registry).
 const MAX_ALLOWED_TIMEOUT_MS: i32 = 5 * 60_000;
+const MIN_ENABLED_TIMEOUT_MS: i32 = 1;
 
 // When set, overrides harness.json's timeout_ms. Unlike the file, the env var is set by
 // the parent process that invokes each harness step — outside the working directory the
@@ -45,16 +46,14 @@ pub struct HarnessConfig {
 
 // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
 // max_instruction_chars = 0 turns off the cost ceiling (only the step one applies).
-// timeout_ms = 0 turns off the per-step time guard (same convention as the cost one). The
-// enabled value lives in the shipped harness.json, NOT here: if the default were > 0, a
-// harness.json that omitted the field (deserializes to 0) could never mean "off".
+// timeout_ms is always enabled: a workspace config may tune it but cannot turn off the guard.
 pub fn default_config() -> HarnessConfig {
     HarnessConfig {
         max_steps: 12,
         max_instruction_chars: 0,
         docs_max_chars: 40_000,
         docs_folder: "docs".to_string(),
-        timeout_ms: 0,
+        timeout_ms: 30_000,
         context_reset_mode: "adaptive".to_string(),
         context_reset_threshold: 0.70,
         context_fallback_features: 1,
@@ -147,7 +146,12 @@ fn normalize(config: HarnessConfig) -> HarnessConfig {
         } else {
             config.docs_folder
         },
-        timeout_ms: config.timeout_ms.clamp(0, MAX_ALLOWED_TIMEOUT_MS),
+        timeout_ms: (if config.timeout_ms > 0 {
+            config.timeout_ms
+        } else {
+            default.timeout_ms
+        })
+            .clamp(MIN_ENABLED_TIMEOUT_MS, MAX_ALLOWED_TIMEOUT_MS),
         context_reset_mode: match config.context_reset_mode.trim().to_ascii_lowercase().as_str() {
             "adaptive" | "per-feature" | "never" => config.context_reset_mode.trim().to_ascii_lowercase(),
             _ => default.context_reset_mode,
@@ -208,7 +212,7 @@ mod tests {
         assert_eq!(config, default_config());
         assert_eq!(config.max_steps, 12);
         assert_eq!(config.max_instruction_chars, 0);
-        assert_eq!(config.timeout_ms, 0);
+        assert_eq!(config.timeout_ms, 30_000);
     }
 
     #[test]
@@ -219,9 +223,9 @@ mod tests {
         std::fs::write("harness.json", r#"{"timeoutMs":30000}"#).unwrap();
         assert_eq!(load().timeout_ms, 30000);
 
-        // A negative value is normalized to 0 (off), like the cost ceiling.
+        // A negative value falls back to the enabled default; timeout cannot be disabled.
         std::fs::write("harness.json", r#"{"timeoutMs":-5}"#).unwrap();
-        assert_eq!(load().timeout_ms, 0);
+        assert_eq!(load().timeout_ms, 30_000);
     }
 
     #[test]

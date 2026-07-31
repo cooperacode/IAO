@@ -1,6 +1,6 @@
 """External config (`harness.json`): missing or invalid NEVER brings down the run — falls
-back to defaults; partial only fills in what came in (zero = disabled, only for the
-cost ceilings)."""
+back to defaults; partial only fills in what came in (zero disables only cost ceilings;
+the timeout remains enabled)."""
 
 import os
 from pathlib import Path
@@ -25,7 +25,7 @@ def test_load_sem_arquivo_usa_defaults():
     assert config == harness_config.DEFAULT
     assert config.max_steps == 12
     assert config.max_instruction_chars == 0  # cost ceiling disabled by default
-    assert config.timeout_ms == 0  # time guard disabled by default
+    assert config.timeout_ms == 30000  # time guard is always enabled
 
 
 def test_load_com_timeout_le_e_normaliza():
@@ -33,9 +33,9 @@ def test_load_com_timeout_le_e_normaliza():
 
     assert harness_config.load().timeout_ms == 30000
 
-    # A negative value is normalized to 0 (disabled), like the cost ceiling.
+    # A negative value falls back to the enabled default; timeout cannot be disabled.
     Path(CONFIG_PATH).write_text('{"timeoutMs":-5}')
-    assert harness_config.load().timeout_ms == 0
+    assert harness_config.load().timeout_ms == 30000
 
 
 def test_load_com_arquivo_usa_os_valores_do_arquivo():

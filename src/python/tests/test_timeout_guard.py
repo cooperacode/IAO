@@ -34,6 +34,11 @@ def test_dispatch_task_lenta_alem_do_teto_corta_com_timeout():
     assert result == "stop"
     assert trace.load()[-1].outcome == trace.TraceOutcome.TIMEOUT
 
+    # A later invocation must remain terminal even if the workspace config is changed.
+    Path(CONFIG_PATH).write_text('{"timeoutMs":0}')
+    harness_config.reload()
+    assert task_registry.dispatch(['{"type":"tool","value":"fast"}'], TASKS) == "stop"
+
 
 def test_dispatch_task_rapida_dentro_do_teto_executa_normalmente():
     _configure('{"timeoutMs":50}')
@@ -45,7 +50,7 @@ def test_dispatch_task_rapida_dentro_do_teto_executa_normalmente():
 
 
 def test_dispatch_sem_teto_configurado_nao_corta_task_lenta():
-    # Default: timeout_ms=0 → guard disabled; the slow task runs to completion.
+    # Default timeout is enabled, but this task completes within the 30-second default.
     result = task_registry.dispatch(['{"type":"tool","value":"slow"}'], TASKS)
 
     assert result == "PROMPT_SLOW"

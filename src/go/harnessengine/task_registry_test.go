@@ -175,6 +175,7 @@ func TestDispatch_ExceedingCeiling_ForcesStop(t *testing.T) {
 	if result != "stop" {
 		t.Fatalf("expected stop, got %s", result)
 	}
+
 }
 
 func TestDispatch_SlowTask_TimesOutAndReturnsStop(t *testing.T) {
@@ -198,5 +199,12 @@ func TestDispatch_SlowTask_TimesOutAndReturnsStop(t *testing.T) {
 
 	if result != "stop" {
 		t.Fatalf("expected stop, got %s", result)
+	}
+
+	// A later invocation remains terminal even if the workspace config is changed.
+	os.WriteFile("harness.json", []byte(`{"timeoutMs":0}`), 0o644)
+	ReloadConfig()
+	if result := Dispatch([]string{`{"type":"command","value":"slow"}`}, slow, nil, nil, nil); result != "stop" {
+		t.Fatalf("expected latched stop, got %s", result)
 	}
 }

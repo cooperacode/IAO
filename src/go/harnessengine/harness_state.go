@@ -13,6 +13,9 @@ type HarnessState struct {
 	// envelope — survives across invocations so PromptFormatter can reinject it into every
 	// output without each task having to pass it along.
 	Context map[string]string `json:"context,omitempty"`
+
+	// TerminalReason latches a hard stop across process boundaries.
+	TerminalReason string `json:"terminalReason,omitempty"`
 }
 
 // NewHarnessState builds a state with the given step and data (data defaults to an empty,

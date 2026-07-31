@@ -42,6 +42,11 @@ public class TimeoutGuardTests : IDisposable
 
         Assert.Equal("stop", result);
         Assert.Equal(TraceOutcome.Timeout, Trace.Load()[^1].Outcome);
+
+        // A later invocation remains terminal even if the workspace config is changed.
+        File.WriteAllText(ConfigPath, """{"timeoutMs":0}""");
+        HarnessConfig.Reload();
+        Assert.Equal("stop", TaskRegistry.Dispatch(["""{"type":"tool","value":"fast"}"""], Tasks));
     }
 
     [Fact]
@@ -58,7 +63,7 @@ public class TimeoutGuardTests : IDisposable
     [Fact]
     public void Dispatch_SemTetoConfigurado_NaoCortaTaskLenta()
     {
-        // Default: timeoutMs=0 → guard disabled; the slow task runs to completion.
+        // Default timeout is enabled, but this task completes within the 30-second default.
         var result = TaskRegistry.Dispatch(["""{"type":"tool","value":"slow"}"""], Tasks);
 
         Assert.Equal("PROMPT_SLOW", result);

@@ -16,6 +16,15 @@ public static class TaskRegistry
         int? maxSteps = null,
         Func<bool>? shouldResetOnStart = null)
     {
+        // A timeout/budget stop is terminal across process boundaries. Check this before
+        // handling `start`, otherwise the driver could reopen the run after a hard stop.
+        var terminal = StateStore.TerminalReason();
+        if (terminal is not null)
+        {
+            Console.Error.WriteLine($"[harness] run already stopped ({terminal}); refusing another turn.");
+            return "stop";
+        }
+
         // Argv present → classic transport (backward compatible). Empty argv → reads the
         // envelope from the file-based inbox, the transport that eliminates the shell-quoting
         // hang (see Inbox).
@@ -95,6 +104,7 @@ public static class TaskRegistry
         if (step > effectiveMaxSteps)
         {
             Console.Error.WriteLine($"[harness] step limit of {effectiveMaxSteps} reached; stopping.");
+            StateStore.MarkTerminal("budget");
             return ("stop", TraceOutcome.Budget);
         }
 
@@ -106,6 +116,7 @@ public static class TaskRegistry
         {
             Console.Error.WriteLine(
                 $"[harness] instruction char limit of {config.MaxInstructionChars} reached ({costChars}); stopping.");
+            StateStore.MarkTerminal("budget");
             return ("stop", TraceOutcome.Budget);
         }
 
@@ -140,6 +151,7 @@ public static class TaskRegistry
         catch (HarnessTimeoutException ex)
         {
             Console.Error.WriteLine($"[harness] {ex.Message}");
+            StateStore.MarkTerminal("timeout");
             return ("stop", TraceOutcome.Timeout);
         }
     }

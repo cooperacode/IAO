@@ -28,6 +28,13 @@ def dispatch(
     max_steps: int | None = None,
     should_reset_on_start: Callable[[], bool] | None = None,
 ) -> str:
+    # A timeout/budget stop is terminal across process boundaries. Check this before
+    # handling `start`, otherwise the driver could reopen the run after a hard stop.
+    terminal = state_store.terminal_reason()
+    if terminal is not None:
+        print(f"[harness] run already stopped ({terminal}); refusing another turn.", file=sys.stderr)
+        return "stop"
+
     # Argv present → classic transport (backward compatible). Empty argv → reads the
     # envelope from the file-based inbox, the transport that eliminates the shell-quoting
     # hang (see inbox).
@@ -104,6 +111,7 @@ def _resolve(
     effective_max_steps = max_steps if max_steps is not None else default_max_steps()
     if step > effective_max_steps:
         print(f"[harness] step limit of {effective_max_steps} reached; stopping.", file=sys.stderr)
+        state_store.mark_terminal("budget")
         return "stop", trace.TraceOutcome.BUDGET
 
     # Cost ceiling, a second guard beyond the step one. Emitted-instruction chars are the
@@ -116,6 +124,7 @@ def _resolve(
             f"reached ({cost_chars}); stopping.",
             file=sys.stderr,
         )
+        state_store.mark_terminal("budget")
         return "stop", trace.TraceOutcome.BUDGET
 
     # Typed error instead of silent "stop": the model receives the cause and can resend
@@ -153,6 +162,7 @@ def _resolve(
         return result, (trace.TraceOutcome.STOP if result == "stop" else trace.TraceOutcome.INSTRUCTION)
     except HarnessTimeoutError as ex:
         print(f"[harness] {ex}", file=sys.stderr)
+        state_store.mark_terminal("timeout")
         return "stop", trace.TraceOutcome.TIMEOUT
 
 

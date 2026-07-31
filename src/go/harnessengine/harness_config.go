@@ -26,11 +26,12 @@ type HarnessConfig struct {
 
 const harnessConfigPath = "harness.json"
 
-// maxAllowedTimeoutMs is the hard ceiling on TimeoutMs, regardless of source (harness.json
+// maxAllowedTimeoutMs is the hard upper bound on TimeoutMs, regardless of source (harness.json
 // OR the env var below). harness.json lives in the working directory the supervised agent
 // itself controls: without this ceiling, the agent could edit the file to grant itself an
 // arbitrarily high timeout and never be cut by the time guard (see TaskRegistry).
 const maxAllowedTimeoutMs = 5 * 60_000
+const minEnabledTimeoutMs = 1
 
 // timeoutMsEnvVar, when set, overrides harness.json's timeoutMs. Unlike the file, the env
 // var is set by the parent process invoking each harness step — outside the working
@@ -39,17 +40,15 @@ const maxAllowedTimeoutMs = 5 * 60_000
 const timeoutMsEnvVar = "HARNESS_TIMEOUT_MS"
 
 // DefaultHarnessConfig returns the built-in defaults. MaxInstructionChars = 0 disables the
-// cost ceiling (only the step ceiling applies). TimeoutMs = 0 disables the per-step time
-// guard (same convention as cost). The enabled value ships in harness.json, NOT here: if
-// the default were > 0, a harness.json that omits the field (deserializes to 0) could never
-// mean "disabled".
+// cost ceiling (only the step ceiling applies). TimeoutMs is always enabled: a workspace
+// config may tune it but cannot turn off the time guard.
 func DefaultHarnessConfig() HarnessConfig {
 	return HarnessConfig{
 		MaxSteps:                12,
 		MaxInstructionChars:     0,
 		DocsMaxChars:            40_000,
 		DocsFolder:              "docs",
-		TimeoutMs:               0,
+		TimeoutMs:               30_000,
 		ContextResetMode:        "adaptive",
 		ContextResetThreshold:   0.70,
 		ContextFallbackFeatures: 1,
@@ -138,7 +137,10 @@ func normalizeConfig(config HarnessConfig) HarnessConfig {
 	if strings.TrimSpace(config.DocsFolder) == "" {
 		config.DocsFolder = def.DocsFolder
 	}
-	config.TimeoutMs = clamp(config.TimeoutMs, 0, maxAllowedTimeoutMs)
+	if config.TimeoutMs <= 0 {
+		config.TimeoutMs = def.TimeoutMs
+	}
+	config.TimeoutMs = clamp(config.TimeoutMs, minEnabledTimeoutMs, maxAllowedTimeoutMs)
 	mode := strings.ToLower(strings.TrimSpace(config.ContextResetMode))
 	if mode != "adaptive" && mode != "per-feature" && mode != "never" {
 		config.ContextResetMode = def.ContextResetMode

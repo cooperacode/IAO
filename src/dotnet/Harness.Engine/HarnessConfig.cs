@@ -25,15 +25,14 @@ public record HarnessConfig(
 {
     // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
     // MaxInstructionChars = 0 disables the cost ceiling (only the step one applies).
-    // TimeoutMs = 0 disables the per-step time guard (same convention as cost). The
-    // enabled value lives in the shipped harness.json, NOT here: if Default were > 0, a
-    // harness.json that omits the field (deserializes to 0) could never mean "disabled".
+    // TimeoutMs is always enabled: a workspace config may tune it but cannot turn off the
+    // per-step time guard.
     public static HarnessConfig Default { get; } = new(
         MaxSteps: 12,
         MaxInstructionChars: 0,
         DocsMaxChars: 40_000,
         DocsFolder: "docs",
-        TimeoutMs: 0,
+        TimeoutMs: 30_000,
         ContextResetMode: "adaptive",
         ContextResetThreshold: 0.70,
         ContextFallbackFeatures: 1);
@@ -45,6 +44,7 @@ public record HarnessConfig(
     // controls: without this ceiling, the agent could edit the file to grant itself an
     // arbitrarily high timeout and never get cut off by the time guard (see TaskRegistry).
     private const int MaxAllowedTimeoutMs = 5 * 60_000;
+    private const int MinEnabledTimeoutMs = 1;
 
     // When set, overrides harness.json's timeoutMs. Unlike the file, the env var is set by
     // the parent process that invokes each harness step — outside the working directory
@@ -101,7 +101,13 @@ public record HarnessConfig(
         MaxInstructionChars = int.Max(config.MaxInstructionChars, 0),
         DocsMaxChars = config.DocsMaxChars > 0 ? config.DocsMaxChars : Default.DocsMaxChars,
         DocsFolder = string.IsNullOrWhiteSpace(config.DocsFolder) ? Default.DocsFolder : config.DocsFolder,
-        TimeoutMs = int.Clamp(config.TimeoutMs, 0, MaxAllowedTimeoutMs),
+        // A workspace-controlled config may tune the timeout, but it may not turn the
+        // guard off. The terminal latch in TaskRegistry is the second stop mechanism for
+        // a timeout that already occurred.
+        TimeoutMs = int.Clamp(
+            config.TimeoutMs > 0 ? config.TimeoutMs : Default.TimeoutMs,
+            MinEnabledTimeoutMs,
+            MaxAllowedTimeoutMs),
         ContextResetMode = config.ContextResetMode is "adaptive" or "per-feature" or "never"
             ? config.ContextResetMode
             : Default.ContextResetMode,

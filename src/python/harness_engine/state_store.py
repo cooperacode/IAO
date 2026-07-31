@@ -111,3 +111,14 @@ def set_context(context: dict[str, str]) -> None:
 def get_context() -> dict[str, str] | None:
     """Persisted driver context, for prompt_formatter to reinject into every output."""
     return load().context
+
+
+def mark_terminal(reason: str) -> None:
+    """Latches a hard-stop reason across the next fresh-process invocation."""
+    state = load()
+    save(replace(state, terminal_reason=reason))
+
+
+def terminal_reason() -> str | None:
+    """Returns the latched hard-stop reason, if this run is already terminal."""
+    return load().terminal_reason

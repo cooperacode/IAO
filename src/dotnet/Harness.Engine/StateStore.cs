@@ -133,4 +133,13 @@ public static class StateStore
 
     /// <summary>Persisted driver context, for PromptFormatter to reinject into every output.</summary>
     public static Dictionary<string, string>? GetContext() => Load().Context;
+
+    /// <summary>Latches a hard-stop reason across process boundaries.</summary>
+    public static void MarkTerminal(string reason)
+    {
+        var state = Load();
+        Save(state with { TerminalReason = reason });
+    }
+
+    public static string? TerminalReason() => Load().TerminalReason;
 }

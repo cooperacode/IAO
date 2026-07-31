@@ -131,6 +131,20 @@ pub fn get_context() -> Option<HashMap<String, String>> {
     load().context
 }
 
+/// Latches a hard-stop reason across process boundaries.
+pub fn mark_terminal(reason: &str) {
+    let state = load();
+    save(&HarnessState {
+        terminal_reason: Some(reason.to_string()),
+        ..state
+    });
+}
+
+/// Returns the latched hard-stop reason, if any.
+pub fn terminal_reason() -> Option<String> {
+    load().terminal_reason
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

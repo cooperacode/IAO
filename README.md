@@ -183,7 +183,9 @@ source, not an execution directory.
 | Go | `src/go/run-development-go.sh` | `src/go/run-checks-go.sh` |
 
 The `harness.json` file configures global limits such as `maxSteps`,
-`maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`.
+`maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`. The timeout is
+always enabled: zero or negative values fall back to 30 seconds, and a timeout latches
+the current run as terminal across later invocations.
 
 For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
 `HARNESS_VERIFY_CMD` can override the values returned by the initializer, keeping

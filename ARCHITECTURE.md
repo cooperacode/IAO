@@ -146,8 +146,10 @@ What leaves the harness each turn: an instruction block with `input`, a
 - **`HarnessConfig`** — defaults, ceilings, and the docs folder, loaded from
   `harness.json` on every process. A read failure never kills the run — it
   falls back to built-in defaults. `TimeoutMs` has a hard ceiling (5 minutes)
-  that cannot be raised from `harness.json` alone, precisely because that file
-  lives in the working directory the supervised agent controls.
+  that cannot be raised from `harness.json` alone, and cannot be disabled by setting
+  zero or a negative value. A timeout/budget outcome also latches the run terminal in
+  persisted state before emitting `stop`, so a later invocation cannot reopen it by
+  editing `harness.json`.
   (`src/dotnet/Harness.Engine/HarnessConfig.cs`)
 - **`ContextPolicy`** — consumes only optional normalized context telemetry and
   decides whether the next feature gets a clean-context marker. It persists a

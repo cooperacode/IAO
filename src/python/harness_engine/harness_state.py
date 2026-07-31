@@ -18,6 +18,9 @@ class HarnessState:
     # without each task having to pass it along manually.
     context: dict[str, str] | None = None
 
+    # Hard-stop latch that survives the next fresh-process invocation.
+    terminal_reason: str | None = None
+
     def to_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
             "step": self.step,
@@ -26,6 +29,8 @@ class HarnessState:
         }
         if self.context is not None:
             result["context"] = self.context
+        if self.terminal_reason is not None:
+            result["terminalReason"] = self.terminal_reason
         return result
 
     @staticmethod
@@ -36,4 +41,5 @@ class HarnessState:
             data=dict(data) if isinstance(data, dict) else {},
             cost_chars=int(payload.get("costChars", 0) or 0),
             context=dict(payload["context"]) if isinstance(payload.get("context"), dict) else None,
+            terminal_reason=str(payload["terminalReason"]) if payload.get("terminalReason") else None,
         )

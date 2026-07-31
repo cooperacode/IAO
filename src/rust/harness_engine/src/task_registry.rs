@@ -31,6 +31,13 @@ pub fn dispatch(
     max_steps: Option<i32>,
     should_reset_on_start: Option<&dyn Fn() -> bool>,
 ) -> String {
+    // A timeout/budget stop is terminal across process boundaries. Check this before
+    // handling `start`, otherwise the driver could reopen the run after a hard stop.
+    if let Some(terminal) = state_store::terminal_reason() {
+        eprintln!("[harness] run already stopped ({terminal}); refusing another turn.");
+        return "stop".to_string();
+    }
+
     // Argv present → classic transport (backward compatible). Empty argv → reads the
     // envelope from the file-based inbox, the transport that eliminates the shell quoting
     // hang (see inbox).
@@ -143,6 +150,7 @@ fn resolve(
     let effective_max_steps = max_steps.unwrap_or_else(default_max_steps);
     if step > effective_max_steps {
         eprintln!("[harness] step limit of {effective_max_steps} reached; stopping.");
+        state_store::mark_terminal("budget");
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
 
@@ -155,6 +163,7 @@ fn resolve(
             "[harness] instruction char limit of {} reached ({cost_chars}); stopping.",
             config.max_instruction_chars
         );
+        state_store::mark_terminal("budget");
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
 
@@ -219,6 +228,7 @@ fn resolve(
         }
         Err(e) => {
             eprintln!("[harness] {e}");
+            state_store::mark_terminal("timeout");
             ("stop".to_string(), trace_outcome::TIMEOUT)
         }
     }
@@ -594,5 +604,16 @@ mod tests {
         harness_config::reload();
 
         assert_eq!(result, "stop");
+        // A later invocation remains terminal even if the workspace config is changed.
+        std::fs::write("harness.json", r#"{"timeoutMs":0}"#).unwrap();
+        harness_config::reload();
+        let later = dispatch(
+            &arg(r#"{"type":"command","value":"classify","args":["x"]}"#),
+            &tasks(),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(later, "stop");
     }
 }

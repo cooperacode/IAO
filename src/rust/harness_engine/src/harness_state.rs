@@ -18,6 +18,9 @@ pub struct HarnessState {
     // without each task having to pass it along manually.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<HashMap<String, String>>,
+    /// Hard-stop latch that survives the next fresh process invocation.
+    #[serde(rename = "terminalReason", default, skip_serializing_if = "Option::is_none")]
+    pub terminal_reason: Option<String>,
 }
 
 impl HarnessState {
@@ -27,6 +30,7 @@ impl HarnessState {
             data,
             cost_chars: 0,
             context: None,
+            terminal_reason: None,
         }
     }
 }
