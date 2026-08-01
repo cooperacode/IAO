@@ -526,7 +526,7 @@ mod tests {
     fn pick_retorna_implement_com_description_e_references_da_feature() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],"implementationContext":"inline X"},{"id":2,"title":"B","priority":1}]"#;
+        let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],"implementationContext":{"requirements":["inline X"]}},{"id":2,"title":"B","priority":1}]"#;
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
         plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"]))); // escolhe "B"
@@ -535,7 +535,7 @@ mod tests {
 
         assert!(result.contains("Description: faz X"));
         assert!(result.contains("Brief references: RF-003"));
-        assert!(result.contains("<implementation-context>inline X"));
+        assert!(result.contains("<implementation-context>requirements: inline X"));
         assert!(!result.contains("<brief>"));
     }
 
@@ -677,7 +677,7 @@ mod tests {
                 depends_on: vec![2],
                 description: String::new(),
                 references: Vec::new(),
-                implementation_context: String::new(),
+                implementation_context: harness_engine::feature_store::ImplementationContext::default(),
             },
             Feature {
                 id: 2,
@@ -687,7 +687,7 @@ mod tests {
                 depends_on: vec![1],
                 description: String::new(),
                 references: Vec::new(),
-                implementation_context: String::new(),
+                implementation_context: harness_engine::feature_store::ImplementationContext::default(),
             },
         ]);
         bearings(Some(&cmd("bearings", vec!["ok"])));

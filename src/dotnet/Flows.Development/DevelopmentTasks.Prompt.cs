@@ -18,20 +18,20 @@ public static partial class DevelopmentTasks
     // embedded in the prompts via {FeaturesShape} so it doesn't collide with $"""..."""
     // interpolation.
     private const string FeaturesShape =
-        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]""";
+        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]""";
 
     // Reinjects the current feature's bounded inline context into implement/fix prompts.
     private static string FeatureContextBlock(Feature feature)
     {
         if (string.IsNullOrWhiteSpace(feature.Description)
             && feature.Refs.Length == 0
-            && string.IsNullOrWhiteSpace(feature.ImplementationContext))
+            && feature.Context.IsEmpty)
             return "";
 
         var references = feature.Refs.Length > 0 ? string.Join(", ", feature.Refs) : "none";
-        var implementationContext = string.IsNullOrWhiteSpace(feature.ImplementationContext)
+        var implementationContext = feature.Context.IsEmpty
             ? ""
-            : $"<implementation-context>{feature.ImplementationContext.Replace("\r\n", "\\n").Replace("\n", "\\n")}</implementation-context>";
+            : $"<implementation-context>{feature.Context.ToPromptText()}</implementation-context>";
         return $"""
             Description: {feature.Description}
             Brief references: {references}

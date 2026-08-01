@@ -17,11 +17,11 @@ const (
 )
 
 // featuresShape is the feature_list shape embedded verbatim in the prompts.
-const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]`
+const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]`
 
 // featureContextBlock returns the current feature's bounded inline context for implement/fix.
 func featureContextBlock(feature engine.Feature) string {
-	if strings.TrimSpace(feature.Description) == "" && len(feature.References) == 0 && strings.TrimSpace(feature.ImplementationContext) == "" {
+	if strings.TrimSpace(feature.Description) == "" && len(feature.References) == 0 && feature.ImplementationContext.IsEmpty() {
 		return ""
 	}
 
@@ -29,11 +29,9 @@ func featureContextBlock(feature engine.Feature) string {
 	if len(feature.References) > 0 {
 		references = strings.Join(feature.References, ", ")
 	}
-	context := strings.ReplaceAll(feature.ImplementationContext, "\r\n", "\\n")
-	context = strings.ReplaceAll(context, "\n", "\\n")
 	implementationContext := ""
-	if strings.TrimSpace(context) != "" {
-		implementationContext = fmt.Sprintf("<implementation-context>%s</implementation-context>\n", context)
+	if !feature.ImplementationContext.IsEmpty() {
+		implementationContext = fmt.Sprintf("<implementation-context>%s</implementation-context>\n", feature.ImplementationContext.PromptText())
 	}
 	return fmt.Sprintf("Description: %s\nBrief references: %s\n%s\n", feature.Description, references, implementationContext)
 }

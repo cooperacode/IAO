@@ -25,31 +25,80 @@ const DescriptionMaxChars = 700
 // ImplementationContextMaxChars is the ceiling on the inline context stored per feature.
 const ImplementationContextMaxChars = 4000
 
+// ImplementationContext is the structured inline guidance carried into implementation.
+type ImplementationContext struct {
+	Requirements []string `json:"requirements"`
+	Constraints  []string `json:"constraints"`
+	Files        []string `json:"files"`
+	Acceptance   []string `json:"acceptance"`
+}
+
+// UnmarshalJSON accepts the previous string representation while writing the object form.
+func (c *ImplementationContext) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var legacy string
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return err
+		}
+		if strings.TrimSpace(legacy) != "" {
+			c.Requirements = []string{legacy}
+		}
+		return nil
+	}
+	type contextAlias ImplementationContext
+	var parsed contextAlias
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	*c = ImplementationContext(parsed)
+	return nil
+}
+
+func (c ImplementationContext) IsEmpty() bool {
+	return len(c.Requirements) == 0 && len(c.Constraints) == 0 && len(c.Files) == 0 && len(c.Acceptance) == 0
+}
+
+func (c ImplementationContext) PromptText() string {
+	format := func(label string, values []string) string {
+		escaped := make([]string, len(values))
+		for i, value := range values {
+			escaped[i] = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\\n"), "\n", "\\n")
+		}
+		return fmt.Sprintf("%s: %s", label, strings.Join(escaped, "; "))
+	}
+	return strings.Join([]string{
+		format("requirements", c.Requirements),
+		format("constraints", c.Constraints),
+		format("files", c.Files),
+		format("acceptance", c.Acceptance),
+	}, "\\n")
+}
+
 // Feature is one item of the development backlog: priority (lower = higher), whether it
 // already passes, which other ids it depends on, a free-form description (up to
 // DescriptionMaxChars, reinjected into the `implement` prompt) and explicit reference codes
 // from the brief (e.g. "RF-003"; empty when the brief cites none).
 type Feature struct {
-	Id                    int      `json:"id"`
-	Title                 string   `json:"title"`
-	Priority              int      `json:"priority"`
-	Passes                bool     `json:"passes"`
-	DependsOn             []int    `json:"dependsOn"`
-	Description           string   `json:"description"`
-	References            []string `json:"references"`
-	ImplementationContext string   `json:"implementationContext"`
+	Id                    int                   `json:"id"`
+	Title                 string                `json:"title"`
+	Priority              int                   `json:"priority"`
+	Passes                bool                  `json:"passes"`
+	DependsOn             []int                 `json:"dependsOn"`
+	Description           string                `json:"description"`
+	References            []string              `json:"references"`
+	ImplementationContext ImplementationContext `json:"implementationContext"`
 }
 
 // rawFeature is the shape the driver returns from `plan` — Id is optional (reindexed by
 // order when absent/<=0), and Passes is never read from here: every feature is born pending.
 type rawFeature struct {
-	Id                    int      `json:"id"`
-	Title                 string   `json:"title"`
-	Priority              int      `json:"priority"`
-	DependsOn             []int    `json:"dependsOn"`
-	Description           string   `json:"description"`
-	References            []string `json:"references"`
-	ImplementationContext string   `json:"implementationContext"`
+	Id                    int                   `json:"id"`
+	Title                 string                `json:"title"`
+	Priority              int                   `json:"priority"`
+	DependsOn             []int                 `json:"dependsOn"`
+	Description           string                `json:"description"`
+	References            []string              `json:"references"`
+	ImplementationContext ImplementationContext `json:"implementationContext"`
 }
 
 type featureList struct {
@@ -65,7 +114,12 @@ func WriteFeatures(features []Feature) {
 	if features == nil {
 		features = []Feature{}
 	}
-	data, err := json.MarshalIndent(featureList{Items: features}, "", "  ")
+	persisted := make([]Feature, len(features))
+	copy(persisted, features)
+	for i := range persisted {
+		persisted[i].ImplementationContext = normalizeImplementationContext(persisted[i].ImplementationContext)
+	}
+	data, err := json.MarshalIndent(featureList{Items: persisted}, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[FeatureStore] failed to write: %s\n", err)
 		return
@@ -156,10 +210,41 @@ func truncateDescription(description string) string {
 	return description
 }
 
-func truncateImplementationContext(context string) string {
-	runes := []rune(context)
-	if len(runes) > ImplementationContextMaxChars {
-		return string(runes[:ImplementationContextMaxChars])
+func truncateImplementationContext(context ImplementationContext) ImplementationContext {
+	remaining := ImplementationContextMaxChars
+	take := func(values []string) []string {
+		result := []string{}
+		for _, value := range values {
+			if remaining <= 0 {
+				break
+			}
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			runes := []rune(value)
+			if len(runes) > remaining {
+				runes = runes[:remaining]
+			}
+			result = append(result, string(runes))
+			remaining -= len(runes)
+		}
+		return result
+	}
+	return ImplementationContext{Requirements: take(context.Requirements), Constraints: take(context.Constraints), Files: take(context.Files), Acceptance: take(context.Acceptance)}
+}
+
+func normalizeImplementationContext(context ImplementationContext) ImplementationContext {
+	if context.Requirements == nil {
+		context.Requirements = []string{}
+	}
+	if context.Constraints == nil {
+		context.Constraints = []string{}
+	}
+	if context.Files == nil {
+		context.Files = []string{}
+	}
+	if context.Acceptance == nil {
+		context.Acceptance = []string{}
 	}
 	return context
 }

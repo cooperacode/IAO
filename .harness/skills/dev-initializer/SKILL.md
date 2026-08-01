@@ -44,9 +44,10 @@ each feature:
 - linked through `dependsOn` only when a real implementation dependency exists;
 - described objectively with enough context for a fresh session;
 - linked through `references` only to explicit codes or named sections from the brief;
-- populated with `implementationContext`, containing the bounded inline material the feature
-  needs to be implemented without reopening the full brief (copy the relevant requirements,
-  acceptance criteria, constraints, examples, and reference excerpts into this field).
+- populated with `implementationContext` as an object containing the bounded inline material
+  the feature needs to be implemented without reopening the full brief. Use the four arrays
+  `requirements`, `constraints`, `files`, and `acceptance`; copy only the relevant requirements,
+  constraints, target files, examples, and acceptance criteria into those arrays.
 
 Prefer several small features to a few broad ones. If a feature has no unambiguous
 verification path, split it further.

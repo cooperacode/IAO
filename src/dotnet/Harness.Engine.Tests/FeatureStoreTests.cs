@@ -114,18 +114,21 @@ public class FeatureStoreTests : IDisposable
 
         Assert.Equal("", features[0].Description);
         Assert.Empty(features[0].Refs);
-        Assert.Equal("", features[0].ImplementationContext);
+        Assert.True(features[0].Context.IsEmpty);
     }
 
     [Fact]
     public void Parse_PreservaDescriptionEReferences()
     {
         var features = FeatureStore.Parse(
-            """[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"],"implementationContext":"inline Y"}]""");
+            """[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"],"implementationContext":{"requirements":["inline Y"],"constraints":["keep API"],"files":["src/Login.cs"],"acceptance":["returns 401"]}}]""");
 
         Assert.Equal("does Y", features[0].Description);
         Assert.Equal(["RF-003"], features[0].Refs);
-        Assert.Equal("inline Y", features[0].ImplementationContext);
+        Assert.Equal(["inline Y"], features[0].Context.RequirementItems);
+        Assert.Equal(["keep API"], features[0].Context.ConstraintItems);
+        Assert.Equal(["src/Login.cs"], features[0].Context.FileItems);
+        Assert.Equal(["returns 401"], features[0].Context.AcceptanceItems);
     }
 
     [Fact]
@@ -147,7 +150,7 @@ public class FeatureStoreTests : IDisposable
         var features = FeatureStore.Parse(
             $$"""[{"id":1,"title":"X","priority":1,"implementationContext":"{{longContext}}"}]""");
 
-        Assert.Equal(FeatureStore.ImplementationContextMaxChars, features[0].ImplementationContext.Length);
+        Assert.Equal(FeatureStore.ImplementationContextMaxChars, features[0].Context.RequirementItems[0].Length);
     }
 
     [Fact]

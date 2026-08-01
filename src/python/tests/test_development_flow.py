@@ -174,7 +174,7 @@ def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
 def test_pick_retorna_implement_com_description_e_references_da_feature():
     json_str = (
         '[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],'
-        '"implementationContext":"inline X"},'
+        '"implementationContext":{"requirements":["inline X"]}},'
         '{"id":2,"title":"B","priority":1}]'
     )
     Path("src/app").mkdir(parents=True, exist_ok=True)
@@ -185,7 +185,7 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
 
     assert "Description: faz X" in result
     assert "Brief references: RF-003" in result
-    assert "<implementation-context>inline X" in result
+    assert "<implementation-context>requirements: inline X" in result
     assert "<brief>" not in result
 
 

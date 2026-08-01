@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/feature_list.json";
@@ -20,6 +20,59 @@ const FILE_PATH: &str = ".harness/feature_list.json";
 pub const DESCRIPTION_MAX_CHARS: usize = 700;
 /// Character ceiling for the inline implementation context persisted per feature.
 pub const IMPLEMENTATION_CONTEXT_MAX_CHARS: usize = 4000;
+
+/// Structured inline guidance carried into implementation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ImplementationContext {
+    #[serde(default)]
+    pub requirements: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub acceptance: Vec<String>,
+}
+
+impl ImplementationContext {
+    pub fn is_empty(&self) -> bool {
+        self.requirements.is_empty() && self.constraints.is_empty() && self.files.is_empty() && self.acceptance.is_empty()
+    }
+
+    pub fn prompt_text(&self) -> String {
+        fn format_items(label: &str, values: &[String]) -> String {
+            let values = values.iter().map(|value| value.replace("\r\n", "\\n").replace('\n', "\\n")).collect::<Vec<_>>();
+            format!("{label}: {}", values.join("; "))
+        }
+        [
+            format_items("requirements", &self.requirements),
+            format_items("constraints", &self.constraints),
+            format_items("files", &self.files),
+            format_items("acceptance", &self.acceptance),
+        ].join("\\n")
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawImplementationContext {
+    Structured(ImplementationContext),
+    Legacy(String),
+}
+
+fn deserialize_implementation_context<'de, D>(deserializer: D) -> Result<ImplementationContext, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<RawImplementationContext>::deserialize(deserializer)? {
+        Some(RawImplementationContext::Structured(context)) => Ok(context),
+        Some(RawImplementationContext::Legacy(value)) if !value.trim().is_empty() => Ok(ImplementationContext {
+            requirements: vec![value],
+            ..Default::default()
+        }),
+        _ => Ok(ImplementationContext::default()),
+    }
+}
 
 /// A feature from the development backlog: priority (lower = higher), whether it already
 /// passes, which others (by id) it depends on, a free-form description (up to
@@ -39,8 +92,8 @@ pub struct Feature {
     pub description: String,
     #[serde(default)]
     pub references: Vec<String>,
-    #[serde(rename = "implementationContext", default)]
-    pub implementation_context: String,
+    #[serde(rename = "implementationContext", default, deserialize_with = "deserialize_implementation_context")]
+    pub implementation_context: ImplementationContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,8 +115,8 @@ struct RawFeature {
     description: String,
     #[serde(default)]
     references: Vec<String>,
-    #[serde(rename = "implementationContext", default)]
-    implementation_context: String,
+    #[serde(rename = "implementationContext", default, deserialize_with = "deserialize_implementation_context")]
+    implementation_context: ImplementationContext,
 }
 
 /// Overwrites the entire list — used by `plan` (session 0) and by `mark_passed`.
@@ -158,11 +211,24 @@ fn truncate_description(description: &str) -> String {
     }
 }
 
-fn truncate_implementation_context(context: &str) -> String {
-    if context.chars().count() > IMPLEMENTATION_CONTEXT_MAX_CHARS {
-        context.chars().take(IMPLEMENTATION_CONTEXT_MAX_CHARS).collect()
-    } else {
-        context.to_string()
+fn truncate_implementation_context(context: &ImplementationContext) -> ImplementationContext {
+    let mut remaining = IMPLEMENTATION_CONTEXT_MAX_CHARS;
+    let mut take = |values: &[String]| {
+        let mut result = Vec::new();
+        for value in values {
+            if remaining == 0 { break; }
+            if value.trim().is_empty() { continue; }
+            let taken: String = value.chars().take(remaining).collect();
+            remaining -= taken.chars().count();
+            result.push(taken);
+        }
+        result
+    };
+    ImplementationContext {
+        requirements: take(&context.requirements),
+        constraints: take(&context.constraints),
+        files: take(&context.files),
+        acceptance: take(&context.acceptance),
     }
 }
 
@@ -350,7 +416,7 @@ mod tests {
             depends_on: Vec::new(),
             description: String::new(),
             references: Vec::new(),
-            implementation_context: String::new(),
+            implementation_context: ImplementationContext::default(),
         }
     }
 
@@ -446,7 +512,7 @@ mod tests {
 
         assert_eq!(features[0].description, "");
         assert!(features[0].references.is_empty());
-        assert_eq!(features[0].implementation_context, "");
+        assert!(features[0].implementation_context.is_empty());
     }
 
     #[test]
@@ -460,7 +526,7 @@ mod tests {
 
         assert_eq!(features[0].description, "does Y");
         assert_eq!(features[0].references, vec!["RF-003".to_string()]);
-        assert_eq!(features[0].implementation_context, "inline Y");
+        assert_eq!(features[0].implementation_context.requirements, vec!["inline Y"]);
     }
 
     #[test]
@@ -487,7 +553,7 @@ mod tests {
         ));
 
         assert_eq!(
-            features[0].implementation_context.chars().count(),
+            features[0].implementation_context.requirements[0].chars().count(),
             IMPLEMENTATION_CONTEXT_MAX_CHARS
         );
     }

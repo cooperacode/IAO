@@ -17,13 +17,13 @@ const FEATURES: &str = "$FEATURES";
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
 
-const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]"#;
+const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]"#;
 
 // Returns the current feature's bounded inline context for implement/fix prompts.
 fn feature_context_block(feature: &Feature) -> String {
     if feature.description.trim().is_empty()
         && feature.references.is_empty()
-        && feature.implementation_context.trim().is_empty()
+        && feature.implementation_context.is_empty()
     {
         return "\n".to_string();
     }
@@ -33,14 +33,10 @@ fn feature_context_block(feature: &Feature) -> String {
     } else {
         feature.references.join(", ")
     };
-    let context = feature
-        .implementation_context
-        .replace("\r\n", "\\n")
-        .replace('\n', "\\n");
-    let implementation_context = if context.trim().is_empty() {
+    let implementation_context = if feature.implementation_context.is_empty() {
         String::new()
     } else {
-        format!("<implementation-context>{context}</implementation-context>\n")
+        format!("<implementation-context>{}</implementation-context>\n", feature.implementation_context.prompt_text())
     };
     format!(
         "Description: {}\nBrief references: {references}\n{implementation_context}\n",

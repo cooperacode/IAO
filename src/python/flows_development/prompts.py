@@ -17,7 +17,7 @@ TARGET_DIR = "$TARGET_DIR"
 
 # Shape of the feature_list embedded in the prompts.
 FEATURES_SHAPE = (
-    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]'
+    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]'
 )
 
 
@@ -27,11 +27,10 @@ def _state(key: str) -> str:
 
 def _feature_context_block(feature: Feature) -> str:
     """Returns the bounded inline context for implement/fix prompts."""
-    if not feature.description.strip() and not feature.refs and not feature.implementation_context.strip():
+    if not feature.description.strip() and not feature.refs and feature.context.is_empty:
         return "\n"
     references = ", ".join(feature.refs) if feature.refs else "none"
-    context = feature.implementation_context.replace("\r\n", "\\n").replace("\n", "\\n")
-    context_block = f"<implementation-context>{context}</implementation-context>\n" if context.strip() else ""
+    context_block = f"<implementation-context>{feature.context.prompt_text()}</implementation-context>\n" if not feature.context.is_empty else ""
     return f"Description: {feature.description}\nBrief references: {references}\n{context_block}\n"
 
 

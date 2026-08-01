@@ -79,9 +79,13 @@ diagram, with the file that implements each component.
 
 - **Brief**: documents in `docs/*.md` or `docs/*.txt` that describe what should
   be built. Read once at `start` and used by `plan`; the planner copies each
-  feature's relevant requirements into bounded `implementationContext` in
+  feature's relevant requirements into bounded structured `implementationContext` in
   `.harness/feature_list.json`, so later implementation sessions do not reopen
   the full brief.
+
+  The context is grouped into `requirements`, `constraints`, `files`, and `acceptance`
+  arrays. Older plans that used a single string remain readable and are migrated to
+  `requirements` when loaded.
 - **HarnessHost**: reusable flow entry point; runs dispatch, publishes output
   to `stdout`, and snapshots state and trace when the flow stops.
 - **TaskRegistry**: parses envelopes, validates commands, applies step, cost,

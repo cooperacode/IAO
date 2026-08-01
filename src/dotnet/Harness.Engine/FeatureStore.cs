@@ -35,7 +35,8 @@ public static class FeatureStore
         {
             Directory.CreateDirectory(Dir);
             var json = JsonSerializer.Serialize(
-                new FeatureList([.. features]), PrettyFeatureListJsonContext.Default.FeatureList);
+                new FeatureList([.. features.Select(feature => feature with { ImplementationContext = feature.Context })]),
+                PrettyFeatureListJsonContext.Default.FeatureList);
             AtomicIO.WriteAllTextAtomic(FilePath, json);
         }
         catch (Exception ex)
@@ -120,10 +121,33 @@ public static class FeatureStore
     private static string TruncateDescription(string? description) =>
         description is { Length: > DescriptionMaxChars } d ? d[..DescriptionMaxChars] : description ?? "";
 
-    private static string TruncateImplementationContext(string? context) =>
-        context is { Length: > ImplementationContextMaxChars } c
-            ? c[..ImplementationContextMaxChars]
-            : context ?? "";
+    private static ImplementationContext TruncateImplementationContext(ImplementationContext? context)
+    {
+        var source = context ?? new ImplementationContext();
+        var remaining = ImplementationContextMaxChars;
+
+        static string[] Take(string[] values, ref int remaining)
+        {
+            var result = new List<string>();
+            foreach (var value in values ?? [])
+            {
+                if (remaining <= 0)
+                    break;
+                if (string.IsNullOrWhiteSpace(value))
+                    continue;
+                var taken = value.Length <= remaining ? value : value[..remaining];
+                result.Add(taken);
+                remaining -= taken.Length;
+            }
+            return [.. result];
+        }
+
+        return new ImplementationContext(
+            Take(source.RequirementItems, ref remaining),
+            Take(source.ConstraintItems, ref remaining),
+            Take(source.FileItems, ref remaining),
+            Take(source.AcceptanceItems, ref remaining));
+    }
 
     /// <summary>
     /// <c>null</c> if the <c>DependsOn</c> graph is valid (every id exists, no cycle);
@@ -257,13 +281,99 @@ public static class FeatureStore
 public record Feature(
     int Id, string Title, int Priority, bool Passes,
     int[]? DependsOn = null, string Description = "", string[]? References = null,
-    string ImplementationContext = "")
+    ImplementationContext? ImplementationContext = null)
 {
     [JsonIgnore]
     public int[] Deps => DependsOn ?? [];
 
     [JsonIgnore]
     public string[] Refs => References ?? [];
+
+    [JsonIgnore]
+    public ImplementationContext Context => ImplementationContext ?? new();
+}
+
+/// <summary>Structured, bounded context carried by a feature into implementation.</summary>
+[JsonConverter(typeof(ImplementationContextJsonConverter))]
+public record ImplementationContext(
+    string[]? Requirements = null,
+    string[]? Constraints = null,
+    string[]? Files = null,
+    string[]? Acceptance = null)
+{
+    [JsonIgnore] public string[] RequirementItems => Requirements ?? [];
+    [JsonIgnore] public string[] ConstraintItems => Constraints ?? [];
+    [JsonIgnore] public string[] FileItems => Files ?? [];
+    [JsonIgnore] public string[] AcceptanceItems => Acceptance ?? [];
+
+    [JsonIgnore]
+    public bool IsEmpty => RequirementItems.Length == 0 && ConstraintItems.Length == 0
+        && FileItems.Length == 0 && AcceptanceItems.Length == 0;
+
+    public string ToPromptText()
+    {
+        static string Format(string label, string[] values) =>
+            $"{label}: {string.Join("; ", values.Select(v => v.Replace("\r\n", "\\n").Replace("\n", "\\n")))}";
+
+        return string.Join("\\n", [
+            Format("requirements", RequirementItems),
+            Format("constraints", ConstraintItems),
+            Format("files", FileItems),
+            Format("acceptance", AcceptanceItems),
+        ]);
+    }
+}
+
+/// <summary>Reads both the current object form and the legacy inline string form.</summary>
+public sealed class ImplementationContextJsonConverter : JsonConverter<ImplementationContext>
+{
+    public override ImplementationContext Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var legacy = reader.GetString() ?? "";
+            return string.IsNullOrWhiteSpace(legacy) ? new() : new([legacy]);
+        }
+        if (reader.TokenType == JsonTokenType.Null)
+            return new();
+        if (reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("implementationContext must be an object or string");
+
+        using var document = JsonDocument.ParseValue(ref reader);
+        var root = document.RootElement;
+        return new(
+            ReadItems(root, "requirements"),
+            ReadItems(root, "constraints"),
+            ReadItems(root, "files"),
+            ReadItems(root, "acceptance"));
+    }
+
+    private static string[] ReadItems(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Array
+            ? property.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString() ?? "")
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToArray()
+            : [];
+
+    public override void Write(Utf8JsonWriter writer, ImplementationContext value, JsonSerializerOptions options)
+    {
+        static void WriteArray(Utf8JsonWriter writer, string name, string[] values)
+        {
+            writer.WriteStartArray(name);
+            foreach (var item in values)
+                writer.WriteStringValue(item);
+            writer.WriteEndArray();
+        }
+
+        writer.WriteStartObject();
+        WriteArray(writer, "requirements", value.RequirementItems);
+        WriteArray(writer, "constraints", value.ConstraintItems);
+        WriteArray(writer, "files", value.FileItems);
+        WriteArray(writer, "acceptance", value.AcceptanceItems);
+        writer.WriteEndObject();
+    }
 }
 
 /// <summary>

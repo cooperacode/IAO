@@ -28,6 +28,32 @@ IMPLEMENTATION_CONTEXT_MAX_CHARS = 4000
 
 
 @dataclass(frozen=True)
+class ImplementationContext:
+    """Inline implementation guidance grouped by purpose."""
+
+    requirements: tuple[str, ...] = ()
+    constraints: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
+    acceptance: tuple[str, ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        return not any((self.requirements, self.constraints, self.files, self.acceptance))
+
+    def prompt_text(self) -> str:
+        def format_items(label: str, values: tuple[str, ...]) -> str:
+            escaped = (value.replace("\r\n", "\\n").replace("\n", "\\n") for value in values)
+            return f"{label}: {'; '.join(escaped)}"
+
+        return "\\n".join((
+            format_items("requirements", self.requirements),
+            format_items("constraints", self.constraints),
+            format_items("files", self.files),
+            format_items("acceptance", self.acceptance),
+        ))
+
+
+@dataclass(frozen=True)
 class Feature:
     """One feature of the development backlog: priority (lower = higher), whether it
     already passes, which other ids it depends on, a free-form description (up to
@@ -46,7 +72,7 @@ class Feature:
     depends_on: tuple[int, ...] | None = None
     description: str = ""
     references: tuple[str, ...] | None = None
-    implementation_context: str = ""
+    implementation_context: ImplementationContext | None = None
 
     @property
     def deps(self) -> tuple[int, ...]:
@@ -55,6 +81,10 @@ class Feature:
     @property
     def refs(self) -> tuple[str, ...]:
         return self.references if self.references is not None else ()
+
+    @property
+    def context(self) -> ImplementationContext:
+        return self.implementation_context or ImplementationContext()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -65,7 +95,12 @@ class Feature:
             "dependsOn": list(self.depends_on) if self.depends_on is not None else None,
             "description": self.description,
             "references": list(self.references) if self.references is not None else None,
-            "implementationContext": self.implementation_context,
+            "implementationContext": {
+                "requirements": list(self.context.requirements),
+                "constraints": list(self.context.constraints),
+                "files": list(self.context.files),
+                "acceptance": list(self.context.acceptance),
+            },
         }
 
     @staticmethod
@@ -82,8 +117,45 @@ class Feature:
             depends_on=depends_on,
             description=str(payload.get("description") or ""),
             references=references,
-            implementation_context=str(payload.get("implementationContext") or ""),
+            implementation_context=_implementation_context_from_payload(payload.get("implementationContext")),
         )
+
+
+def _implementation_context_from_payload(value: object) -> ImplementationContext:
+    if isinstance(value, str):
+        return ImplementationContext(requirements=(value,)) if value.strip() else ImplementationContext()
+    if not isinstance(value, dict):
+        return ImplementationContext()
+
+    def items(name: str) -> tuple[str, ...]:
+        raw = value.get(name)
+        return tuple(str(item) for item in raw if str(item).strip()) if isinstance(raw, list) else ()
+
+    return ImplementationContext(items("requirements"), items("constraints"), items("files"), items("acceptance"))
+
+
+def _truncate_implementation_context(context: ImplementationContext) -> ImplementationContext:
+    remaining = IMPLEMENTATION_CONTEXT_MAX_CHARS
+
+    def take(values: tuple[str, ...]) -> tuple[str, ...]:
+        nonlocal remaining
+        result: list[str] = []
+        for value in values:
+            if remaining <= 0:
+                break
+            if not value.strip():
+                continue
+            taken = value[:remaining]
+            result.append(taken)
+            remaining -= len(taken)
+        return tuple(result)
+
+    return ImplementationContext(
+        requirements=take(context.requirements),
+        constraints=take(context.constraints),
+        files=take(context.files),
+        acceptance=take(context.acceptance),
+    )
 
 
 def write(features: list[Feature]) -> None:
@@ -139,7 +211,7 @@ def parse(features_json: str) -> list[Feature]:
                 depends_on=tuple(dict.fromkeys(candidate.deps)),
                 description=_truncate_description(candidate.description),
                 references=tuple(dict.fromkeys(r for r in candidate.refs if r.strip())),
-                implementation_context=candidate.implementation_context[:IMPLEMENTATION_CONTEXT_MAX_CHARS],
+                implementation_context=_truncate_implementation_context(candidate.context),
             ))
 
         error = _dependency_graph_error(reindexed)
