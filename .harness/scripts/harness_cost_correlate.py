@@ -8,9 +8,9 @@ consumption that happened between the previous step's timestamp and the
 current step's timestamp.
 
 Supported usage sources:
-- `claude`: uses scripts/claude_usage.py and transcripts under ~/.claude/projects/...
-- `codex`: uses scripts/codex_usage.py and rollouts under ~/.codex/sessions + archived
-- `copilot`: uses scripts/copilot_usage.py and VS Code's workspaceStorage (GitHub
+- `claude`: uses .harness/scripts/claude_usage.py and transcripts under ~/.claude/projects/...
+- `codex`: uses .harness/scripts/codex_usage.py and rollouts under ~/.codex/sessions + archived
+- `copilot`: uses .harness/scripts/copilot_usage.py and VS Code's workspaceStorage (GitHub
   Copilot Chat). No dollar cost estimate (Copilot bills by "premium request"
   with a multiplier, not by token) -- tokens only.
 
@@ -22,14 +22,14 @@ Limitations:
 - Codex costs are API-like estimates when the session used a ChatGPT login.
 - Copilot never has a dollar cost (always "n/a"); tokens may come from a
   less reliable layer (`chatSessions`) or may not exist at all (`no-tokens`)
-  -- see scripts/copilot_usage.py for what each source means.
+  -- see .harness/scripts/copilot_usage.py for what each source means.
 
 Usage:
-    scripts/harness_cost_correlate.py --session "$CLAUDE_CODE_SESSION_ID"
-    scripts/harness_cost_correlate.py --usage-source codex --session <uuid>
-    scripts/harness_cost_correlate.py --usage-source codex --session-tree <uuid>
-    scripts/harness_cost_correlate.py --usage-source codex --repo . --json
-    scripts/harness_cost_correlate.py --usage-source copilot --session <uuid>
+    .harness/scripts/harness_cost_correlate.py --session "$CLAUDE_CODE_SESSION_ID"
+    .harness/scripts/harness_cost_correlate.py --usage-source codex --session <uuid>
+    .harness/scripts/harness_cost_correlate.py --usage-source codex --session-tree <uuid>
+    .harness/scripts/harness_cost_correlate.py --usage-source codex --repo . --json
+    .harness/scripts/harness_cost_correlate.py --usage-source copilot --session <uuid>
 """
 
 from __future__ import annotations
@@ -262,7 +262,7 @@ class ClaudeBackend(UsageBackend):
         return claude.to_jsonable(totals, model)
 
     def metadata(self) -> dict:
-        return {"pricing": "scripts/claude_usage.py"}
+        return {"pricing": ".harness/scripts/claude_usage.py"}
 
 
 class CodexBackend(UsageBackend):
@@ -351,7 +351,7 @@ class CodexBackend(UsageBackend):
                 "context_rate": self.context_rate,
                 "currency": "USD",
                 "unit": "per 1M tokens",
-                "source": "scripts/codex_usage.py",
+                "source": ".harness/scripts/codex_usage.py",
             },
             "session_scope": {
                 "type": scope_type,

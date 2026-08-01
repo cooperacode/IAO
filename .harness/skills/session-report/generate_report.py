@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """Generates an HTML usage/cost report for a driver's most recent session
 (claude/codex/copilot), correlating `.harness/trace.jsonl` with the driver's
-actual token consumption via scripts/harness_cost_correlate.py. Uses the
+actual token consumption via .harness/scripts/harness_cost_correlate.py. Uses the
 layout of curso/material/relatorio-execucao-harness.html as its visual base.
 
 Flow:
-    1. scripts/<driver>_usage.py --json  -> discovers the session that best
+    1. .harness/scripts/<driver>_usage.py --json  -> discovers the session that best
        fits the trace for this repo (or uses --session/--session-tree, if given).
-    2. scripts/harness_cost_correlate.py -> correlates the harness trace steps
+    2. .harness/scripts/harness_cost_correlate.py -> correlates the harness trace steps
        with the token consumption of that session scope.
     3. Renders the HTML in report/.
 
 Usage:
-    skills/session-report/generate_report.py --driver claude
-    skills/session-report/generate_report.py --driver codex --session <uuid>
-    skills/session-report/generate_report.py --driver codex --session-tree <uuid>
-    skills/session-report/generate_report.py --driver copilot --trace-file .harness/last-development.trace.jsonl
+    .harness/skills/session-report/generate_report.py --driver claude
+    .harness/skills/session-report/generate_report.py --driver codex --session <uuid>
+    .harness/skills/session-report/generate_report.py --driver codex --session-tree <uuid>
+    .harness/skills/session-report/generate_report.py --driver copilot --trace-file .harness/last-development.trace.jsonl
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = REPO_ROOT / "scripts"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+SCRIPTS_DIR = REPO_ROOT / ".harness" / "scripts"
 DEFAULT_TRACE_FILE = REPO_ROOT / ".harness" / "trace.jsonl"
 
 USAGE_SCRIPT = {

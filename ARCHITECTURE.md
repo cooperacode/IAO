@@ -248,8 +248,8 @@ only the generic window/used-token fields and never parses provider-specific
 rollout storage; in its absence, the configured deterministic fallback remains
 active. A host adapter can supply the canonical object in the response envelope
 or through `HARNESS_CONTEXT_USAGE_JSON` for the current turn. The Codex-specific
-bridge is isolated in `scripts/codex_context_usage.py`, which delegates parsing
-to `scripts/codex_usage.py`; this provider coupling does not enter the engine.
+bridge is isolated in `.harness/scripts/codex_context_usage.py`, which delegates parsing
+to `.harness/scripts/codex_usage.py`; this provider coupling does not enter the engine.
 Claude Code and Copilot use the same adapter boundary; when their host does not
 expose a reliable context window, those adapters intentionally emit no sample
 and the deterministic fallback remains active.

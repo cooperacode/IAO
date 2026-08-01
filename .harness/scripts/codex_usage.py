@@ -13,11 +13,11 @@ limits, totals are computed from the positive delta of
 `last_token_usage`.
 
 Usage:
-    scripts/codex_usage.py
-    scripts/codex_usage.py --by-session
-    scripts/codex_usage.py --session <uuid> --json
-    scripts/codex_usage.py --session-tree <uuid> --json
-    scripts/codex_usage.py --all-repos --since 2026-07-01
+    .harness/scripts/codex_usage.py
+    .harness/scripts/codex_usage.py --by-session
+    .harness/scripts/codex_usage.py --session <uuid> --json
+    .harness/scripts/codex_usage.py --session-tree <uuid> --json
+    .harness/scripts/codex_usage.py --all-repos --since 2026-07-01
 """
 
 from __future__ import annotations

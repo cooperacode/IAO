@@ -13,8 +13,8 @@ public class PromptFormatterTests : IDisposable
         var skills = PromptFormatter.Skills("agile-workitem", "story-splitting");
 
         Assert.Equal(2, skills.Count);
-        Assert.Equal(Path.Combine("skills", "agile-workitem", "SKILL.md"), skills["agile-workitem"]);
-        Assert.Equal(Path.Combine("skills", "story-splitting", "SKILL.md"), skills["story-splitting"]);
+        Assert.Equal(Path.Combine(".harness", "skills", "agile-workitem", "SKILL.md"), skills["agile-workitem"]);
+        Assert.Equal(Path.Combine(".harness", "skills", "story-splitting", "SKILL.md"), skills["story-splitting"]);
     }
 
     [Fact]

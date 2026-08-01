@@ -1,4 +1,4 @@
-//! Output template for an artifact: `skills/<name>/ARTIFACT.md` with `{{key}}`
+//! Output template for an artifact: `.harness/skills/<name>/ARTIFACT.md` with `{{key}}`
 //! placeholders replaced by values from `state_store`. The artifact's markdown shape
 //! lives alongside the skill that produces it — outside the code, editable without a
 //! recompile. Pure string substitution: deterministic, zero token cost.
@@ -9,7 +9,7 @@ use crate::path_resolver;
 
 /// Reads the skill's template; `None` if the skill doesn't define one (the caller decides the fallback).
 pub fn load(skill_name: &str) -> Option<String> {
-    let rel_path = format!("skills/{skill_name}/ARTIFACT.md");
+    let rel_path = format!(".harness/skills/{skill_name}/ARTIFACT.md");
     let path = path_resolver::resolve(&rel_path);
     let path = std::path::Path::new(&path);
     if !path.exists() {
@@ -89,8 +89,8 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        std::fs::create_dir_all("skills/my-skill").unwrap();
-        std::fs::write("skills/my-skill/ARTIFACT.md", "# {{title}}").unwrap();
+        std::fs::create_dir_all(".harness/skills/my-skill").unwrap();
+        std::fs::write(".harness/skills/my-skill/ARTIFACT.md", "# {{title}}").unwrap();
 
         assert_eq!(load("my-skill").unwrap(), "# {{title}}");
     }

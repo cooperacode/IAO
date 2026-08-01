@@ -5,28 +5,32 @@
 # Generates:
 #
 #   --engine dotnet → dist/flows-<rid>-v<version>/
-#     bin/Flows.Development           # native binary (Native AOT; self-contained if AOT fails)
-#     skills/                         # skills injected at runtime
-#     scripts/                        # usage/correlate — dependency of the cost report
-#     run-development.sh (+ .cmd win) # development wrapper → ./bin
+#     .harness/bin/Flows.Development  # native binary (Native AOT; self-contained if AOT fails)
+#     .harness/skills/                # skills injected at runtime
+#     .harness/scripts/               # usage/correlate — dependency of the cost report
+#     run-development.sh              # root-level development wrapper → .harness/bin
+#     .harness/run-development.cmd    # Windows companion wrapper, when applicable
 #     <IDE adapter at its expected path>
 #     <IDE approval config>           # runs the wrapper with no per-command prompt
-#     START-HERE.md                   # how to run the flow in the chosen IDE
+#     .harness/START-HERE.md          # how to run the flow in the chosen IDE
 #
 #   --engine python → dist/flows-python-v<version>/
-#     engine/harness_engine, engine/flows_development  # Python engine (source, no build)
-#     skills/, scripts/, run-development.sh (+ .cmd)    # same layout, requires python3/python in PATH
-#     <IDE adapter>, <approval config>, START-HERE.md
+#     .harness/bin/engine/harness_engine, ...          # Python engine (source, no build)
+#     .harness/skills/, .harness/scripts/              # same layout, requires python3/python
+#     run-development.sh                              # root-level development wrapper
+#     <IDE adapter>, <approval config>, .harness/START-HERE.md
 #
 #   --engine rust → dist/flows-rust-<host-rid>-v<version>/
-#     bin/flows_development           # native binary (cargo build --release --bin flows_development)
-#     skills/, scripts/, run-development.sh (+ .cmd win) # same layout as dotnet, wrapper → ./bin
-#     <IDE adapter>, <approval config>, START-HERE.md
+#     .harness/bin/flows_development  # native binary (cargo build --release --bin flows_development)
+#     .harness/skills/, .harness/scripts/              # same layout as dotnet
+#     run-development.sh                              # root-level development wrapper
+#     <IDE adapter>, <approval config>, .harness/START-HERE.md
 #
 #   --engine go → dist/flows-go-<host-rid>-v<version>/
-#     bin/flowsdevelopment            # native binary (go build ./flowsdevelopment)
-#     skills/, scripts/, run-development.sh (+ .cmd win) # same layout as rust, wrapper → ./bin
-#     <IDE adapter>, <approval config>, START-HERE.md
+#     .harness/bin/flowsdevelopment   # native binary (go build ./flowsdevelopment)
+#     .harness/skills/, .harness/scripts/              # same layout as rust
+#     run-development.sh                              # root-level development wrapper
+#     <IDE adapter>, <approval config>, .harness/START-HERE.md
 #
 # Usage:
 #   ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
@@ -165,7 +169,7 @@ fi
 contains "$IDE" "${IDES[@]}" || { echo "invalid IDE: '$IDE' (use: ${IDES[*]})" >&2; exit 1; }
 [[ -n "$VERSION" ]] || { echo "empty version" >&2; exit 1; }
 
-bash "$DIR/scripts/check-development-contracts.sh"
+bash "$DIR/.harness/scripts/check-development-contracts.sh"
 
 # the flow's adapter must exist for the chosen IDE
 for flow in "${FLOWS[@]}"; do
@@ -207,24 +211,28 @@ fi
 
 echo "[package] assembling $OUT …"
 rm -rf "$OUT"
-mkdir -p "$OUT"
-[[ "$ENGINE" == "dotnet" || "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && mkdir -p "$OUT/bin"
-cp -R skills "$OUT/skills"
+mkdir -p "$OUT/.harness"
+cp .harness/index.html "$OUT/.harness/index.html"
+cp .harness/run.sh "$OUT/.harness/run.sh"
+chmod +x "$OUT/.harness/run.sh"
+[[ "$ENGINE" == "dotnet" || "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && mkdir -p "$OUT/.harness/bin"
+cp -R .harness/skills "$OUT/.harness/skills"
+find "$OUT/.harness/skills" -name "__pycache__" -type d -prune -exec rm -rf {} +
 cp harness.json "$OUT/harness.json"   # harness variable config (ceilings, docs)
 
-# scripts/ — dependency of skills/session-report/generate_report.py (REPO_ROOT/"scripts",
-# relative to the file's own position inside the package). Without this, the agent's final
-# step ("generate the usage and cost report") fails because it can't find scripts/<driver>_usage.py.
-mkdir -p "$OUT/scripts"
-cp scripts/*.py "$OUT/scripts/"
+# .harness/scripts/ — dependency of .harness/skills/session-report/generate_report.py.
+# Keep provider usage scripts inside the harness container so the package root only exposes
+# the stable config and invocation wrapper.
+mkdir -p "$OUT/.harness/scripts"
+cp .harness/scripts/*.py "$OUT/.harness/scripts/"
 
 # ---- python engine: the engine is source, not a build — copy harness_engine (shared
-# across flows) just once, outside the per-flow loop (the same pattern as skills/ and
-# scripts/ above) ----
+# across flows) just once, outside the per-flow loop (the same pattern as .harness/skills
+# and .harness/scripts above) ----
 if [[ "$ENGINE" == "python" ]]; then
-  mkdir -p "$OUT/engine"
-  cp -R "src/python/harness_engine" "$OUT/engine/harness_engine"
-  find "$OUT/engine/harness_engine" -name "__pycache__" -type d -exec rm -rf {} +
+  mkdir -p "$OUT/.harness/bin/engine"
+  cp -R "src/python/harness_engine" "$OUT/.harness/bin/engine/harness_engine"
+  find "$OUT/.harness/bin/engine/harness_engine" -name "__pycache__" -type d -exec rm -rf {} +
 fi
 
 # ---- per flow: engine (.NET build or copy of the Python source), wrapper(s) and adapter ----
@@ -260,16 +268,16 @@ for flow in "${FLOWS[@]}"; do
       # the *.deps.json/*.runtimeconfig.json and the runtime's native libs, all in the same
       # directory. Copying just the apphost breaks execution ("application to execute does
       # not exist: ...dll") — it needs the whole publish/ directory.
-      cp -R "$pubdir/." "$OUT/bin/"
+      cp -R "$pubdir/." "$OUT/.harness/bin/"
     else
       # Native AOT really is a single, self-contained binary — just that.
-      cp "$pubdir/$bin" "$OUT/bin/"
+      cp "$pubdir/$bin" "$OUT/.harness/bin/"
     fi
 
     # .cmd wrapper (Windows)
     if [[ "$RID" == win-* ]]; then
       cmd="${wrapper%.sh}.cmd"
-      cat > "$OUT/$cmd" <<EOF
+      cat > "$OUT/.harness/$cmd" <<EOF
 @echo off
 cd /d "%~dp0"
 "bin\\$bin" %*
@@ -290,13 +298,13 @@ EOF
 
     pubbin="src/rust/target/release/$bin"
     [[ -f "$pubbin" ]] || { echo "[error] binary not found at $pubbin" >&2; exit 1; }
-    cp "$pubbin" "$OUT/bin/"
+    cp "$pubbin" "$OUT/.harness/bin/"
 
     # .cmd wrapper — only makes sense if the binary was compiled on a Windows host (cargo
     # itself doesn't cross-compile here, so there's no "win RID on a non-Windows host" case).
     if [[ "$WINEXT" == ".exe" ]]; then
       cmd="${wrapper%.sh}.cmd"
-      cat > "$OUT/$cmd" <<EOF
+      cat > "$OUT/.harness/$cmd" <<EOF
 @echo off
 cd /d "%~dp0"
 "bin\\$bin" %*
@@ -313,14 +321,14 @@ EOF
 
     pubbin="src/go/bin/$bin"
     [[ -f "$pubbin" ]] || { echo "[error] binary not found at $pubbin" >&2; exit 1; }
-    cp "$pubbin" "$OUT/bin/"
+    cp "$pubbin" "$OUT/.harness/bin/"
 
     # .cmd wrapper — only makes sense if the binary was compiled on a Windows host (this
     # script doesn't cross-compile GOOS/GOARCH, so there's no "win RID on a non-Windows
     # host" case).
     if [[ "$WINEXT" == ".exe" ]]; then
       cmd="${wrapper%.sh}.cmd"
-      cat > "$OUT/$cmd" <<EOF
+      cat > "$OUT/.harness/$cmd" <<EOF
 @echo off
 cd /d "%~dp0"
 "bin\\$bin" %*
@@ -330,17 +338,17 @@ EOF
     module="$(python_module_for "$flow")"
 
     echo "[package] copying Python engine — ${flow}…"
-    cp -R "src/python/$module" "$OUT/engine/$module"
-    find "$OUT/engine/$module" -name "__pycache__" -type d -exec rm -rf {} +
+    cp -R "src/python/$module" "$OUT/.harness/bin/engine/$module"
+    find "$OUT/.harness/bin/engine/$module" -name "__pycache__" -type d -exec rm -rf {} +
 
     # .cmd wrapper — always generated (the python engine runs on any OS, unlike the .NET
     # binary which only gets a .cmd when the RID is win-*). Uses "python" (the convention of
     # the official Windows installer), not "python3" (used in the .sh for macOS/Linux).
     cmd="${wrapper%.sh}.cmd"
-    cat > "$OUT/$cmd" <<EOF
+    cat > "$OUT/.harness/$cmd" <<EOF
 @echo off
 cd /d "%~dp0"
-set PYTHONPATH=%~dp0engine;%PYTHONPATH%
+set PYTHONPATH=%~dp0bin\\engine;%PYTHONPATH%
 python -m $module %*
 EOF
   fi
@@ -367,7 +375,7 @@ case "$IDE" in
   "permissions": {
     "allow": [
       "Bash(./run-development.sh *)",
-      "Bash(./run-development.cmd *)",
+      "Bash(.harness/run-development.cmd *)",
       "Bash(chmod +x *)"
     ]
   }
@@ -384,7 +392,7 @@ EOF
 {
   "chat.tools.terminal.autoApprove": {
     "/^\.\\/(run-development)\\.sh\\b/": true,
-    "/^(\\.\\\\)?(run-development)\\.cmd\\b/": true,
+    "/^\\.harness[\\\\/]run-development\\.cmd\\b/": true,
     "/^bash +run-development\\.sh\\b/": true,
     "/^chmod \\+x /": true
   }
@@ -418,7 +426,7 @@ WINROW=""
 if { [[ "$ENGINE" == "dotnet" ]] && [[ "$RID" == win-* ]]; } \
   || [[ "$ENGINE" == "python" ]] \
   || { [[ "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && [[ "$WINEXT" == ".exe" ]]; }; then
-  WINROW="| \`run-development.cmd\` | execution wrapper on Windows |
+  WINROW="| \`.harness/run-development.cmd\` | execution wrapper on Windows |
 "
 fi
 
@@ -439,31 +447,31 @@ if [[ "$ENGINE" == "dotnet" ]]; then
   TITLE_META="$RID · v$VERSION · IDE: $IDE · engine: dotnet (Native AOT)"
   ENGINE_INTRO="Self-contained package with the development flow as a native binary (no .NET runtime),
 plus the skills and the matching IDE adapter."
-  ENGINE_ROW="| \`bin/Flows.Development$WINEXT\` | native binary of the development flow |"
+  ENGINE_ROW="| \`.harness/bin/Flows.Development$WINEXT\` | native binary of the development flow |"
 elif [[ "$ENGINE" == "rust" ]]; then
   TITLE_META="$HOSTRID · v$VERSION · IDE: $IDE · engine: rust (native)"
   ENGINE_INTRO="Self-contained package with the development flow as a native Rust binary (compiled via
 \`cargo build --release\`, no runtime required on the target machine), plus the skills and the
 matching IDE adapter. **The binary is native to the host where \`package.sh\` ran** — \`cargo\`
 doesn't cross-compile here, so build the package on the same OS/architecture as the target."
-  ENGINE_ROW="| \`bin/flows_development$WINEXT\` | native (Rust) binary of the development flow |"
+  ENGINE_ROW="| \`.harness/bin/flows_development$WINEXT\` | native (Rust) binary of the development flow |"
 elif [[ "$ENGINE" == "go" ]]; then
   TITLE_META="$HOSTRID · v$VERSION · IDE: $IDE · engine: go (native)"
   ENGINE_INTRO="Self-contained package with the development flow as a native Go binary (compiled via
 \`go build\`, no runtime required on the target machine), plus the skills and the matching IDE
 adapter. **The binary is native to the host where \`package.sh\` ran** — this script doesn't
 cross-compile (GOOS/GOARCH) here, so build the package on the same OS/architecture as the target."
-  ENGINE_ROW="| \`bin/flowsdevelopment$WINEXT\` | native (Go) binary of the development flow |"
+  ENGINE_ROW="| \`.harness/bin/flowsdevelopment$WINEXT\` | native (Go) binary of the development flow |"
 else
   TITLE_META="python · v$VERSION · IDE: $IDE · engine: python"
-  ENGINE_INTRO="Package with the development flow on the Python engine (\`engine/\`, source — no build),
+  ENGINE_INTRO="Package with the development flow on the Python engine (\`.harness/bin/engine/\`, source — no build),
 plus the skills and the matching IDE adapter. **Requires \`python3\` (macOS/Linux) or
 \`python\` (Windows) in the target machine's PATH** — unlike the \`--engine dotnet\` package,
 this one doesn't embed a self-contained binary."
-  ENGINE_ROW="| \`engine/\` | Python engine — \`harness_engine/\` + \`flows_development/\` (source, requires python3/python in PATH) |"
+  ENGINE_ROW="| \`.harness/bin/engine/\` | Python engine — \`harness_engine/\` + \`flows_development/\` (source, requires python3/python in PATH) |"
 fi
 
-cat > "$OUT/START-HERE.md" <<EOF
+cat > "$OUT/.harness/START-HERE.md" <<EOF
 # Flows — package ($TITLE_META)
 
 $ENGINE_INTRO Development builds the project
@@ -486,8 +494,8 @@ The binary should print an \`<input>\`/\`<response>\` block to stdout (or \`stop
 | Path | What |
 |---|---|
 $ENGINE_ROW
-| \`skills/\` | skills injected at runtime |
-| \`scripts/\` | driver usage/correlate — dependency of the cost report (\`skills/session-report\`) |
+| \`.harness/skills/\` | skills injected at runtime |
+| \`.harness/scripts/\` | driver usage/correlate — dependency of the cost report (\`.harness/skills/session-report\`) |
 | \`harness.json\` | harness config: step/cost/time ceilings and docs folder |
 | \`run-development.sh\` | execution wrapper |
 $WINROW| \`$DEV_REL\` | development adapter for the chosen IDE |
@@ -495,7 +503,7 @@ $CONFROW
 EOF
 
 if [[ ${#AOT_FALLBACK_FLOWS[@]} -gt 0 ]]; then
-  echo "[package] [warning] published with self-contained fallback (no Native AOT) for: ${AOT_FALLBACK_FLOWS[*]} — see START-HERE.md" >&2
+  echo "[package] [warning] published with self-contained fallback (no Native AOT) for: ${AOT_FALLBACK_FLOWS[*]} — see .harness/START-HERE.md" >&2
 fi
 
 echo "[package] done ✓  → $OUT"

@@ -142,8 +142,8 @@ When valid telemetry is received, the harness also records
 `contextWindowTokens`, `contextUsedTokens`, and the normalized `contextRatio`
 on that turn in `.harness/trace.jsonl`; absent telemetry leaves these fields
 omitted for backward compatibility.
-The Codex adapter is `scripts/codex_context_usage.py`; it uses `CODEX_THREAD_ID`
-and delegates rollout parsing to `scripts/codex_usage.py`.
+The Codex adapter is `.harness/scripts/codex_context_usage.py`; it uses `CODEX_THREAD_ID`
+and delegates rollout parsing to `.harness/scripts/codex_usage.py`.
 Equivalent adapters exist for Claude Code and Copilot; the Claude adapter uses
 a 200K-token window by default and accepts `CLAUDE_CONTEXT_WINDOW_TOKENS` (or
 the common window variable) as an override, while Copilot requires debug-log
@@ -192,8 +192,18 @@ For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
 those control-plane settings outside the model response.
 
 `package.sh` compiles or copies the selected engine and installs its wrapper template
-as `run-development.sh` in the generated package root. The included adapters call that
-packaged wrapper by default:
+as `run-development.sh` in the generated package root. The generated package keeps the
+harness inputs under `.harness/`:
+
+```text
+.harness/bin/<package>    # engine binary or Python engine source
+.harness/skills/*         # prompt skills and artifact templates
+.harness/scripts/*        # telemetry and reporting helpers
+harness.json              # root-level configuration
+run-development.sh        # root-level entry point
+```
+
+The included adapters call that packaged wrapper by default:
 
 | Agent | Adapter |
 |---|---|

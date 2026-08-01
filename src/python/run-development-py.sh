@@ -19,10 +19,11 @@ if [[ "$PY_MAJOR" -lt 3 || ( "$PY_MAJOR" -eq 3 && "$PY_MINOR" -lt 11 ) ]]; then
   exit 1
 fi
 
-[[ -d "$DIR/engine/flows_development" ]] || {
-  echo "[harness] packaged Python engine not found under $DIR/engine" >&2
+ENGINE_DIR="$DIR/.harness/bin/engine"
+[[ -d "$ENGINE_DIR/flows_development" ]] || {
+  echo "[harness] packaged Python engine not found under $ENGINE_DIR" >&2
   exit 1
 }
 
-export PYTHONPATH="$DIR/engine${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$ENGINE_DIR${PYTHONPATH:+:$PYTHONPATH}"
 exec "$PYTHON_BIN" -m flows_development "$@"

@@ -1147,11 +1147,11 @@ This document has no IANA actions.
 | Development flow | `src/*/flows_development`, `src/dotnet/Flows.Development` |
 | Verification | `DevelopmentTasks.Verify.cs`, Python `tasks.py`, Rust `verify.rs` |
 | Automated Git handoff | `DevelopmentTasks.Handoff.cs`, Python `tasks.py`, Rust `handoff.rs` |
-| Prompt and skills | `PromptFormatter.cs`, `prompt_formatter.py`, `prompt_formatter.rs`, `skills/dev-*` |
+| Prompt and skills | `PromptFormatter.cs`, `prompt_formatter.py`, `prompt_formatter.rs`, `.harness/skills/dev-*` |
 | Driver authority | `.codex/agents`, `.claude/agents`, `.github/prompts`, `.devin/workflows` |
 | Workspace approval | `.claude/settings.json`, `.vscode/settings.json`, generated settings in `package.sh` |
 | Distribution | `package.sh`, `QUICKSTART.md`, `dist/` layout |
-| Usage and cost telemetry | `scripts/*_usage.py`, `scripts/harness_cost_correlate.py`, `skills/session-report` |
+| Usage and cost telemetry | `.harness/scripts/*_usage.py`, `.harness/scripts/harness_cost_correlate.py`, `.harness/skills/session-report` |
 | Functional verification | `run-checks.sh`, `run-checks-py.sh`, `run-checks-rs.sh` and test projects |
 
 The untracked `arquitetura-v2.html` present during review was examined as explanatory material but is not part of the controlled commit baseline and is not relied upon as normative evidence.

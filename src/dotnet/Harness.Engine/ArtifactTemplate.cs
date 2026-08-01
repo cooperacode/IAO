@@ -1,7 +1,7 @@
 namespace Harness.Engine;
 
 /// <summary>
-/// Output template for an artifact: <c>skills/&lt;name&gt;/ARTIFACT.md</c> with
+/// Output template for an artifact: <c>.harness/skills/&lt;name&gt;/ARTIFACT.md</c> with
 /// <c>{{key}}</c> placeholders replaced by values from <see cref="StateStore"/>. The
 /// artifact's markdown shape lives alongside the skill that produces it — outside C#,
 /// editable without recompiling. Pure string substitution: deterministic, zero token, and
@@ -14,7 +14,7 @@ public static class ArtifactTemplate
     {
         try
         {
-            var path = PathResolver.Resolve(Path.Combine("skills", skillName, "ARTIFACT.md"));
+            var path = PathResolver.Resolve(Path.Combine(".harness", "skills", skillName, "ARTIFACT.md"));
             return File.Exists(path) ? File.ReadAllText(path) : null;
         }
         catch (Exception ex)

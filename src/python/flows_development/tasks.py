@@ -426,9 +426,16 @@ def _configured_verify_argv(raw: str) -> list[str]:
 
 
 def _harness_install_root() -> Path:
-    """Install/distribution root of the IAO harness (proxy: the root of `src/python`, two
-    levels above `harness_engine/__init__.py`)."""
-    return Path(harness_engine.__file__).resolve().parent.parent
+    """Install/distribution root of the IAO harness.
+
+    In the source tree this is ``src/python``. In a packaged harness the Python modules
+    live under ``.harness/bin/engine`` while the package root also owns ``harness.json``
+    and ``run-development.sh``.
+    """
+    module_root = Path(harness_engine.__file__).resolve().parent.parent
+    if module_root.name == "engine" and module_root.parent.name == "bin" and module_root.parent.parent.name == ".harness":
+        return module_root.parent.parent.parent
+    return module_root
 
 
 def _append_progress(

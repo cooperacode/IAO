@@ -11,10 +11,10 @@ func TestSkills_MultipleNames_ReturnsAllMappings(t *testing.T) {
 	if len(m) != 2 {
 		t.Fatalf("unexpected map: %+v", m)
 	}
-	if m["agile-workitem"] != "skills/agile-workitem/SKILL.md" {
+	if m["agile-workitem"] != ".harness/skills/agile-workitem/SKILL.md" {
 		t.Fatalf("unexpected mapping: %s", m["agile-workitem"])
 	}
-	if m["story-splitting"] != "skills/story-splitting/SKILL.md" {
+	if m["story-splitting"] != ".harness/skills/story-splitting/SKILL.md" {
 		t.Fatalf("unexpected mapping: %s", m["story-splitting"])
 	}
 }

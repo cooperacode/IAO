@@ -8,8 +8,8 @@ def test_skills_aceita_varios_nomes_retorna_todos_os_mapeamentos():
     skills = prompt_formatter.skills("agile-workitem", "story-splitting")
 
     assert len(skills) == 2
-    assert skills["agile-workitem"] == str(Path("skills") / "agile-workitem" / "SKILL.md")
-    assert skills["story-splitting"] == str(Path("skills") / "story-splitting" / "SKILL.md")
+    assert skills["agile-workitem"] == str(Path(".harness") / "skills" / "agile-workitem" / "SKILL.md")
+    assert skills["story-splitting"] == str(Path(".harness") / "skills" / "story-splitting" / "SKILL.md")
 
 
 def test_format_contexto_persistido_e_reinjetado_no_envelope_de_saida():

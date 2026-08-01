@@ -8,7 +8,7 @@ cd "$DIR"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 echo "==> development contract"
-bash "$DIR/../../scripts/check-development-contracts.sh"
+bash "$DIR/../../.harness/scripts/check-development-contracts.sh"
 
 echo "==> pytest (src/python/tests)"
 PYTHONPATH="$DIR" "$PYTHON_BIN" -m pytest "$DIR/tests" -q

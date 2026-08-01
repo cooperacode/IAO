@@ -32,7 +32,9 @@ dist/flows-go-<host-rid>-v<version>/   # --engine go
 dist/flows-python-v<version>/          # --engine python
 ```
 
-Each package includes the engine binary (or Python source), `skills/`, `scripts/`, the chosen IDE adapter, and a `START-HERE.md`.
+Each package includes the engine binary (or Python source) under `.harness/bin/`, the
+runtime inputs under `.harness/skills/` and `.harness/scripts/`, the chosen IDE adapter,
+and `.harness/START-HERE.md`.
 
 ## 2. Move the package into your project
 
@@ -109,7 +111,7 @@ per-task timeout can likewise be overridden by the parent process with
 
 ## 4. Start development
 
-Development is always driven by the IDE agent, not by hand on the command line. Open `your-project/` in the IDE you packaged for and follow `START-HERE.md` (copied into the package root):
+Development is always driven by the IDE agent, not by hand on the command line. Open `your-project/` in the IDE you packaged for and follow `.harness/START-HERE.md`:
 
 | IDE | Adapter | How to start |
 |---|---|---|

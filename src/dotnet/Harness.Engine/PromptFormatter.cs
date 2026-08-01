@@ -10,7 +10,7 @@ public static class PromptFormatter
         var skills = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var name in names.Where(n => !string.IsNullOrWhiteSpace(n)))
-            skills[name] = Path.Combine("skills", name, "SKILL.md");
+            skills[name] = Path.Combine(".harness", "skills", name, "SKILL.md");
 
         return skills;
     }

@@ -13,7 +13,7 @@ fi
 command -v cargo >/dev/null 2>&1 || { echo "[checks] cargo not found — install via https://rustup.rs" >&2; exit 1; }
 
 echo "==> development contract"
-bash "$DIR/../../scripts/check-development-contracts.sh"
+bash "$DIR/../../.harness/scripts/check-development-contracts.sh"
 
 echo "==> cargo test --workspace (src/rust)"
 cargo test --workspace

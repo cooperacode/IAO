@@ -10,10 +10,10 @@ last turn, not the real sum, and can underestimate usage by orders of
 magnitude.
 
 Usage:
-    scripts/claude_usage.py
-    scripts/claude_usage.py --by-session
-    scripts/claude_usage.py --session "$CLAUDE_CODE_SESSION_ID"
-    scripts/claude_usage.py --session <uuid> --show-subagents --json
+    .harness/scripts/claude_usage.py
+    .harness/scripts/claude_usage.py --by-session
+    .harness/scripts/claude_usage.py --session "$CLAUDE_CODE_SESSION_ID"
+    .harness/scripts/claude_usage.py --session <uuid> --show-subagents --json
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ pub fn skills(names: &[&str]) -> HashMap<String, String> {
     names
         .iter()
         .filter(|n| !n.trim().is_empty())
-        .map(|n| (n.to_string(), format!("skills/{n}/SKILL.md")))
+        .map(|n| (n.to_string(), format!(".harness/skills/{n}/SKILL.md")))
         .collect()
 }
 
@@ -123,8 +123,8 @@ mod tests {
         let map = skills(&["agile-workitem", "story-splitting"]);
 
         assert_eq!(map.len(), 2);
-        assert_eq!(map["agile-workitem"], "skills/agile-workitem/SKILL.md");
-        assert_eq!(map["story-splitting"], "skills/story-splitting/SKILL.md");
+        assert_eq!(map["agile-workitem"], ".harness/skills/agile-workitem/SKILL.md");
+        assert_eq!(map["story-splitting"], ".harness/skills/story-splitting/SKILL.md");
     }
 
     #[test]

@@ -5,11 +5,11 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-for bin in "./bin/flowsdevelopment" "./bin/flowsdevelopment.exe"; do
+for bin in "$DIR/.harness/bin/flowsdevelopment" "$DIR/.harness/bin/flowsdevelopment.exe"; do
   if [[ -f "$bin" && ! -d "$bin" ]]; then
     exec "$bin" "$@"
   fi
 done
 
-echo "[harness] packaged Go binary not found under $DIR/bin" >&2
+echo "[harness] packaged Go binary not found under $DIR/.harness/bin" >&2
 exit 1

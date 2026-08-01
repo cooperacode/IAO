@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-// Skills builds the {name -> skills/<name>/SKILL.md} map consumed by Format.
+// Skills builds the {name -> .harness/skills/<name>/SKILL.md} map consumed by Format.
 func Skills(names ...string) map[string]string {
 	skills := make(map[string]string, len(names))
 	for _, name := range names {
 		if strings.TrimSpace(name) == "" {
 			continue
 		}
-		skills[name] = filepath.Join("skills", name, "SKILL.md")
+		skills[name] = filepath.Join(".harness", "skills", name, "SKILL.md")
 	}
 	return skills
 }

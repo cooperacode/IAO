@@ -155,7 +155,7 @@ public static class Trace
 /// edit/removal detectable. The timestamp isn't token data — it's just when the step
 /// happened, same category as <see cref="Step"/>/<see cref="Outcome"/> — but it supplies
 /// the missing time key to correlate each step with the real tokens the driver spent
-/// deciding it (see scripts/harness_cost_correlate.py), without the harness having to
+/// deciding it (see .harness/scripts/harness_cost_correlate.py), without the harness having to
 /// self-report tokens.
 ///
 /// <see cref="Label"/> is the optional, domain-agnostic tag (e.g. "feature:3") that solves

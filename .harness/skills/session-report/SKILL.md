@@ -8,26 +8,26 @@ description: "generate an HTML cost/usage report for the harness's most recent s
 Generates a self-contained HTML report that correlates the harness steps
 (`.harness/trace.jsonl`) with a driver's (IDE/agent) actual token consumption — without this,
 "how much did this run cost, step by step" stays stuck in terminal table rows
-(`scripts/harness_cost_correlate.py`), with no consolidated view.
+(`.harness/scripts/harness_cost_correlate.py`), with no consolidated view.
 
 ## Running it (the agent's path)
 
-The driver is `skills/session-report/generate_report.py`. It chains two existing scripts,
+The driver is `.harness/skills/session-report/generate_report.py`. It chains two existing scripts,
 without reimplementing anything:
 
-1. `scripts/<driver>_usage.py --json` — discovers the session that best fits that driver's
+1. `.harness/scripts/<driver>_usage.py --json` — discovers the session that best fits that driver's
    trace for this repo. For Codex, it picks the session with the greatest time overlap and
    uses its subagent tree; for the other drivers, it uses the session with the largest
    `last_ts`.
-2. `scripts/harness_cost_correlate.py --usage-source <driver> --session <id> --trace-file .harness/trace.jsonl --json`
+2. `.harness/scripts/harness_cost_correlate.py --usage-source <driver> --session <id> --trace-file .harness/trace.jsonl --json`
    — correlates the trace steps with that session's consumption. On Codex, the automatic path
    uses `--session-tree <id>` to include all descendants.
 3. Normalizes and renders the HTML.
 
 ```bash
-skills/session-report/generate_report.py --driver claude
-skills/session-report/generate_report.py --driver codex
-skills/session-report/generate_report.py --driver copilot
+.harness/skills/session-report/generate_report.py --driver claude
+.harness/skills/session-report/generate_report.py --driver codex
+.harness/skills/session-report/generate_report.py --driver copilot
 ```
 
 Generates `report/session-report-<driver>-<timestamp>.html` (folder created if it doesn't
@@ -40,10 +40,10 @@ repo — 57 steps, $10.55 attributed, $11.46 total, 42m 40s duration.
 ### Scope (optional)
 
 ```bash
-skills/session-report/generate_report.py --driver claude --session <session-id>
-skills/session-report/generate_report.py --driver codex --session-tree <session-id>
-skills/session-report/generate_report.py --driver codex --trace-file .harness/last-development.trace.jsonl
-skills/session-report/generate_report.py --driver claude --out-dir /tmp/reports
+.harness/skills/session-report/generate_report.py --driver claude --session <session-id>
+.harness/skills/session-report/generate_report.py --driver codex --session-tree <session-id>
+.harness/skills/session-report/generate_report.py --driver codex --trace-file .harness/last-development.trace.jsonl
+.harness/skills/session-report/generate_report.py --driver claude --out-dir /tmp/reports
 ```
 
 `--session` skips auto-detection and keeps the strict single-session filter.
@@ -56,8 +56,9 @@ run).
 ## Prerequisites
 
 - Python 3 (tested with 3.12) — no external dependencies, stdlib only.
-- `scripts/claude_usage.py`, `scripts/codex_usage.py`, `scripts/copilot_usage.py` and
-  `scripts/harness_cost_correlate.py` already present at the repo root.
+- `.harness/scripts/claude_usage.py`, `.harness/scripts/codex_usage.py`,
+  `.harness/scripts/copilot_usage.py` and `.harness/scripts/harness_cost_correlate.py`
+  already present in the harness container.
 - A `.harness/trace.jsonl` (or another one passed via `--trace-file`) from a harness run that
   has already happened — without a trace there's no step to correlate.
 
@@ -106,7 +107,7 @@ depend on `feature_list.json` and Roslyn analysis — out of scope for this skil
   explanatory note in the footer.
 - **`--out-dir`/`--trace-file` defaults are always relative to the repo root**, not the
   directory the command was called from — `generate_report.py` resolves `REPO_ROOT` from its
-  own file path (`skills/session-report/generate_report.py` → up two levels).
+  own file path (`.harness/skills/session-report/generate_report.py` → up three levels).
 
 ## Troubleshooting
 
@@ -115,6 +116,6 @@ depend on `feature_list.json` and Roslyn analysis — out of scope for this skil
   `.harness/last-development.trace.jsonl`).
 - `Nenhuma sessao de <driver> encontrada para este repo` — the chosen driver has never been
   used in this repository (the corresponding `<driver>_usage.py` found no sessions). Run the
-  usage script directly (`python3 scripts/claude_usage.py`) to confirm.
+  usage script directly (`python3 .harness/scripts/claude_usage.py`) to confirm.
 - `Erro ao rodar <script>.py (exit 1)` — the underlying script (usage or correlate) failed;
   its stderr is passed through prefixed with `[<script>]` before the final error message.

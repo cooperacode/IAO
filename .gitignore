@@ -8,6 +8,10 @@ target/
 !.harness/
 !.harness/index.html
 !.harness/run.sh
+!.harness/skills/
+!.harness/skills/**
+!.harness/scripts/
+!.harness/scripts/**
 
 # Cruft de exemplos antigos
 __pycache__/
@@ -15,7 +19,7 @@ __pycache__/
 # Resultados do benchmark
 bench/out/
 
-# Relatorios gerados (skills/session-report)
+# Relatorios gerados (.harness/skills/session-report)
 report/
 
 todo-*/

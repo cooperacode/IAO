@@ -30,10 +30,10 @@ Out of scope: the standalone Copilot CLI (~/.copilot/session-state/*.jsonl)
 -- this covers VS Code Copilot Chat only.
 
 Usage:
-    scripts/copilot_usage.py
-    scripts/copilot_usage.py --by-session
-    scripts/copilot_usage.py --session <uuid> --json
-    scripts/copilot_usage.py --all-repos --since 2026-07-01
+    .harness/scripts/copilot_usage.py
+    .harness/scripts/copilot_usage.py --by-session
+    .harness/scripts/copilot_usage.py --session <uuid> --json
+    .harness/scripts/copilot_usage.py --all-repos --since 2026-07-01
 """
 
 from __future__ import annotations

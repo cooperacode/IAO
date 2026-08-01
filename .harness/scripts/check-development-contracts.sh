@@ -3,7 +3,7 @@
 # four engine ports from drifting back to model-authored verification/handoff artifacts.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 fail() {
@@ -12,11 +12,11 @@ fail() {
 }
 
 skills=(
-  skills/dev-initializer/SKILL.md
-  skills/dev-implement/SKILL.md
-  skills/dev-smoke/SKILL.md
-  skills/dev-verify/SKILL.md
-  skills/dev-handoff/SKILL.md
+  .harness/skills/dev-initializer/SKILL.md
+  .harness/skills/dev-implement/SKILL.md
+  .harness/skills/dev-smoke/SKILL.md
+  .harness/skills/dev-verify/SKILL.md
+  .harness/skills/dev-handoff/SKILL.md
 )
 adapters=(
   .claude/agents/development.agent.md
@@ -34,7 +34,7 @@ prompts=(
 for file in "${skills[@]}" "${adapters[@]}" "${prompts[@]}"; do
   [[ -f "$file" ]] || fail "required contract file missing: $file"
 done
-[[ ! -e skills/dev-bearings/SKILL.md ]] \
+[[ ! -e .harness/skills/dev-bearings/SKILL.md ]] \
   || fail "dev-bearings is obsolete: bearings is deterministic harness work"
 
 retired_tokens=('$NOTE' '$SMOKE' '$SUMMARY' '$RESULT' '$COMMIT')

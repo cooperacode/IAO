@@ -10,7 +10,7 @@ from harness_engine.envelope import Envelope
 
 
 def skills(*names: str) -> dict[str, str]:
-    return {name: str(Path("skills") / name / "SKILL.md") for name in names if name and name.strip()}
+    return {name: str(Path(".harness") / "skills" / name / "SKILL.md") for name in names if name and name.strip()}
 
 
 def format(input_text: str, output: Envelope, skills_map: dict[str, str] | None = None) -> str:

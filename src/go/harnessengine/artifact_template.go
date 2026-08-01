@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// LoadArtifactTemplate reads skills/<name>/ARTIFACT.md — an output template with
+// LoadArtifactTemplate reads .harness/skills/<name>/ARTIFACT.md — an output template with
 // `{{key}}` placeholders substituted with StateStore values. The artifact's markdown shape
 // lives alongside the skill that produces it — outside Go code, editable without
 // recompiling. Returns "" (ok=false) if the skill defines no template — the caller decides
 // the fallback.
 func LoadArtifactTemplate(skillName string) (string, bool) {
-	path := ResolvePath(filepath.Join("skills", skillName, "ARTIFACT.md"))
+	path := ResolvePath(filepath.Join(".harness", "skills", skillName, "ARTIFACT.md"))
 	if !fileExists(path) {
 		return "", false
 	}

@@ -31,7 +31,7 @@ continue in the current context.
 Before each invocation, use:
 
 ```bash
-USAGE=$(python3 scripts/claude_context_usage.py 2>/dev/null || true)
+USAGE=$(python3 .harness/scripts/claude_context_usage.py 2>/dev/null || true)
 if [ -n "$USAGE" ]; then
   HARNESS_CONTEXT_USAGE_JSON="$USAGE" ./run-development.sh
 else
@@ -51,6 +51,6 @@ Start by writing:
 ```
 
 Continue until `stdout` is exactly `stop`. Then run
-`skills/session-report/generate_report.py --driver claude`; a reporting failure does not
+`.harness/skills/session-report/generate_report.py --driver claude`; a reporting failure does not
 invalidate the development run. Report that all features pass and include the report path or
 the reporting error.
