@@ -28,7 +28,7 @@ public class HarnessConfigTests : IDisposable
         Assert.Equal(HarnessConfig.Default, config);
         Assert.Equal(12, config.MaxSteps);
         Assert.Equal(0, config.MaxInstructionChars); // cost ceiling disabled by default
-        Assert.Equal(30000, config.TimeoutMs);       // time guard is always enabled
+        Assert.Equal(10 * 60_000, config.TimeoutMs);       // time guard is always enabled
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class HarnessConfigTests : IDisposable
 
         // A negative value falls back to the enabled default; timeout cannot be disabled.
         File.WriteAllText(ConfigPath, """{"timeoutMs":-5}""");
-        Assert.Equal(30000, HarnessConfig.Load().TimeoutMs);
+        Assert.Equal(10 * 60_000, HarnessConfig.Load().TimeoutMs);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public class HarnessConfigTests : IDisposable
         // edits the file to grant itself a huge timeout, the hard ceiling prevails.
         File.WriteAllText(ConfigPath, """{"timeoutMs":99999999}""");
 
-        Assert.Equal(5 * 60_000, HarnessConfig.Load().TimeoutMs);
+        Assert.Equal(10 * 60_000, HarnessConfig.Load().TimeoutMs);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class HarnessConfigTests : IDisposable
     {
         Environment.SetEnvironmentVariable("HARNESS_TIMEOUT_MS", "99999999");
 
-        Assert.Equal(5 * 60_000, HarnessConfig.Load().TimeoutMs);
+        Assert.Equal(10 * 60_000, HarnessConfig.Load().TimeoutMs);
     }
 
     [Fact]

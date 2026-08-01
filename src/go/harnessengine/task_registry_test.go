@@ -201,10 +201,19 @@ func TestDispatch_SlowTask_TimesOutAndReturnsStop(t *testing.T) {
 		t.Fatalf("expected stop, got %s", result)
 	}
 
-	// A later invocation remains terminal even if the workspace config is changed.
+	// Non-start commands remain terminal even if the workspace config is changed.
 	os.WriteFile("harness.json", []byte(`{"timeoutMs":0}`), 0o644)
 	ReloadConfig()
 	if result := Dispatch([]string{`{"type":"command","value":"slow"}`}, slow, nil, nil, nil); result != "stop" {
 		t.Fatalf("expected latched stop, got %s", result)
+	}
+
+	// An explicit start clears only the recoverable timeout latch.
+	resumed := Dispatch([]string{`{"type":"text","value":"start"}`}, testTasks(), nil, nil, nil)
+	if resumed != "PROMPT_START" || TerminalReason() != "" {
+		t.Fatalf("expected timeout recovery, got result=%q reason=%q", resumed, TerminalReason())
+	}
+	if result := Dispatch([]string{`{"type":"tool","value":"classify","args":["x"]}`}, testTasks(), nil, nil, nil); result == "stop" {
+		t.Fatal("expected command after timeout recovery to execute")
 	}
 }

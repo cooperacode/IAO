@@ -70,10 +70,10 @@ rust_prompt="${prompts[3]}"
 [[ "$(grep -Fc 'Envelope::new(envelope_type::COMMAND, "verify", vec![])' "$rust_prompt")" -ge 2 ]] \
   || fail "Rust verify repair prompts must return verify"
 
-grep -Fq '<bearings>' "$dotnet_prompt" || fail ".NET implement prompt must include bearings"
-grep -Fq '<bearings>' "$python_prompt" || fail "Python implement prompt must include bearings"
-grep -Fq '<bearings>' "$go_prompt" || fail "Go implement prompt must include bearings"
-grep -Fq '<bearings>' "$rust_prompt" || fail "Rust implement prompt must include bearings"
+grep -Fq 'implementation-context' "$dotnet_prompt" || fail ".NET implement prompt must include inline feature context"
+grep -Fq 'implementation-context' "$python_prompt" || fail "Python implement prompt must include inline feature context"
+grep -Fq 'implementation-context' "$go_prompt" || fail "Go implement prompt must include inline feature context"
+grep -Fq 'implementation-context' "$rust_prompt" || fail "Rust implement prompt must include inline feature context"
 
 if grep -Eq 'HandoffRetryPrompt|handoff_retry_prompt' \
   src/dotnet/Flows.Development/DevelopmentTasks.cs \

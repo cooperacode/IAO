@@ -28,13 +28,6 @@ def dispatch(
     max_steps: int | None = None,
     should_reset_on_start: Callable[[], bool] | None = None,
 ) -> str:
-    # A timeout/budget stop is terminal across process boundaries. Check this before
-    # handling `start`, otherwise the driver could reopen the run after a hard stop.
-    terminal = state_store.terminal_reason()
-    if terminal is not None:
-        print(f"[harness] run already stopped ({terminal}); refusing another turn.", file=sys.stderr)
-        return "stop"
-
     # Argv present → classic transport (backward compatible). Empty argv → reads the
     # envelope from the file-based inbox, the transport that eliminates the shell-quoting
     # hang (see inbox).
@@ -47,6 +40,17 @@ def dispatch(
     # corrective ERROR and remain available for inspection, not silently disappear.
     if from_inbox and envelope is not None:
         inbox.consume()
+
+    # Budget stops remain terminal. A timeout is recoverable only through an explicit
+    # `start`: the timed-out worker was abandoned with the previous process, and the
+    # driver is deliberately asking the flow to resume or restart.
+    terminal = state_store.terminal_reason()
+    if terminal is not None:
+        if terminal == "timeout" and envelope is not None and envelope.value == "start":
+            state_store.clear_terminal()
+        else:
+            print(f"[harness] run already stopped ({terminal}); refusing another turn.", file=sys.stderr)
+            return "stop"
 
     if envelope is not None and envelope.value == "start":
         # A new workflow starts from scratch — state and trace are truncated together. But a

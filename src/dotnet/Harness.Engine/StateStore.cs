@@ -141,5 +141,13 @@ public static class StateStore
         Save(state with { TerminalReason = reason });
     }
 
+    /// <summary>Clears a recoverable timeout latch after an explicit start.</summary>
+    public static void ClearTerminal()
+    {
+        var state = Load();
+        if (state.TerminalReason is not null)
+            Save(state with { TerminalReason = null });
+    }
+
     public static string? TerminalReason() => Load().TerminalReason;
 }

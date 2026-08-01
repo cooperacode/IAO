@@ -27,13 +27,6 @@ func Dispatch(
 	maxSteps *int,
 	shouldResetOnStart func() bool,
 ) string {
-	// A timeout/budget stop is terminal across process boundaries. Check this before
-	// handling `start`, otherwise the driver could reopen the run after a hard stop.
-	if terminal := TerminalReason(); terminal != "" {
-		fmt.Fprintf(os.Stderr, "[harness] run already stopped (%s); refusing another turn.\n", terminal)
-		return "stop"
-	}
-
 	// Argv present → classic transport (backward compatible). Empty argv → reads the
 	// envelope from the file-based inbox, the transport that eliminates the shell-quoting
 	// hang (see Inbox).
@@ -54,6 +47,18 @@ func Dispatch(
 	// corrective ERROR and remain available for inspection, not silently disappear.
 	if fromInbox && envelope != nil {
 		ConsumeInbox()
+	}
+
+	// Budget stops remain terminal. A timeout is recoverable only through an explicit
+	// `start`: the timed-out worker was abandoned with the previous process, and the
+	// driver is deliberately asking the flow to resume or restart.
+	if terminal := TerminalReason(); terminal != "" {
+		if terminal == "timeout" && envelope != nil && envelope.Value == "start" {
+			ClearTerminal()
+		} else {
+			fmt.Fprintf(os.Stderr, "[harness] run already stopped (%s); refusing another turn.\n", terminal)
+			return "stop"
+		}
 	}
 
 	if envelope != nil && envelope.Value == "start" {

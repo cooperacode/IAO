@@ -31,13 +31,6 @@ pub fn dispatch(
     max_steps: Option<i32>,
     should_reset_on_start: Option<&dyn Fn() -> bool>,
 ) -> String {
-    // A timeout/budget stop is terminal across process boundaries. Check this before
-    // handling `start`, otherwise the driver could reopen the run after a hard stop.
-    if let Some(terminal) = state_store::terminal_reason() {
-        eprintln!("[harness] run already stopped ({terminal}); refusing another turn.");
-        return "stop".to_string();
-    }
-
     // Argv present → classic transport (backward compatible). Empty argv → reads the
     // envelope from the file-based inbox, the transport that eliminates the shell quoting
     // hang (see inbox).
@@ -58,6 +51,22 @@ pub fn dispatch(
     // corrective ERROR and remain available for inspection, not vanish silently.
     if from_inbox && envelope.is_some() {
         inbox::consume();
+    }
+
+    // Budget stops remain terminal. A timeout is recoverable only through an explicit
+    // `start`: the timed-out worker was abandoned with the previous process, and the
+    // driver is deliberately asking the flow to resume or restart.
+    if let Some(terminal) = state_store::terminal_reason() {
+        if terminal == "timeout"
+            && envelope
+                .as_ref()
+                .is_some_and(|envelope| envelope.value == "start")
+        {
+            state_store::clear_terminal();
+        } else {
+            eprintln!("[harness] run already stopped ({terminal}); refusing another turn.");
+            return "stop".to_string();
+        }
     }
 
     if let Some(env) = &envelope {
@@ -583,6 +592,10 @@ mod tests {
 
         let mut slow: HashMap<String, Action> = HashMap::new();
         slow.insert(
+            "start".to_string(),
+            Arc::new(|_| "PROMPT_START".to_string()),
+        );
+        slow.insert(
             "slow".to_string(),
             Arc::new(|_| {
                 thread::sleep(Duration::from_millis(500));
@@ -604,7 +617,7 @@ mod tests {
         harness_config::reload();
 
         assert_eq!(result, "stop");
-        // A later invocation remains terminal even if the workspace config is changed.
+        // Non-start commands remain terminal even if the workspace config is changed.
         std::fs::write("harness.json", r#"{"timeoutMs":0}"#).unwrap();
         harness_config::reload();
         let later = dispatch(
@@ -615,5 +628,16 @@ mod tests {
             None,
         );
         assert_eq!(later, "stop");
+
+        // An explicit start clears only the recoverable timeout latch.
+        let resumed = dispatch(
+            &arg(r#"{"type":"text","value":"start"}"#),
+            &slow,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(resumed, "PROMPT_START");
+        assert!(state_store::terminal_reason().is_none());
     }
 }

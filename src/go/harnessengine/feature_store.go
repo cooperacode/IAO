@@ -22,29 +22,34 @@ const featureListFilePath = ".harness/feature_list.json"
 // every feature, so without a ceiling it silently inflates every future session's context.
 const DescriptionMaxChars = 700
 
+// ImplementationContextMaxChars is the ceiling on the inline context stored per feature.
+const ImplementationContextMaxChars = 4000
+
 // Feature is one item of the development backlog: priority (lower = higher), whether it
 // already passes, which other ids it depends on, a free-form description (up to
 // DescriptionMaxChars, reinjected into the `implement` prompt) and explicit reference codes
 // from the brief (e.g. "RF-003"; empty when the brief cites none).
 type Feature struct {
-	Id          int      `json:"id"`
-	Title       string   `json:"title"`
-	Priority    int      `json:"priority"`
-	Passes      bool     `json:"passes"`
-	DependsOn   []int    `json:"dependsOn"`
-	Description string   `json:"description"`
-	References  []string `json:"references"`
+	Id                    int      `json:"id"`
+	Title                 string   `json:"title"`
+	Priority              int      `json:"priority"`
+	Passes                bool     `json:"passes"`
+	DependsOn             []int    `json:"dependsOn"`
+	Description           string   `json:"description"`
+	References            []string `json:"references"`
+	ImplementationContext string   `json:"implementationContext"`
 }
 
 // rawFeature is the shape the driver returns from `plan` — Id is optional (reindexed by
 // order when absent/<=0), and Passes is never read from here: every feature is born pending.
 type rawFeature struct {
-	Id          int      `json:"id"`
-	Title       string   `json:"title"`
-	Priority    int      `json:"priority"`
-	DependsOn   []int    `json:"dependsOn"`
-	Description string   `json:"description"`
-	References  []string `json:"references"`
+	Id                    int      `json:"id"`
+	Title                 string   `json:"title"`
+	Priority              int      `json:"priority"`
+	DependsOn             []int    `json:"dependsOn"`
+	Description           string   `json:"description"`
+	References            []string `json:"references"`
+	ImplementationContext string   `json:"implementationContext"`
 }
 
 type featureList struct {
@@ -122,13 +127,14 @@ func ParseFeatures(rawJSON string) []Feature {
 			references = []string{}
 		}
 		reindexed[i] = Feature{
-			Id:          id,
-			Title:       f.Title,
-			Priority:    f.Priority,
-			Passes:      false,
-			DependsOn:   uniqueInts(dependsOn),
-			Description: truncateDescription(f.Description),
-			References:  uniqueStrings(references),
+			Id:                    id,
+			Title:                 f.Title,
+			Priority:              f.Priority,
+			Passes:                false,
+			DependsOn:             uniqueInts(dependsOn),
+			Description:           truncateDescription(f.Description),
+			References:            uniqueStrings(references),
+			ImplementationContext: truncateImplementationContext(f.ImplementationContext),
 		}
 	}
 
@@ -148,6 +154,14 @@ func truncateDescription(description string) string {
 		return string(runes[:DescriptionMaxChars])
 	}
 	return description
+}
+
+func truncateImplementationContext(context string) string {
+	runes := []rune(context)
+	if len(runes) > ImplementationContextMaxChars {
+		return string(runes[:ImplementationContextMaxChars])
+	}
+	return context
 }
 
 func uniqueInts(values []int) []int {

@@ -7,7 +7,8 @@ description: "implement exactly the selected feature with the smallest complete,
 
 Implement only the selected feature.
 
-- Use the feature description, references, brief, and bearings only as scope context.
+- Use only the current feature's description, references, and inline implementation context as
+  scope context. The full brief and bearings are not part of this session's contract.
 - Make the smallest complete change; avoid unrelated cleanup or work for later features.
 - Add or update the tests needed to demonstrate the selected behavior.
 - Leave the target building. Keep long command output in `.harness/logs/` and inspect only

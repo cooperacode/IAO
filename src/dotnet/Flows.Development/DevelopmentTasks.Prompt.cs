@@ -18,46 +18,26 @@ public static partial class DevelopmentTasks
     // embedded in the prompts via {FeaturesShape} so it doesn't collide with $"""..."""
     // interpolation.
     private const string FeaturesShape =
-        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]""";
+        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]""";
 
-    // Reinjects description/references (FeatureStore.Feature) into the implement prompt —
-    // the only point of the loop that receives the whole Feature object, not just
-    // title/id via StateStore. "" when the feature has neither (e.g. a feature_list.json
-    // from a version before these fields existed) — the block disappears, it doesn't show
-    // up empty.
+    // Reinjects the current feature's bounded inline context into implement/fix prompts.
     private static string FeatureContextBlock(Feature feature)
     {
-        if (string.IsNullOrWhiteSpace(feature.Description) && feature.Refs.Length == 0)
+        if (string.IsNullOrWhiteSpace(feature.Description)
+            && feature.Refs.Length == 0
+            && string.IsNullOrWhiteSpace(feature.ImplementationContext))
             return "";
 
         var references = feature.Refs.Length > 0 ? string.Join(", ", feature.Refs) : "none";
+        var implementationContext = string.IsNullOrWhiteSpace(feature.ImplementationContext)
+            ? ""
+            : $"<implementation-context>{feature.ImplementationContext.Replace("\r\n", "\\n").Replace("\n", "\\n")}</implementation-context>";
         return $"""
             Description: {feature.Description}
             Brief references: {references}
+            {implementationContext}
 
             """;
-    }
-
-    // Reinjects the persisted brief (ArtifactStore, BriefArtifactName) at the point
-    // of the loop that actually reasons about "what to build" — implement —
-    // and only there: smoke/pick/verify/fix/handoff repair setup or do
-    // bookkeeping, with no need for scope context. "" when the run started in interactive mode (no
-    // docs/) or is a resume of a run from before this feature — in that case the block
-    // disappears, it doesn't stay empty. Same treatment as the skills
-    // (PromptFormatter.ReadSkills): line breaks become the literal "\n" marker and the
-    // whole block ends up on a single line — the brief content doesn't need to preserve
-    // its original Markdown formatting here, just be available. Always reinjecting the
-    // SAME text, byte for byte, is also the lowest-cost bet to benefit from the driver's
-    // underlying provider's prompt cache (not guaranteed: the harness only controls the
-    // emitted text, not whether the driver marks a cache breakpoint there).
-    private static string BriefBlock()
-    {
-        var brief = ArtifactStore.Read(BriefArtifactName);
-        if (string.IsNullOrWhiteSpace(brief))
-            return "";
-
-        var singleLine = brief.Replace("\r\n", "\\n").Replace("\n", "\\n");
-        return $"<brief>{singleLine}</brief>";
     }
 
     // --- session 0: initializer -----------------------------------------
@@ -111,8 +91,6 @@ public static partial class DevelopmentTasks
             input: $"""
             {ContextPolicy.NewFeaturePrefix()}
             Follow `dev-implement` for this feature:
-            {BriefBlock()}
-            {BearingsBlock()}
             Feature #{feature.Id} (priority {feature.Priority}): {feature.Title}
             {FeatureContextBlock(feature)}
             Target directory: {RunConfigStore.Load().TargetDir}
@@ -121,12 +99,6 @@ public static partial class DevelopmentTasks
             """,
             output: new Envelope(EnvelopeType.Command, "implement", []),
             skills: PromptFormatter.Skills("dev-implement"));
-
-    private static string BearingsBlock()
-    {
-        var bearings = State("current_bearings");
-        return string.IsNullOrWhiteSpace(bearings) ? "" : $"<bearings>{bearings}</bearings>";
-    }
 
     private static string SmokeRetryPrompt(string failure) =>
         PromptFormatter.Format(
@@ -160,6 +132,11 @@ public static partial class DevelopmentTasks
 
     private static string FixPrompt(string? verifyFailure = null)
     {
+        var featureContext = int.TryParse(State(CurrentFeatureIdKey), out var featureId)
+            ? FeatureStore.Load().FirstOrDefault(f => f.Id == featureId) is { } feature
+                ? FeatureContextBlock(feature)
+                : ""
+            : "";
         var failure = string.IsNullOrWhiteSpace(verifyFailure)
             ? ""
             : $"""
@@ -170,7 +147,8 @@ public static partial class DevelopmentTasks
         return PromptFormatter.Format(
             input: $"""
             Verification FAILED on feature #{State(CurrentFeatureIdKey)}
-            ({State(CurrentFeatureTitleKey)}). {failure}Follow `dev-implement` to fix only this
+            ({State(CurrentFeatureTitleKey)}).
+            {featureContext}{failure}Follow `dev-implement` to fix only this
             feature. Return `implement` without arguments; the harness derives the new summary
             from Git.
             """,

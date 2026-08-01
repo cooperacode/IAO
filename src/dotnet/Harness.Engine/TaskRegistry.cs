@@ -16,15 +16,6 @@ public static class TaskRegistry
         int? maxSteps = null,
         Func<bool>? shouldResetOnStart = null)
     {
-        // A timeout/budget stop is terminal across process boundaries. Check this before
-        // handling `start`, otherwise the driver could reopen the run after a hard stop.
-        var terminal = StateStore.TerminalReason();
-        if (terminal is not null)
-        {
-            Console.Error.WriteLine($"[harness] run already stopped ({terminal}); refusing another turn.");
-            return "stop";
-        }
-
         // Argv present → classic transport (backward compatible). Empty argv → reads the
         // envelope from the file-based inbox, the transport that eliminates the shell-quoting
         // hang (see Inbox).
@@ -39,6 +30,21 @@ public static class TaskRegistry
         // corrective ERROR and remain available for inspection, not silently disappear.
         if (fromInbox && envelope is not null)
             Inbox.Consume();
+
+        // Budget stops remain terminal. A timeout is recoverable only through an explicit
+        // `start`: the timed-out worker was abandoned with the previous process, and the
+        // driver is deliberately asking the flow to resume or restart.
+        var terminal = StateStore.TerminalReason();
+        if (terminal is not null)
+        {
+            if (terminal == "timeout" && envelope?.Value == "start")
+                StateStore.ClearTerminal();
+            else
+            {
+                Console.Error.WriteLine($"[harness] run already stopped ({terminal}); refusing another turn.");
+                return "stop";
+            }
+        }
 
         if (envelope is not null && envelope.Value == "start")
         {

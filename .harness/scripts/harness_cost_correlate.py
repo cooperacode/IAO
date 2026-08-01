@@ -281,7 +281,7 @@ class CodexBackend(UsageBackend):
             print(f"CODEX_HOME not found: {home}", file=sys.stderr)
             sys.exit(1)
 
-        repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parent.parent)
+        repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parents[2])
         warnings: list[str] = []
         self.session_filter = args.session
         self.session_tree = args.session_tree
@@ -371,7 +371,7 @@ class CopilotBackend(UsageBackend):
             print(f"VS Code User directory not found: {user_dir}", file=sys.stderr)
             sys.exit(1)
 
-        repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parent.parent)
+        repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parents[2])
         warnings: list[str] = []
         events = [
             UsageEvent(

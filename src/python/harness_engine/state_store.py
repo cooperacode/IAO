@@ -114,9 +114,16 @@ def get_context() -> dict[str, str] | None:
 
 
 def mark_terminal(reason: str) -> None:
-    """Latches a hard-stop reason across the next fresh-process invocation."""
+    """Latches a hard-stop reason across fresh-process invocations."""
     state = load()
     save(replace(state, terminal_reason=reason))
+
+
+def clear_terminal() -> None:
+    """Clears a recoverable timeout latch when the driver explicitly starts again."""
+    state = load()
+    if state.terminal_reason is not None:
+        save(replace(state, terminal_reason=None))
 
 
 def terminal_reason() -> str | None:

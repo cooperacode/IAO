@@ -13,7 +13,7 @@ func TestConfig_Load_MissingFile_UsesDefaults(t *testing.T) {
 	if config != DefaultHarnessConfig() {
 		t.Fatalf("unexpected config: %+v", config)
 	}
-	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.TimeoutMs != 30_000 {
+	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.TimeoutMs != 10*60_000 {
 		t.Fatalf("unexpected config: %+v", config)
 	}
 }
@@ -28,7 +28,7 @@ func TestConfig_Load_WithTimeout_ReadsAndNormalizes(t *testing.T) {
 
 	// Negative value falls back to the enabled default; timeout cannot be disabled.
 	os.WriteFile("harness.json", []byte(`{"timeoutMs":-5}`), 0o644)
-	if got := LoadConfig().TimeoutMs; got != 30_000 {
+	if got := LoadConfig().TimeoutMs; got != 10*60_000 {
 		t.Fatalf("unexpected timeout: %d", got)
 	}
 }
@@ -72,7 +72,7 @@ func TestConfig_Load_TimeoutAboveCeiling_ClampsToMaximum(t *testing.T) {
 
 	os.WriteFile("harness.json", []byte(`{"timeoutMs":99999999}`), 0o644)
 
-	if got := LoadConfig().TimeoutMs; got != 5*60_000 {
+	if got := LoadConfig().TimeoutMs; got != 10*60_000 {
 		t.Fatalf("unexpected timeout: %d", got)
 	}
 }
@@ -93,7 +93,7 @@ func TestConfig_Load_EnvVar_AlsoRespectsCeiling(t *testing.T) {
 
 	t.Setenv("HARNESS_TIMEOUT_MS", "99999999")
 
-	if got := LoadConfig().TimeoutMs; got != 5*60_000 {
+	if got := LoadConfig().TimeoutMs; got != 10*60_000 {
 		t.Fatalf("unexpected timeout: %d", got)
 	}
 }

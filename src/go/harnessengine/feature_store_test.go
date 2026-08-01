@@ -6,7 +6,7 @@ import (
 )
 
 func feature(id int, title string, priority int, passes bool) Feature {
-	return Feature{Id: id, Title: title, Priority: priority, Passes: passes, DependsOn: []int{}, References: []string{}}
+	return Feature{Id: id, Title: title, Priority: priority, Passes: passes, DependsOn: []int{}, References: []string{}, ImplementationContext: ""}
 }
 
 func featureDep(id int, title string, priority int, passes bool, deps []int) Feature {
@@ -85,7 +85,7 @@ func TestFeatures_ParseMissingDescriptionAndReferences_NormalizeToEmpty(t *testi
 
 	features := ParseFeatures(`[{"id":1,"title":"X","priority":1}]`)
 
-	if features[0].Description != "" || len(features[0].References) != 0 {
+	if features[0].Description != "" || len(features[0].References) != 0 || features[0].ImplementationContext != "" {
 		t.Fatalf("unexpected feature: %+v", features[0])
 	}
 }
@@ -93,10 +93,13 @@ func TestFeatures_ParseMissingDescriptionAndReferences_NormalizeToEmpty(t *testi
 func TestFeatures_ParsePreservesDescriptionAndReferences(t *testing.T) {
 	isolate(t)
 
-	features := ParseFeatures(`[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]`)
+	features := ParseFeatures(`[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"],"implementationContext":"inline Y"}]`)
 
 	if features[0].Description != "does Y" || len(features[0].References) != 1 || features[0].References[0] != "RF-003" {
 		t.Fatalf("unexpected feature: %+v", features[0])
+	}
+	if features[0].ImplementationContext != "inline Y" {
+		t.Fatalf("unexpected implementation context: %+v", features[0])
 	}
 }
 
@@ -108,6 +111,17 @@ func TestFeatures_ParseDescriptionAboveCeiling_IsTruncated(t *testing.T) {
 
 	if len([]rune(features[0].Description)) != DescriptionMaxChars {
 		t.Fatalf("unexpected length: %d", len([]rune(features[0].Description)))
+	}
+}
+
+func TestFeatures_ParseImplementationContextAboveCeiling_IsTruncated(t *testing.T) {
+	isolate(t)
+
+	longContext := strings.Repeat("a", ImplementationContextMaxChars+50)
+	features := ParseFeatures(`[{"id":1,"title":"X","priority":1,"implementationContext":"` + longContext + `"}]`)
+
+	if len([]rune(features[0].ImplementationContext)) != ImplementationContextMaxChars {
+		t.Fatalf("unexpected length: %d", len([]rune(features[0].ImplementationContext)))
 	}
 }
 

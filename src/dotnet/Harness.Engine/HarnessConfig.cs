@@ -32,7 +32,7 @@ public record HarnessConfig(
         MaxInstructionChars: 0,
         DocsMaxChars: 40_000,
         DocsFolder: "docs",
-        TimeoutMs: 30_000,
+        TimeoutMs: 10 * 60_000,
         ContextResetMode: "adaptive",
         ContextResetThreshold: 0.70,
         ContextFallbackFeatures: 1);
@@ -43,7 +43,7 @@ public record HarnessConfig(
     // below). harness.json lives in the working directory the supervised agent itself
     // controls: without this ceiling, the agent could edit the file to grant itself an
     // arbitrarily high timeout and never get cut off by the time guard (see TaskRegistry).
-    private const int MaxAllowedTimeoutMs = 5 * 60_000;
+    private const int MaxAllowedTimeoutMs = 10 * 60_000;
     private const int MinEnabledTimeoutMs = 1;
 
     // When set, overrides harness.json's timeoutMs. Unlike the file, the env var is set by

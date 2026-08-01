@@ -5,7 +5,7 @@ trace. Off (0) by default; enabled via harness.json."""
 import time
 from pathlib import Path
 
-from harness_engine import harness_config, task_registry, trace
+from harness_engine import harness_config, state_store, task_registry, trace
 
 CONFIG_PATH = "harness.json"
 
@@ -16,6 +16,7 @@ def _slow(_e):
 
 
 TASKS = {
+    "start": lambda _e: "PROMPT_START",
     "fast": lambda _e: "PROMPT_FAST",
     "slow": _slow,
 }
@@ -34,10 +35,15 @@ def test_dispatch_task_lenta_alem_do_teto_corta_com_timeout():
     assert result == "stop"
     assert trace.load()[-1].outcome == trace.TraceOutcome.TIMEOUT
 
-    # A later invocation must remain terminal even if the workspace config is changed.
+    # Non-start commands remain terminal even if the workspace config is changed.
     Path(CONFIG_PATH).write_text('{"timeoutMs":0}')
     harness_config.reload()
     assert task_registry.dispatch(['{"type":"tool","value":"fast"}'], TASKS) == "stop"
+
+    # An explicit start clears only the recoverable timeout latch.
+    assert task_registry.dispatch(['{"type":"text","value":"start"}'], TASKS) == "PROMPT_START"
+    assert state_store.terminal_reason() is None
+    assert task_registry.dispatch(['{"type":"tool","value":"fast"}'], TASKS) == "PROMPT_FAST"
 
 
 def test_dispatch_task_rapida_dentro_do_teto_executa_normalmente():

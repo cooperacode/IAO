@@ -11,6 +11,7 @@ public class TimeoutGuardTests : IDisposable
 
     private static readonly Dictionary<string, Func<Envelope?, string>> Tasks = new()
     {
+        ["start"] = _ => "PROMPT_START",
         ["fast"] = _ => "PROMPT_FAST",
         ["slow"] = _ => { Thread.Sleep(500); return "PROMPT_SLOW"; },
     };
@@ -43,10 +44,15 @@ public class TimeoutGuardTests : IDisposable
         Assert.Equal("stop", result);
         Assert.Equal(TraceOutcome.Timeout, Trace.Load()[^1].Outcome);
 
-        // A later invocation remains terminal even if the workspace config is changed.
+        // Non-start commands remain terminal even if the workspace config is changed.
         File.WriteAllText(ConfigPath, """{"timeoutMs":0}""");
         HarnessConfig.Reload();
         Assert.Equal("stop", TaskRegistry.Dispatch(["""{"type":"tool","value":"fast"}"""], Tasks));
+
+        // An explicit start clears only the recoverable timeout latch.
+        Assert.Equal("PROMPT_START", TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], Tasks));
+        Assert.Null(StateStore.TerminalReason());
+        Assert.Equal("PROMPT_FAST", TaskRegistry.Dispatch(["""{"type":"tool","value":"fast"}"""], Tasks));
     }
 
     [Fact]

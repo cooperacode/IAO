@@ -70,15 +70,18 @@ def test_parse_description_e_references_ausentes_normalizam_para_vazio():
 
     assert features[0].description == ""
     assert features[0].refs == ()
+    assert features[0].implementation_context == ""
 
 
 def test_parse_preserva_description_e_references():
     features = feature_store.parse(
-        '[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]'
+        '[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"],'
+        '"implementationContext":"inline Y"}]'
     )
 
     assert features[0].description == "does Y"
     assert features[0].refs == ("RF-003",)
+    assert features[0].implementation_context == "inline Y"
 
 
 def test_parse_description_acima_do_teto_e_truncada():
@@ -89,6 +92,16 @@ def test_parse_description_acima_do_teto_e_truncada():
     )
 
     assert len(features[0].description) == feature_store.DESCRIPTION_MAX_CHARS
+
+
+def test_parse_implementation_context_acima_do_teto_e_truncado():
+    long_context = "a" * (feature_store.IMPLEMENTATION_CONTEXT_MAX_CHARS + 50)
+
+    features = feature_store.parse(
+        f'[{{"id":1,"title":"X","priority":1,"implementationContext":"{long_context}"}}]'
+    )
+
+    assert len(features[0].implementation_context) == feature_store.IMPLEMENTATION_CONTEXT_MAX_CHARS
 
 
 def test_parse_depends_on_ciclico_retorna_vazio_sem_lancar():

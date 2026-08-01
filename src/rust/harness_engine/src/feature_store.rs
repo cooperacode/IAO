@@ -18,6 +18,8 @@ const FILE_PATH: &str = ".harness/feature_list.json";
 /// driver: the description is reinjected into the `implement` prompt for every feature, so
 /// without a ceiling it would silently inflate the context of every future session.
 pub const DESCRIPTION_MAX_CHARS: usize = 700;
+/// Character ceiling for the inline implementation context persisted per feature.
+pub const IMPLEMENTATION_CONTEXT_MAX_CHARS: usize = 4000;
 
 /// A feature from the development backlog: priority (lower = higher), whether it already
 /// passes, which others (by id) it depends on, a free-form description (up to
@@ -37,6 +39,8 @@ pub struct Feature {
     pub description: String,
     #[serde(default)]
     pub references: Vec<String>,
+    #[serde(rename = "implementationContext", default)]
+    pub implementation_context: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,6 +62,8 @@ struct RawFeature {
     description: String,
     #[serde(default)]
     references: Vec<String>,
+    #[serde(rename = "implementationContext", default)]
+    implementation_context: String,
 }
 
 /// Overwrites the entire list — used by `plan` (session 0) and by `mark_passed`.
@@ -119,6 +125,7 @@ pub fn parse(json: &str) -> Vec<Feature> {
             depends_on: unique_i32(f.depends_on),
             description: truncate_description(&f.description),
             references: unique_strings(f.references),
+            implementation_context: truncate_implementation_context(&f.implementation_context),
         })})
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default();
@@ -148,6 +155,14 @@ fn truncate_description(description: &str) -> String {
         description.chars().take(DESCRIPTION_MAX_CHARS).collect()
     } else {
         description.to_string()
+    }
+}
+
+fn truncate_implementation_context(context: &str) -> String {
+    if context.chars().count() > IMPLEMENTATION_CONTEXT_MAX_CHARS {
+        context.chars().take(IMPLEMENTATION_CONTEXT_MAX_CHARS).collect()
+    } else {
+        context.to_string()
     }
 }
 
@@ -335,6 +350,7 @@ mod tests {
             depends_on: Vec::new(),
             description: String::new(),
             references: Vec::new(),
+            implementation_context: String::new(),
         }
     }
 
@@ -430,6 +446,7 @@ mod tests {
 
         assert_eq!(features[0].description, "");
         assert!(features[0].references.is_empty());
+        assert_eq!(features[0].implementation_context, "");
     }
 
     #[test]
@@ -438,11 +455,12 @@ mod tests {
         let _iso = Isolated::new();
 
         let features = parse(
-            r#"[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]"#,
+            r#"[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"],"implementationContext":"inline Y"}]"#,
         );
 
         assert_eq!(features[0].description, "does Y");
         assert_eq!(features[0].references, vec!["RF-003".to_string()]);
+        assert_eq!(features[0].implementation_context, "inline Y");
     }
 
     #[test]
@@ -456,6 +474,22 @@ mod tests {
         ));
 
         assert_eq!(features[0].description.chars().count(), DESCRIPTION_MAX_CHARS);
+    }
+
+    #[test]
+    fn parse_implementation_context_acima_do_teto_e_truncado() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        let long_context = "a".repeat(IMPLEMENTATION_CONTEXT_MAX_CHARS + 50);
+
+        let features = parse(&format!(
+            r#"[{{"id":1,"title":"X","priority":1,"implementationContext":"{long_context}"}}]"#
+        ));
+
+        assert_eq!(
+            features[0].implementation_context.chars().count(),
+            IMPLEMENTATION_CONTEXT_MAX_CHARS
+        );
     }
 
     #[test]

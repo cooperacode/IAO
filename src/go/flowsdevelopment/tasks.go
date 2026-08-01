@@ -44,8 +44,8 @@ const (
 	currentBearingsKey       = "current_bearings"
 	featureStepsKey          = "feature_steps"
 
-	// briefArtifactName is the brief artifact's name in the ArtifactStore (.harness/brief.md)
-	// — persisted in Start() so it can be reinjected into the implement prompt.
+	// briefArtifactName is retained in the ArtifactStore (.harness/brief.md) for auditability
+	// and compatibility; implementation sessions use each feature's bounded context.
 	briefArtifactName = "brief"
 )
 
@@ -88,9 +88,8 @@ func Start() string {
 	}
 
 	content, files := engine.ReadDocs(docsFolder())
-	// Persisted to be reinjected into the implement prompt — before this
-	// feature, "content" was just a local variable of this turn, discarded as soon as the
-	// initializer finished.
+	// Persisted for auditability and compatibility; implementation sessions use the bounded
+	// context copied into each feature by the planner.
 	engine.WriteArtifact(briefArtifactName, content)
 	engine.SetState("origem", "docs")
 	return InitializerPrompt(content, files)

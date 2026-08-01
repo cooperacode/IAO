@@ -145,21 +145,21 @@ def test_start_novo_run_sem_docs_apaga_brief_do_run_anterior():
     assert artifact_store.read("brief") == ""
 
 
-def test_plan_retorna_bearings_com_o_brief_reinjetado():
+def test_plan_retorna_implement_sem_reinjetar_o_brief():
     _given_docs_brief("brief do topico A")
     tasks.start()
 
     result = _plan()
 
-    assert "brief do topico A" in result
+    assert "brief do topico A" not in result
 
 
-def test_pick_retorna_implement_com_o_brief_reinjetado():
+def test_pick_retorna_implement_sem_reinjetar_o_brief():
     _given_docs_brief("brief do topico A")
     tasks.start()
     result = _plan()
 
-    assert "brief do topico A" in result
+    assert "brief do topico A" not in result
 
 
 def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
@@ -173,7 +173,8 @@ def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
 
 def test_pick_retorna_implement_com_description_e_references_da_feature():
     json_str = (
-        '[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},'
+        '[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],'
+        '"implementationContext":"inline X"},'
         '{"id":2,"title":"B","priority":1}]'
     )
     Path("src/app").mkdir(parents=True, exist_ok=True)
@@ -184,6 +185,8 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
 
     assert "Description: faz X" in result
     assert "Brief references: RF-003" in result
+    assert "<implementation-context>inline X" in result
+    assert "<brief>" not in result
 
 
 def test_pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto():

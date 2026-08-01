@@ -3,13 +3,13 @@
 //! same name the driver fills in and returns as the next envelope's arg.
 
 use harness_engine::envelope::{Envelope, envelope_type};
-use harness_engine::feature_store::Feature;
+use harness_engine::feature_store::{self, Feature};
 use harness_engine::{
-    artifact_store, context_policy, prompt_formatter, run_config_store, state_store,
+    context_policy, prompt_formatter, run_config_store, state_store,
 };
 
 use crate::tasks::{
-    BRIEF_ARTIFACT_NAME, CURRENT_BEARINGS_KEY, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY,
+    CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY,
 };
 
 // Output tokens (the driver stores the step's artifact in these and returns them as args).
@@ -17,14 +17,14 @@ const FEATURES: &str = "$FEATURES";
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
 
-const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]"#;
+const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]"#;
 
-// Reinjects description/references (feature_store::Feature) into the implement prompt —
-// the only point of the loop that receives the whole Feature object, not just title/id via
-// state_store. "" when the feature has neither (e.g. a feature_list.json from a version
-// before these fields existed) — the block disappears, it doesn't show up empty.
+// Returns the current feature's bounded inline context for implement/fix prompts.
 fn feature_context_block(feature: &Feature) -> String {
-    if feature.description.trim().is_empty() && feature.references.is_empty() {
+    if feature.description.trim().is_empty()
+        && feature.references.is_empty()
+        && feature.implementation_context.trim().is_empty()
+    {
         return "\n".to_string();
     }
 
@@ -33,8 +33,17 @@ fn feature_context_block(feature: &Feature) -> String {
     } else {
         feature.references.join(", ")
     };
+    let context = feature
+        .implementation_context
+        .replace("\r\n", "\\n")
+        .replace('\n', "\\n");
+    let implementation_context = if context.trim().is_empty() {
+        String::new()
+    } else {
+        format!("<implementation-context>{context}</implementation-context>\n")
+    };
     format!(
-        "Description: {}\nBrief references: {references}\n\n",
+        "Description: {}\nBrief references: {references}\n{implementation_context}\n",
         feature.description
     )
 }
@@ -43,35 +52,15 @@ fn state(key: &str) -> String {
     state_store::get(key).unwrap_or_default()
 }
 
-// Reinjects the persisted brief (artifact_store, BRIEF_ARTIFACT_NAME) at the point of
-// the loop that actually reasons about "what to build" — implement. The
-// smoke/pick/verify/fix/handoff steps only repair setup or do bookkeeping, with no need
-// for scope context. Returns a blank line (the same paragraph break as before this
-// feature) when there's no persisted brief — interactive mode, or resuming a run from
-// before this feature — or the "<brief>" block when there is one. Same treatment as the
-// skills (prompt_formatter::read_skills): line breaks become the literal "\n" marker and
-// the whole block ends up on a single line — the brief content doesn't need to preserve
-// its original Markdown formatting here, just be available. Always reinjecting the SAME
-// text, byte for byte, is also the lowest-cost bet to benefit from the driver's underlying
-// provider's prompt cache (not guaranteed: the harness only controls the emitted text, not
-// whether the driver marks a cache breakpoint there).
-fn brief_block() -> String {
-    let brief = artifact_store::read(BRIEF_ARTIFACT_NAME);
-    if brief.trim().is_empty() {
-        return "\n".to_string();
-    }
-
-    let single_line = brief.replace("\r\n", "\\n").replace('\n', "\\n");
-    format!("<brief>{single_line}</brief>\n")
-}
-
-fn bearings_block() -> String {
-    let bearings = state(CURRENT_BEARINGS_KEY);
-    if bearings.trim().is_empty() {
-        String::new()
-    } else {
-        format!("<bearings>{bearings}</bearings>\n")
-    }
+fn current_feature_context_block() -> String {
+    let Ok(feature_id) = state(CURRENT_FEATURE_ID_KEY).parse::<i32>() else {
+        return String::new();
+    };
+    feature_store::load()
+        .into_iter()
+        .find(|feature| feature.id == feature_id)
+        .map(|feature| feature_context_block(&feature))
+        .unwrap_or_default()
 }
 
 // --- session 0: initializer -------------------------------------------------
@@ -169,14 +158,10 @@ pub fn smoke_fix_prompt(failure: &str) -> String {
 
 pub fn implement_prompt(feature: &Feature) -> String {
     let target_dir = run_config_store::load().target_dir;
-    let brief = brief_block();
-    let bearings = bearings_block();
     let context = feature_context_block(feature);
     let input = format!(
         "{}\
 Follow `dev-implement` for this feature:\n\
-{brief}\
-{bearings}\
 Feature #{} (priority {}): {}\n\
 {context}\
 Target directory: {target_dir}\n\
@@ -234,10 +219,12 @@ pub fn fix_prompt(verify_failure: Option<&str>) -> String {
 
     let input = format!(
         "Verification FAILED on feature #{}\n\
-({}). {failure}Follow `dev-implement` to fix only this feature.\n\
+({}).\n{}{}Follow `dev-implement` to fix only this feature.\n\
 Return `implement` without arguments; the harness derives the new summary from Git.",
         state(CURRENT_FEATURE_ID_KEY),
-        state(CURRENT_FEATURE_TITLE_KEY)
+        state(CURRENT_FEATURE_TITLE_KEY),
+        current_feature_context_block(),
+        failure
     );
 
     prompt_formatter::format(

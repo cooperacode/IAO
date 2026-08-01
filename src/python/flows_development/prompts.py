@@ -6,7 +6,7 @@ same name the driver fills in and returns as the next envelope's arg.
 from __future__ import annotations
 
 from flows_development import state_keys
-from harness_engine import artifact_store, context_policy, prompt_formatter, run_config_store, state_store
+from harness_engine import context_policy, feature_store, prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 
@@ -17,7 +17,7 @@ TARGET_DIR = "$TARGET_DIR"
 
 # Shape of the feature_list embedded in the prompts.
 FEATURES_SHAPE = (
-    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]'
+    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]'
 )
 
 
@@ -25,42 +25,23 @@ def _state(key: str) -> str:
     return state_store.get(key) or ""
 
 
-def _brief_block() -> str:
-    """Reinjects the persisted brief (artifact_store, state_keys.BRIEF_ARTIFACT_NAME) at the
-    point of the loop that actually reasons about "what to build" — implement. The
-    smoke/pick/verify/fix/handoff steps only repair setup or do
-    bookkeeping, with no need for scope context. Returns a blank line (the same paragraph
-    break as before this feature) when there's no persisted brief — interactive mode, or
-    resuming a run from before this feature —, or the "<brief>" block when there is one.
-    Same treatment as the skills (prompt_formatter._read_skills): line breaks become the
-    literal "\\n" marker and the whole block ends up on a single line — the brief content
-    doesn't need to preserve its original Markdown formatting here, just be available.
-    Always reinjecting the SAME text, byte for byte, is also the lowest-cost bet to
-    benefit from the driver's underlying provider's prompt cache (not guaranteed: the
-    harness only controls the emitted text, not whether the driver marks a cache
-    breakpoint there)."""
-    brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME)
-    if not brief.strip():
-        return "\n"
-    single_line = brief.replace("\r\n", "\\n").replace("\n", "\\n")
-    return f"<brief>{single_line}</brief>\n"
-
-
-def _bearings_block() -> str:
-    bearings = _state(state_keys.CURRENT_BEARINGS)
-    return f"<bearings>{bearings}</bearings>\n" if bearings.strip() else ""
-
-
 def _feature_context_block(feature: Feature) -> str:
-    """Reinjects description/references (harness_engine.feature_store.Feature) into the
-    implement prompt — the only point of the loop that receives the whole Feature object,
-    not just title/id via state_store. Returns a blank line (the same paragraph break as
-    before this feature) when the feature has neither — e.g. a feature_list.json from a
-    version before these fields existed — the block disappears, it doesn't show up empty."""
-    if not feature.description.strip() and not feature.refs:
+    """Returns the bounded inline context for implement/fix prompts."""
+    if not feature.description.strip() and not feature.refs and not feature.implementation_context.strip():
         return "\n"
     references = ", ".join(feature.refs) if feature.refs else "none"
-    return f"Description: {feature.description}\nBrief references: {references}\n\n"
+    context = feature.implementation_context.replace("\r\n", "\\n").replace("\n", "\\n")
+    context_block = f"<implementation-context>{context}</implementation-context>\n" if context.strip() else ""
+    return f"Description: {feature.description}\nBrief references: {references}\n{context_block}\n"
+
+
+def _current_feature_context_block() -> str:
+    try:
+        feature_id = int(_state(state_keys.CURRENT_FEATURE_ID))
+    except ValueError:
+        return ""
+    feature = next((item for item in feature_store.load() if item.id == feature_id), None)
+    return _feature_context_block(feature) if feature is not None else ""
 
 
 # --- session 0: initializer -------------------------------------------------
@@ -123,13 +104,11 @@ will rerun `init.sh` and decide from its exit code."""
 
 
 def implement_prompt(feature: Feature) -> str:
-    brief = _brief_block()
-    bearings = _bearings_block()
     context = _feature_context_block(feature)
     input_text = f"""{context_policy.new_feature_prefix()}
 
 Follow `dev-implement` for this feature:
-{brief}{bearings}Feature #{feature.id} (priority {feature.priority}): {feature.title}
+Feature #{feature.id} (priority {feature.priority}): {feature.title}
 {context}Target directory: {run_config_store.load().target_dir}
 
 Return `implement` without arguments when done. The harness derives the summary from Git."""
@@ -174,7 +153,8 @@ def fix_prompt(verify_failure: str | None = None) -> str:
 
 """
     input_text = f"""Verification FAILED on feature #{_state(state_keys.CURRENT_FEATURE_ID)}
-({_state(state_keys.CURRENT_FEATURE_TITLE)}). {failure}Follow `dev-implement` to fix only this
+({_state(state_keys.CURRENT_FEATURE_TITLE)}).
+{_current_feature_context_block()}{failure}Follow `dev-implement` to fix only this
 feature. Return `implement` without arguments; the harness derives the new summary from Git."""
     return prompt_formatter.format(
         input_text,

@@ -140,6 +140,17 @@ pub fn mark_terminal(reason: &str) {
     });
 }
 
+/// Clears a recoverable timeout latch after an explicit start.
+pub fn clear_terminal() {
+    let state = load();
+    if state.terminal_reason.is_some() {
+        save(&HarnessState {
+            terminal_reason: None,
+            ..state
+        });
+    }
+}
+
 /// Returns the latched hard-stop reason, if any.
 pub fn terminal_reason() -> Option<String> {
     load().terminal_reason

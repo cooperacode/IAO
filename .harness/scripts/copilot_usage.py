@@ -126,7 +126,8 @@ def default_vscode_user_dir() -> Path:
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    # This script lives in `.harness/scripts`; the repository is three levels up.
+    return Path(__file__).resolve().parents[2]
 
 
 def _resolve(p: str | Path) -> Path:

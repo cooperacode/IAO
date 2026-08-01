@@ -114,16 +114,18 @@ public class FeatureStoreTests : IDisposable
 
         Assert.Equal("", features[0].Description);
         Assert.Empty(features[0].Refs);
+        Assert.Equal("", features[0].ImplementationContext);
     }
 
     [Fact]
     public void Parse_PreservaDescriptionEReferences()
     {
         var features = FeatureStore.Parse(
-            """[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"]}]""");
+            """[{"id":1,"title":"X","priority":1,"description":"does Y","references":["RF-003"],"implementationContext":"inline Y"}]""");
 
         Assert.Equal("does Y", features[0].Description);
         Assert.Equal(["RF-003"], features[0].Refs);
+        Assert.Equal("inline Y", features[0].ImplementationContext);
     }
 
     [Fact]
@@ -135,6 +137,17 @@ public class FeatureStoreTests : IDisposable
             $$"""[{"id":1,"title":"X","priority":1,"description":"{{longDescription}}"}]""");
 
         Assert.Equal(FeatureStore.DescriptionMaxChars, features[0].Description.Length);
+    }
+
+    [Fact]
+    public void Parse_ImplementationContextAcimaDoTeto_ETruncado()
+    {
+        var longContext = new string('a', FeatureStore.ImplementationContextMaxChars + 50);
+
+        var features = FeatureStore.Parse(
+            $$"""[{"id":1,"title":"X","priority":1,"implementationContext":"{{longContext}}"}]""");
+
+        Assert.Equal(FeatureStore.ImplementationContextMaxChars, features[0].ImplementationContext.Length);
     }
 
     [Fact]

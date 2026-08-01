@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Flows.Development/Flows.Development.csproj" />
+  <Project Path="Harness.Engine.Tests/Harness.Engine.Tests.csproj" />
+  <Project Path="Harness.Engine/Harness.Engine.csproj" />
+</Solution>

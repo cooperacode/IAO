@@ -25,7 +25,7 @@ def test_load_sem_arquivo_usa_defaults():
     assert config == harness_config.DEFAULT
     assert config.max_steps == 12
     assert config.max_instruction_chars == 0  # cost ceiling disabled by default
-    assert config.timeout_ms == 30000  # time guard is always enabled
+    assert config.timeout_ms == 10 * 60_000  # time guard is always enabled
 
 
 def test_load_com_timeout_le_e_normaliza():
@@ -35,7 +35,7 @@ def test_load_com_timeout_le_e_normaliza():
 
     # A negative value falls back to the enabled default; timeout cannot be disabled.
     Path(CONFIG_PATH).write_text('{"timeoutMs":-5}')
-    assert harness_config.load().timeout_ms == 30000
+    assert harness_config.load().timeout_ms == 10 * 60_000
 
 
 def test_load_com_arquivo_usa_os_valores_do_arquivo():
@@ -75,7 +75,7 @@ def test_load_timeout_acima_do_teto_clampa_no_maximo_permitido():
     # the file to grant itself a huge timeout, the hard ceiling prevails.
     Path(CONFIG_PATH).write_text('{"timeoutMs":99999999}')
 
-    assert harness_config.load().timeout_ms == 5 * 60_000
+    assert harness_config.load().timeout_ms == 10 * 60_000
 
 
 def test_load_com_env_var_sobrepoe_o_timeout_do_arquivo():
@@ -88,7 +88,7 @@ def test_load_com_env_var_sobrepoe_o_timeout_do_arquivo():
 def test_load_env_var_tambem_respeita_o_teto():
     os.environ["HARNESS_TIMEOUT_MS"] = "99999999"
 
-    assert harness_config.load().timeout_ms == 5 * 60_000
+    assert harness_config.load().timeout_ms == 10 * 60_000
 
 
 def test_load_env_var_invalida_e_ignorada():

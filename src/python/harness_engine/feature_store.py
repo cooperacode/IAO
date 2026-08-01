@@ -24,6 +24,7 @@ _FILE_PATH = ".harness/feature_list.json"
 # description is reinjected into the implement prompt for every feature, so without a
 # ceiling it silently inflates every future session's context.
 DESCRIPTION_MAX_CHARS = 700
+IMPLEMENTATION_CONTEXT_MAX_CHARS = 4000
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class Feature:
     depends_on: tuple[int, ...] | None = None
     description: str = ""
     references: tuple[str, ...] | None = None
+    implementation_context: str = ""
 
     @property
     def deps(self) -> tuple[int, ...]:
@@ -63,6 +65,7 @@ class Feature:
             "dependsOn": list(self.depends_on) if self.depends_on is not None else None,
             "description": self.description,
             "references": list(self.references) if self.references is not None else None,
+            "implementationContext": self.implementation_context,
         }
 
     @staticmethod
@@ -79,6 +82,7 @@ class Feature:
             depends_on=depends_on,
             description=str(payload.get("description") or ""),
             references=references,
+            implementation_context=str(payload.get("implementationContext") or ""),
         )
 
 
@@ -135,6 +139,7 @@ def parse(features_json: str) -> list[Feature]:
                 depends_on=tuple(dict.fromkeys(candidate.deps)),
                 description=_truncate_description(candidate.description),
                 references=tuple(dict.fromkeys(r for r in candidate.refs if r.strip())),
+                implementation_context=candidate.implementation_context[:IMPLEMENTATION_CONTEXT_MAX_CHARS],
             ))
 
         error = _dependency_graph_error(reindexed)

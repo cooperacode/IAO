@@ -13,6 +13,9 @@ target/
 !.harness/scripts/
 !.harness/scripts/**
 
+# Rider
+.idea/
+
 # Cruft de exemplos antigos
 __pycache__/
 

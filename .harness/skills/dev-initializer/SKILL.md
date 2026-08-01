@@ -43,7 +43,10 @@ each feature:
 - assigned a numeric priority where `1` is highest;
 - linked through `dependsOn` only when a real implementation dependency exists;
 - described objectively with enough context for a fresh session;
-- linked through `references` only to explicit codes or named sections from the brief.
+- linked through `references` only to explicit codes or named sections from the brief;
+- populated with `implementationContext`, containing the bounded inline material the feature
+  needs to be implemented without reopening the full brief (copy the relevant requirements,
+  acceptance criteria, constraints, examples, and reference excerpts into this field).
 
 Prefer several small features to a few broad ones. If a feature has no unambiguous
 verification path, split it further.

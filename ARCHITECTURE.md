@@ -145,11 +145,11 @@ What leaves the harness each turn: an instruction block with `input`, a
   (`src/dotnet/Harness.Engine/PromptFormatter.cs`)
 - **`HarnessConfig`** — defaults, ceilings, and the docs folder, loaded from
   `harness.json` on every process. A read failure never kills the run — it
-  falls back to built-in defaults. `TimeoutMs` has a hard ceiling (5 minutes)
+  falls back to built-in defaults. `TimeoutMs` has a hard ceiling (10 minutes)
   that cannot be raised from `harness.json` alone, and cannot be disabled by setting
-  zero or a negative value. A timeout/budget outcome also latches the run terminal in
-  persisted state before emitting `stop`, so a later invocation cannot reopen it by
-  editing `harness.json`.
+  zero or a negative value. A budget outcome latches the run terminal in persisted state
+  before emitting `stop`; a timeout stops the current invocation but an explicit `start`
+  clears its recoverable latch and allows the flow to resume or restart.
   (`src/dotnet/Harness.Engine/HarnessConfig.cs`)
 - **`ContextPolicy`** — consumes only optional normalized context telemetry and
   decides whether the next feature gets a clean-context marker. It persists a

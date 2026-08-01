@@ -15,7 +15,7 @@ const FILE_PATH: &str = "harness.json";
 // harness.json lives in the working directory that the supervised agent itself controls:
 // without this ceiling, the agent could edit the file to grant itself an arbitrarily high
 // timeout and never get cut off by the time guard (see task_registry).
-const MAX_ALLOWED_TIMEOUT_MS: i32 = 5 * 60_000;
+const MAX_ALLOWED_TIMEOUT_MS: i32 = 10 * 60_000;
 const MIN_ENABLED_TIMEOUT_MS: i32 = 1;
 
 // When set, overrides harness.json's timeout_ms. Unlike the file, the env var is set by
@@ -53,7 +53,7 @@ pub fn default_config() -> HarnessConfig {
         max_instruction_chars: 0,
         docs_max_chars: 40_000,
         docs_folder: "docs".to_string(),
-        timeout_ms: 30_000,
+        timeout_ms: 10 * 60_000,
         context_reset_mode: "adaptive".to_string(),
         context_reset_threshold: 0.70,
         context_fallback_features: 1,
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(config, default_config());
         assert_eq!(config.max_steps, 12);
         assert_eq!(config.max_instruction_chars, 0);
-        assert_eq!(config.timeout_ms, 30_000);
+        assert_eq!(config.timeout_ms, 10 * 60_000);
     }
 
     #[test]
@@ -225,7 +225,7 @@ mod tests {
 
         // A negative value falls back to the enabled default; timeout cannot be disabled.
         std::fs::write("harness.json", r#"{"timeoutMs":-5}"#).unwrap();
-        assert_eq!(load().timeout_ms, 30_000);
+        assert_eq!(load().timeout_ms, 10 * 60_000);
     }
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
         // edits the file to grant itself a huge timeout, the hard ceiling prevails.
         std::fs::write("harness.json", r#"{"timeoutMs":99999999}"#).unwrap();
 
-        assert_eq!(load().timeout_ms, 5 * 60_000);
+        assert_eq!(load().timeout_ms, 10 * 60_000);
     }
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
         // SAFETY: ver `Isolated::new`.
         unsafe { std::env::set_var(TIMEOUT_MS_ENV_VAR, "99999999") };
 
-        assert_eq!(load().timeout_ms, 5 * 60_000);
+        assert_eq!(load().timeout_ms, 10 * 60_000);
     }
 
     #[test]

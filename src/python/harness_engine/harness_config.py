@@ -20,7 +20,7 @@ _FILE_PATH = "harness.json"
 # harness.json lives in the working directory the supervised agent itself controls:
 # without this ceiling, the agent could edit the file to grant itself an arbitrarily high
 # timeout and never be cut off by the time guard (see task_registry).
-_MAX_ALLOWED_TIMEOUT_MS = 5 * 60_000
+_MAX_ALLOWED_TIMEOUT_MS = 10 * 60_000
 _MIN_ENABLED_TIMEOUT_MS = 1
 
 # When set, overrides harness.json's timeout_ms. Unlike the file, the env var is set by
@@ -56,13 +56,13 @@ class HarnessConfig:
 
 # Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
 # max_instruction_chars = 0 disables the cost ceiling (only the step one applies).
-# timeout_ms is always enabled; zero/missing values fall back to the 30-second default.
+# timeout_ms is always enabled; zero/missing values fall back to the 10-minute default.
 DEFAULT = HarnessConfig(
     max_steps=12,
     max_instruction_chars=0,
     docs_max_chars=40_000,
     docs_folder="docs",
-    timeout_ms=30_000,
+    timeout_ms=10 * 60_000,
     context_reset_mode="adaptive",
     context_reset_threshold=0.70,
     context_fallback_features=1,

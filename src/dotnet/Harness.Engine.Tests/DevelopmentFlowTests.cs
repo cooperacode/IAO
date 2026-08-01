@@ -257,18 +257,18 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
-    public void Plan_RetornaImplementComOBriefReinjetado()
+    public void Plan_RetornaImplementSemReinjetarOBrief()
     {
         GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
 
         var result = Plan();
 
-        Assert.Contains("topic A brief", result);
+        Assert.DoesNotContain("topic A brief", result);
     }
 
     [Fact]
-    public void BearingsSelecionaImplementComOBriefReinjetado()
+    public void BearingsSelecionaImplementSemReinjetarOBrief()
     {
         GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
@@ -276,7 +276,7 @@ public class DevelopmentFlowTests : IDisposable
 
         var result = DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
 
-        Assert.Contains("topic A brief", result);
+        Assert.DoesNotContain("topic A brief", result);
     }
 
     [Fact]
@@ -292,7 +292,7 @@ public class DevelopmentFlowTests : IDisposable
     public void ImplementPrompt_ComDescriptionEReferencesDaFeature()
     {
         const string json =
-            """[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]""";
+            """[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],"implementationContext":"inline X"},{"id":2,"title":"B","priority":1}]""";
         WriteVerifyFeatureScript(_targetDir,
             "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
         DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
@@ -301,6 +301,8 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.Contains("Description: faz X", result);
         Assert.Contains("Brief references: RF-003", result);
+        Assert.Contains("<implementation-context>inline X", result);
+        Assert.DoesNotContain("<brief>", result);
     }
 
     [Fact]

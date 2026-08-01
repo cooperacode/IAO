@@ -78,9 +78,10 @@ diagram, with the file that implements each component.
 ## Participants
 
 - **Brief**: documents in `docs/*.md` or `docs/*.txt` that describe what should
-  be built. Read once at `start` and persisted to `.harness/brief.md`
-  (`ArtifactStore`), so it can be reinjected verbatim into the implementation
-  prompt later in the loop — not just consumed once at initialization.
+  be built. Read once at `start` and used by `plan`; the planner copies each
+  feature's relevant requirements into bounded `implementationContext` in
+  `.harness/feature_list.json`, so later implementation sessions do not reopen
+  the full brief.
 - **HarnessHost**: reusable flow entry point; runs dispatch, publishes output
   to `stdout`, and snapshots state and trace when the flow stops.
 - **TaskRegistry**: parses envelopes, validates commands, applies step, cost,
@@ -184,8 +185,9 @@ source, not an execution directory.
 
 The `harness.json` file configures global limits such as `maxSteps`,
 `maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`. The timeout is
-always enabled: zero or negative values fall back to 30 seconds, and a timeout latches
-the current run as terminal across later invocations.
+always enabled: zero or negative values fall back to 10 minutes. A timeout stops the
+current invocation, but an explicit `start` can resume or restart the run; budget stops
+remain terminal across later invocations.
 
 For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
 `HARNESS_VERIFY_CMD` can override the values returned by the initializer, keeping

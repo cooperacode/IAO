@@ -245,7 +245,8 @@ def codex_home() -> Path:
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    # This script lives in `.harness/scripts`; the repository is three levels up.
+    return Path(__file__).resolve().parents[2]
 
 
 def walk_rollouts(home: Path, include_archived: bool = True) -> Iterable[Path]:

@@ -40,9 +40,8 @@ pub const CURRENT_FEATURE_VERIFY_KEY: &str = "current_feature_verify";
 pub const CURRENT_BEARINGS_KEY: &str = "current_bearings";
 pub const FEATURE_STEPS_KEY: &str = "feature_steps";
 
-// Name of the brief artifact in artifact_store (.harness/brief.md) — persisted in start()
-// so it can be reinjected into the implement prompt, since the content read
-// from docs/ used to exist only as a local variable of the initializer's turn.
+// Name of the brief artifact in artifact_store (.harness/brief.md) — retained for
+// auditability and compatibility; implementation sessions use each feature's bounded context.
 pub const BRIEF_ARTIFACT_NAME: &str = "brief";
 
 fn state(key: &str) -> String {
@@ -82,9 +81,8 @@ pub fn start() -> String {
     }
 
     let (content, files) = docs_reader::read(&folder);
-    // Persisted so it can be reinjected into the implement prompt — before
-    // this feature, "content" was only a local variable of this turn, discarded as soon
-    // as the initializer finished.
+    // Persisted for auditability and compatibility; implementation sessions use the bounded
+    // context copied into each feature by the planner.
     artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
     state_store::set("origem", "docs");
     prompts::initializer_prompt(&content, &files)
@@ -490,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_retorna_bearings_com_o_brief_reinjetado() {
+    fn plan_retorna_implement_sem_reinjetar_o_brief() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
         given_docs_brief("brief do topico A");
@@ -498,18 +496,18 @@ mod tests {
 
         let result = plan_default();
 
-        assert!(result.contains("brief do topico A"));
+        assert!(!result.contains("brief do topico A"));
     }
 
     #[test]
-    fn pick_retorna_implement_com_o_brief_reinjetado() {
+    fn pick_retorna_implement_sem_reinjetar_o_brief() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
         given_docs_brief("brief do topico A");
         start();
         let result = plan_default();
 
-        assert!(result.contains("brief do topico A"));
+        assert!(!result.contains("brief do topico A"));
     }
 
     #[test]
@@ -528,7 +526,7 @@ mod tests {
     fn pick_retorna_implement_com_description_e_references_da_feature() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]"#;
+        let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],"implementationContext":"inline X"},{"id":2,"title":"B","priority":1}]"#;
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
         plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"]))); // escolhe "B"
@@ -537,6 +535,8 @@ mod tests {
 
         assert!(result.contains("Description: faz X"));
         assert!(result.contains("Brief references: RF-003"));
+        assert!(result.contains("<implementation-context>inline X"));
+        assert!(!result.contains("<brief>"));
     }
 
     #[test]
@@ -677,6 +677,7 @@ mod tests {
                 depends_on: vec![2],
                 description: String::new(),
                 references: Vec::new(),
+                implementation_context: String::new(),
             },
             Feature {
                 id: 2,
@@ -686,6 +687,7 @@ mod tests {
                 depends_on: vec![1],
                 description: String::new(),
                 references: Vec::new(),
+                implementation_context: String::new(),
             },
         ]);
         bearings(Some(&cmd("bearings", vec!["ok"])));

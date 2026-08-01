@@ -83,9 +83,8 @@ def start() -> str:
         return prompts.initializer_interactive()
 
     content, files = docs_reader.read(_docs_folder())
-    # Persisted to be reinjected into the implement prompt — before this
-    # feature, "content" was just a local variable of this turn, discarded as soon as the
-    # initializer finished.
+    # Persisted for auditability and compatibility; implementation sessions use the bounded
+    # context copied into each feature by the planner.
     artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
     state_store.set("origem", "docs")
     return prompts.initializer_prompt(content, files)

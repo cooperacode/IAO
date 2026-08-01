@@ -25,6 +25,9 @@ public static class FeatureStore
     /// session's context.</summary>
     public const int DescriptionMaxChars = 700;
 
+    /// <summary>Maximum inline implementation context persisted per feature.</summary>
+    public const int ImplementationContextMaxChars = 4000;
+
     /// <summary>Overwrites the whole list — used by <c>plan</c> (session 0) and MarkPassed.</summary>
     public static void Write(IReadOnlyList<Feature> features)
     {
@@ -93,6 +96,7 @@ public static class FeatureStore
                     DependsOn = feature.Deps.Distinct().ToArray(),
                     Description = TruncateDescription(feature.Description),
                     References = feature.Refs.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().ToArray(),
+                    ImplementationContext = TruncateImplementationContext(feature.ImplementationContext),
                 });
             }
 
@@ -115,6 +119,11 @@ public static class FeatureStore
     /// rejects the whole feature over it, just shortens.</summary>
     private static string TruncateDescription(string? description) =>
         description is { Length: > DescriptionMaxChars } d ? d[..DescriptionMaxChars] : description ?? "";
+
+    private static string TruncateImplementationContext(string? context) =>
+        context is { Length: > ImplementationContextMaxChars } c
+            ? c[..ImplementationContextMaxChars]
+            : context ?? "";
 
     /// <summary>
     /// <c>null</c> if the <c>DependsOn</c> graph is valid (every id exists, no cycle);
@@ -232,9 +241,9 @@ public static class FeatureStore
 
 /// <summary>A feature from the development backlog: priority (lower = higher), whether it
 /// already passes, which others (by id) it depends on, a free-form description (up to
-/// <see cref="FeatureStore.DescriptionMaxChars"/> characters, reinjected into the
-/// <c>implement</c> prompt), and explicit reference codes from the brief (e.g. "RF-003";
-/// empty array when the brief cites none).</summary>
+/// <see cref="FeatureStore.DescriptionMaxChars"/> characters), explicit reference codes from
+/// the brief (e.g. "RF-003"), and bounded inline implementation context used to build the
+/// feature prompt without reinjecting the whole brief.</summary>
 ///
 /// <remarks>
 /// <c>DependsOn</c>/<c>References</c> are NULLABLE on purpose: <c>= []</c> is not a
@@ -247,7 +256,8 @@ public static class FeatureStore
 /// </remarks>
 public record Feature(
     int Id, string Title, int Priority, bool Passes,
-    int[]? DependsOn = null, string Description = "", string[]? References = null)
+    int[]? DependsOn = null, string Description = "", string[]? References = null,
+    string ImplementationContext = "")
 {
     [JsonIgnore]
     public int[] Deps => DependsOn ?? [];

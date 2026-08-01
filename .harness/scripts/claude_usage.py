@@ -230,7 +230,8 @@ def encode_project_path(path: Path) -> str:
 
 
 def default_project_dir() -> Path:
-    repo_root = Path(__file__).resolve().parent.parent
+    # This script lives in `.harness/scripts`; the repository is three levels up.
+    repo_root = Path(__file__).resolve().parents[2]
     return Path.home() / ".claude" / "projects" / encode_project_path(repo_root)
 
 

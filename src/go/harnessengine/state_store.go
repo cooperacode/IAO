@@ -149,6 +149,15 @@ func MarkTerminal(reason string) {
 	SaveState(state)
 }
 
+// ClearTerminal clears a recoverable timeout latch after an explicit start.
+func ClearTerminal() {
+	state := LoadState()
+	if state.TerminalReason != "" {
+		state.TerminalReason = ""
+		SaveState(state)
+	}
+}
+
 // TerminalReason returns the latched hard-stop reason, if any.
 func TerminalReason() string {
 	return LoadState().TerminalReason

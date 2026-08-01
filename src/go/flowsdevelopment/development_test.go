@@ -260,26 +260,26 @@ func TestStart_NewRunWithoutDocs_ClearsPreviousBrief(t *testing.T) {
 	}
 }
 
-func TestPlan_ReturnsBearingsWithBriefReinjected(t *testing.T) {
+func TestPlan_ReturnsImplementWithoutBriefReinjection(t *testing.T) {
 	targetDir, docsDir := isolate(t)
 	givenDocsBrief(t, docsDir, "topic A brief")
 	Start()
 
 	result := planWith(targetDir)
 
-	if !strings.Contains(result, "topic A brief") {
-		t.Fatalf("unexpected result: %s", result)
+	if strings.Contains(result, "topic A brief") {
+		t.Fatalf("unexpected brief reinjection: %s", result)
 	}
 }
 
-func TestPick_ReturnsImplementWithBriefReinjected(t *testing.T) {
+func TestPick_ReturnsImplementWithoutBriefReinjection(t *testing.T) {
 	targetDir, docsDir := isolate(t)
 	givenDocsBrief(t, docsDir, "topic A brief")
 	Start()
 	result := planWith(targetDir)
 
-	if !strings.Contains(result, "topic A brief") {
-		t.Fatalf("unexpected result: %s", result)
+	if strings.Contains(result, "topic A brief") {
+		t.Fatalf("unexpected brief reinjection: %s", result)
 	}
 }
 
@@ -296,7 +296,7 @@ func TestBearingsAndImplement_WithoutPersistedBrief_HaveNoBriefTag(t *testing.T)
 
 func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) {
 	targetDir, _ := isolate(t)
-	json := `[{"id":1,"title":"A","priority":2,"description":"does X","references":["RF-003"]},{"id":2,"title":"B","priority":1}]`
+	json := `[{"id":1,"title":"A","priority":2,"description":"does X","references":["RF-003"],"implementationContext":"inline X"},{"id":2,"title":"B","priority":1}]`
 	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -306,6 +306,9 @@ func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) 
 
 	if !strings.Contains(result, "Description: does X") || !strings.Contains(result, "Brief references: RF-003") {
 		t.Fatalf("unexpected result: %s", result)
+	}
+	if !strings.Contains(result, "<implementation-context>inline X") || strings.Contains(result, "<brief>") {
+		t.Fatalf("unexpected inline context: %s", result)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	engine "github.com/cooperacode/IAO/src/go/harnessengine"
@@ -16,14 +17,11 @@ const (
 )
 
 // featuresShape is the feature_list shape embedded verbatim in the prompts.
-const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[]}, ...]`
+const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":"..."}, ...]`
 
-// featureContextBlock reinjects description/references (engine.Feature) into the implement
-// prompt — the only point of the loop that receives the whole Feature object, not just
-// title/id via StateStore. "" when the feature has neither (e.g. a feature_list.json from a
-// version before these fields existed) — the block disappears, it doesn't show up empty.
+// featureContextBlock returns the current feature's bounded inline context for implement/fix.
 func featureContextBlock(feature engine.Feature) string {
-	if strings.TrimSpace(feature.Description) == "" && len(feature.References) == 0 {
+	if strings.TrimSpace(feature.Description) == "" && len(feature.References) == 0 && strings.TrimSpace(feature.ImplementationContext) == "" {
 		return ""
 	}
 
@@ -31,32 +29,26 @@ func featureContextBlock(feature engine.Feature) string {
 	if len(feature.References) > 0 {
 		references = strings.Join(feature.References, ", ")
 	}
-	return fmt.Sprintf("Description: %s\nBrief references: %s\n\n", feature.Description, references)
+	context := strings.ReplaceAll(feature.ImplementationContext, "\r\n", "\\n")
+	context = strings.ReplaceAll(context, "\n", "\\n")
+	implementationContext := ""
+	if strings.TrimSpace(context) != "" {
+		implementationContext = fmt.Sprintf("<implementation-context>%s</implementation-context>\n", context)
+	}
+	return fmt.Sprintf("Description: %s\nBrief references: %s\n%s\n", feature.Description, references, implementationContext)
 }
 
-// briefBlock reinjects the persisted brief (ArtifactStore, briefArtifactName) at the point
-// of the loop that actually reasons about "what to build" — implement. The
-// smoke/pick/verify/fix/handoff steps only repair setup or do bookkeeping, with
-// no need for scope context. "" when the run started in interactive mode (no docs/) or is
-// resuming a run from before this feature — in that case the block disappears, it doesn't
-// stay empty.
-func briefBlock() string {
-	brief := engine.ReadArtifact(briefArtifactName)
-	if strings.TrimSpace(brief) == "" {
+func currentFeatureContextBlock() string {
+	featureID, err := strconv.Atoi(state(currentFeatureIdKey))
+	if err != nil {
 		return ""
 	}
-
-	singleLine := strings.ReplaceAll(brief, "\r\n", "\\n")
-	singleLine = strings.ReplaceAll(singleLine, "\n", "\\n")
-	return fmt.Sprintf("<brief>%s</brief>", singleLine)
-}
-
-func bearingsBlock() string {
-	bearings := state(currentBearingsKey)
-	if strings.TrimSpace(bearings) == "" {
-		return ""
+	for _, feature := range engine.LoadFeatures() {
+		if feature.Id == featureID {
+			return featureContextBlock(feature)
+		}
 	}
-	return fmt.Sprintf("<bearings>%s</bearings>\n", bearings)
+	return ""
 }
 
 // --- session 0: initializer -----------------------------------------
@@ -112,9 +104,9 @@ func SmokeFixPrompt(failure string) string {
 
 func ImplementPrompt(feature engine.Feature) string {
 	input := fmt.Sprintf("%s"+
-		"Follow `dev-implement` for this feature:\n%s\n%sFeature #%d (priority %d): %s\n%sTarget directory: %s\n\n"+
+		"Follow `dev-implement` for this feature:\nFeature #%d (priority %d): %s\n%sTarget directory: %s\n\n"+
 		"Return `implement` without arguments when done. The harness derives the summary from Git.",
-		engine.NewFeaturePrefix(), briefBlock(), bearingsBlock(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
+		engine.NewFeaturePrefix(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
 		engine.LoadRunConfig().TargetDir)
 
 	return engine.Format(input,
@@ -148,9 +140,9 @@ func FixPrompt(verifyFailure string) string {
 		failure = fmt.Sprintf("Failure observed: %s\n\n", verifyFailure)
 	}
 
-	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s). %sFollow `dev-implement` to fix only this feature.\n"+
+	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s).\n%s%sFollow `dev-implement` to fix only this feature.\n"+
 		"Return `implement` without arguments; the harness derives the new summary from Git.",
-		state(currentFeatureIdKey), state(currentFeatureTitleKey), failure)
+		state(currentFeatureIdKey), state(currentFeatureTitleKey), currentFeatureContextBlock(), failure)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
