@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>Harness · Progresso da execução</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080c18;
+      --panel: rgba(17, 24, 42, .82);
+      --panel-solid: #11182a;
+      --panel-soft: #151e34;
+      --line: rgba(157, 174, 211, .16);
+      --text: #edf3ff;
+      --muted: #91a0bf;
+      --faint: #60708f;
+      --blue: #78a8ff;
+      --cyan: #55e0d0;
+      --green: #69dda2;
+      --yellow: #f4c96b;
+      --red: #ff7e8d;
+      --shadow: 0 24px 70px rgba(0, 0, 0, .28);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: radial-gradient(circle at 88% -8%, rgba(68, 118, 255, .16), transparent 32rem), var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .14;
+      background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(to bottom, black, transparent 72%);
+    }
+    button { font: inherit; }
+    .shell { position: relative; width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 54px; }
+
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+    .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--cyan); font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .eyebrow-mark { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 18px var(--cyan); }
+    h1 { margin: 9px 0 5px; font-size: clamp(1.75rem, 4vw, 2.65rem); line-height: 1.1; letter-spacing: -.045em; }
+    .subtitle { margin: 0; max-width: 650px; color: var(--muted); font-size: .95rem; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .refresh-state { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .78rem; white-space: nowrap; background: rgba(17, 24, 42, .65); }
+    .refresh-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .refresh-dot.live { background: var(--green); box-shadow: 0 0 12px var(--green); animation: pulse 1.7s infinite; }
+    .refresh-dot.paused { background: var(--yellow); }
+    .refresh-button { cursor: pointer; border: 1px solid rgba(120, 168, 255, .3); border-radius: 10px; padding: 10px 13px; color: var(--text); background: rgba(67, 106, 190, .17); transition: .2s ease; }
+    .refresh-button:hover, .refresh-button:focus-visible { border-color: var(--blue); background: rgba(67, 106, 190, .3); outline: none; }
+    @keyframes pulse { 50% { opacity: .42; } }
+
+    .notice { display: none; align-items: flex-start; gap: 11px; padding: 14px 16px; margin-bottom: 20px; border: 1px solid rgba(244, 201, 107, .3); border-radius: 13px; color: #f9dda0; background: rgba(100, 74, 20, .2); font-size: .88rem; }
+    .notice.show { display: flex; }
+    .notice strong { display: block; margin-bottom: 2px; color: var(--text); }
+
+    .hero-grid { display: grid; grid-template-columns: minmax(300px, 1.35fr) minmax(300px, .65fr); gap: 18px; margin-bottom: 18px; }
+    .panel { border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(145deg, rgba(24, 34, 59, .85), var(--panel)); box-shadow: var(--shadow); }
+    .progress-panel { display: flex; align-items: center; gap: 28px; min-height: 232px; padding: 27px 30px; }
+    .progress-ring { --progress: 0%; position: relative; display: grid; flex: 0 0 156px; width: 156px; height: 156px; place-items: center; border-radius: 50%; background: conic-gradient(var(--cyan) var(--progress), rgba(128, 149, 191, .14) 0); }
+    .progress-ring::before { content: ""; position: absolute; inset: 10px; border-radius: 50%; background: var(--panel-solid); box-shadow: inset 0 0 0 1px rgba(157, 174, 211, .1); }
+    .progress-ring-content { position: relative; text-align: center; }
+    .progress-value { display: block; font-size: 2.2rem; font-weight: 800; letter-spacing: -.06em; }
+    .progress-caption { display: block; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; }
+    .progress-copy { min-width: 0; }
+    .section-kicker { margin: 0 0 7px; color: var(--blue); font-size: .7rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .progress-copy h2 { margin: 0 0 7px; font-size: clamp(1.25rem, 2.6vw, 1.7rem); letter-spacing: -.03em; }
+    .progress-copy p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .status-line { display: flex; align-items: center; gap: 8px; margin-top: 17px; color: var(--text); font-size: .8rem; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; font-size: .72rem; font-weight: 750; }
+    .status-pill.running { color: #a9f6e9; background: rgba(85, 224, 208, .12); }
+    .status-pill.done { color: #a9f5c8; background: rgba(105, 221, 162, .12); }
+    .status-pill.waiting { color: #d5dff5; background: rgba(145, 160, 191, .13); }
+    .status-pill.warning { color: #ffe3a1; background: rgba(244, 201, 107, .13); }
+    .status-pill.error { color: #ffb5be; background: rgba(255, 126, 141, .13); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .run-panel { padding: 25px 26px; }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .panel-heading h2 { margin: 0; font-size: .98rem; letter-spacing: -.01em; }
+    .panel-heading .meta { color: var(--faint); font-size: .72rem; }
+    .data-list { display: grid; gap: 13px; margin: 0; }
+    .data-row { display: grid; grid-template-columns: 92px 1fr; gap: 12px; margin: 0; font-size: .82rem; }
+    .data-row dt { color: var(--faint); }
+    .data-row dd { min-width: 0; margin: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+    .data-row dd code { color: #c4d5fa; font-family: "SFMono-Regular", Consolas, monospace; font-size: .75rem; }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; margin-bottom: 18px; }
+    .metric { min-height: 111px; padding: 18px 19px; border: 1px solid var(--line); border-radius: 14px; background: rgba(17, 24, 42, .72); }
+    .metric-label { color: var(--faint); font-size: .72rem; }
+    .metric-value { margin-top: 8px; overflow: hidden; font-size: 1.43rem; font-weight: 750; letter-spacing: -.04em; text-overflow: ellipsis; white-space: nowrap; }
+    .metric-sub { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
+
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 18px; }
+    .panel-section { min-width: 0; padding: 23px 24px; }
+    .feature-list, .trace-list, .file-list { display: grid; gap: 10px; }
+    .feature-item { padding: 13px 14px; border: 1px solid rgba(157, 174, 211, .1); border-radius: 12px; background: rgba(8, 12, 24, .25); }
+    .feature-top { display: flex; align-items: flex-start; gap: 11px; }
+    .feature-icon { display: grid; flex: 0 0 23px; width: 23px; height: 23px; place-items: center; border-radius: 7px; color: var(--muted); background: rgba(145, 160, 191, .12); font-size: .72rem; font-weight: 800; }
+    .feature-item.done .feature-icon { color: #061c14; background: var(--green); }
+    .feature-item.active .feature-icon { color: #062323; background: var(--cyan); box-shadow: 0 0 16px rgba(85, 224, 208, .3); }
+    .feature-title { min-width: 0; flex: 1; font-size: .85rem; font-weight: 650; }
+    .feature-id { color: var(--faint); font-family: "SFMono-Regular", Consolas, monospace; font-size: .7rem; font-weight: 500; }
+    .feature-state { color: var(--muted); font-size: .7rem; white-space: nowrap; }
+    .feature-item.done .feature-state { color: var(--green); }
+    .feature-item.active .feature-state { color: var(--cyan); }
+    .feature-meta { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 0 34px; color: var(--faint); font-size: .7rem; }
+    .tag { padding: 3px 6px; border-radius: 5px; background: rgba(145, 160, 191, .1); }
+    .feature-bar { height: 3px; margin: 10px 0 0 34px; overflow: hidden; border-radius: 10px; background: rgba(145, 160, 191, .11); }
+    .feature-bar span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--faint); }
+    .feature-item.done .feature-bar span { width: 100%; background: var(--green); }
+    .feature-item.active .feature-bar span { width: 58%; background: var(--cyan); }
+
+    .trace-list { max-height: 454px; overflow: auto; padding-right: 3px; }
+    .trace-item { display: grid; grid-template-columns: 37px 1fr auto; gap: 11px; align-items: start; padding: 11px 0; border-bottom: 1px solid rgba(157, 174, 211, .09); }
+    .trace-item:last-child { border-bottom: 0; }
+    .trace-step { color: var(--faint); font-family: "SFMono-Regular", Consolas, monospace; font-size: .72rem; }
+    .trace-main { min-width: 0; }
+    .trace-command { overflow: hidden; color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+    .trace-label { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+    .trace-time { color: var(--faint); font-size: .68rem; white-space: nowrap; }
+    .trace-outcome { display: inline-block; margin-top: 6px; padding: 2px 6px; border-radius: 4px; color: var(--muted); background: rgba(145, 160, 191, .1); font-size: .65rem; }
+    .trace-outcome.stop, .trace-outcome.instruction { color: #a9f5c8; background: rgba(105, 221, 162, .1); }
+    .trace-outcome.error, .trace-outcome.timeout, .trace-outcome.budget { color: #ffb5be; background: rgba(255, 126, 141, .1); }
+
+    .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+    .file-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(157, 174, 211, .09); font-size: .78rem; }
+    .file-item:last-child { border-bottom: 0; }
+    .file-name { min-width: 0; overflow: hidden; color: var(--muted); font-family: "SFMono-Regular", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .file-status { flex: 0 0 auto; color: var(--faint); font-size: .68rem; }
+    .file-status.loaded { color: var(--green); }
+    .artifact-copy { max-height: 150px; overflow: auto; margin: 0; padding: 13px; border: 1px solid rgba(157, 174, 211, .1); border-radius: 10px; color: var(--muted); background: rgba(8, 12, 24, .3); font: .73rem/1.55 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; }
+    .empty { padding: 24px 12px; color: var(--faint); text-align: center; font-size: .8rem; }
+    .footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 18px; color: var(--faint); font-size: .68rem; }
+    .footer code { color: var(--muted); font-family: "SFMono-Regular", Consolas, monospace; }
+
+    @media (max-width: 900px) {
+      .hero-grid, .content-grid, .bottom-grid { grid-template-columns: 1fr; }
+      .progress-panel { min-height: 0; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 24px, 1440px); padding-top: 22px; }
+      .topbar { display: block; }
+      .toolbar { justify-content: flex-start; margin-top: 16px; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .progress-panel { display: block; padding: 25px 21px; text-align: center; }
+      .progress-ring { margin: 0 auto 22px; }
+      .status-line { justify-content: center; }
+      .panel-section, .run-panel { padding: 20px 17px; }
+      .trace-item { grid-template-columns: 31px 1fr; }
+      .trace-time { grid-column: 2; }
+      .footer { display: block; }
+      .footer span + span { display: block; margin-top: 5px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow"><span class="eyebrow-mark"></span>Harness monitor</div>
+        <h1>Progresso da execução</h1>
+        <p class="subtitle">Acompanhe o estado persistido, as features e o trace enquanto o agente avança pelo fluxo.</p>
+      </div>
+      <div class="toolbar">
+        <div class="refresh-state" aria-live="polite"><span id="refresh-dot" class="refresh-dot"></span><span id="refresh-label">Carregando…</span></div>
+        <button id="auto-toggle" class="refresh-button" type="button" aria-pressed="true">Pausar auto-refresh</button>
+        <button id="refresh-button" class="refresh-button" type="button">Atualizar agora</button>
+      </div>
+    </header>
+
+    <div id="file-notice" class="notice" role="status">
+      <span aria-hidden="true">⚠</span>
+      <div><strong>Monitor aguardando os artefatos</strong><span id="file-notice-text">Nenhum arquivo de execução foi encontrado ainda.</span></div>
+    </div>
+
+    <section class="hero-grid" aria-label="Resumo da execução">
+      <article class="panel progress-panel">
+        <div id="progress-ring" class="progress-ring" aria-label="Progresso das features">
+          <div class="progress-ring-content"><span id="progress-value" class="progress-value">0%</span><span class="progress-caption">completo</span></div>
+        </div>
+        <div class="progress-copy">
+          <p class="section-kicker">Estado atual</p>
+          <h2 id="headline">Nenhuma execução detectada</h2>
+          <p id="headline-detail">Quando o harness iniciar, os eventos aparecerão aqui automaticamente.</p>
+          <div class="status-line"><span id="status-pill" class="status-pill waiting"><span class="status-dot"></span><span id="status-text">Aguardando</span></span><span id="last-update">—</span></div>
+        </div>
+      </article>
+
+      <article class="panel run-panel">
+        <div class="panel-heading"><h2>Identidade do run</h2><span class="meta" id="run-source">sem dados</span></div>
+        <dl class="data-list">
+          <div class="data-row"><dt>Run ID</dt><dd><code id="run-id">—</code></dd></div>
+          <div class="data-row"><dt>Target</dt><dd id="target-dir">—</dd></div>
+          <div class="data-row"><dt>Verificação</dt><dd id="verify-cmd">—</dd></div>
+          <div class="data-row"><dt>Feature atual</dt><dd id="current-feature">—</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section class="metrics" aria-label="Métricas">
+      <article class="metric"><div class="metric-label">Passo do harness</div><div id="metric-step" class="metric-value">0</div><div id="metric-step-sub" class="metric-sub">sem eventos</div></article>
+      <article class="metric"><div class="metric-label">Features concluídas</div><div id="metric-features" class="metric-value">0 / 0</div><div id="metric-features-sub" class="metric-sub">backlog ainda não criado</div></article>
+      <article class="metric"><div class="metric-label">Custo acumulado</div><div id="metric-cost" class="metric-value">0</div><div class="metric-sub">caracteres de instrução</div></article>
+      <article class="metric"><div class="metric-label">Último evento</div><div id="metric-event" class="metric-value">—</div><div id="metric-event-sub" class="metric-sub">trace.jsonl</div></article>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel panel-section">
+        <div class="panel-heading"><h2>Backlog de features</h2><span id="feature-count" class="meta">0 itens</span></div>
+        <div id="feature-list" class="feature-list"><div class="empty">O backlog aparecerá após a etapa de planejamento.</div></div>
+      </article>
+      <article class="panel panel-section">
+        <div class="panel-heading"><h2>Trace da execução</h2><span id="trace-count" class="meta">0 eventos</span></div>
+        <div id="trace-list" class="trace-list"><div class="empty">Os eventos do harness aparecerão aqui.</div></div>
+      </article>
+    </section>
+
+    <section class="bottom-grid">
+      <article class="panel panel-section">
+        <div class="panel-heading"><h2>Arquivos monitorados</h2><span class="meta">leitura ao vivo</span></div>
+        <div id="file-list" class="file-list"></div>
+      </article>
+      <article class="panel panel-section">
+        <div class="panel-heading"><h2>Brief e progresso</h2><span class="meta" id="artifact-meta">artefatos</span></div>
+        <pre id="artifact-copy" class="artifact-copy">Nenhum brief ou progress.txt disponível.</pre>
+      </article>
+    </section>
+
+    <footer class="footer"><span>Atualização automática a cada <code>2s</code> · sem cache</span><span>Última leitura: <code id="read-at">—</code></span></footer>
+  </main>
+
+  <script>
+    (() => {
+      const REFRESH_MS = 2000;
+      const state = { auto: localStorage.getItem("harness-monitor-auto") !== "false", timer: null, lastRead: null, refreshPromise: null };
+      const $ = (id) => document.getElementById(id);
+
+      const SOURCES = {
+        state: { label: "state.json", paths: ["state.json", "last-development.state.json", "last-run.state.json"] },
+        features: { label: "feature_list.json", paths: ["feature_list.json"] },
+        config: { label: "run_config.json", paths: ["run_config.json"] },
+        trace: { label: "trace.jsonl", paths: ["trace.jsonl", "last-development.trace.jsonl", "last-run.trace.jsonl"] },
+        inbox: { label: "inbox.json", paths: ["inbox.json", "inbox.consumed.json"] },
+        artifacts: { label: "artifacts.json", paths: ["artifacts.json"] },
+        brief: { label: "brief.md", paths: ["brief.md"] },
+        progress: { label: "../progress.txt", paths: ["../progress.txt"] }
+      };
+
+      const text = (value, fallback = "—") => value === undefined || value === null || value === "" ? fallback : String(value);
+      const escape = (value) => text(value, "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+      const formatNumber = (value) => new Intl.NumberFormat("pt-BR").format(Number(value) || 0);
+      const formatDate = (value) => {
+        if (!value) return "—";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? text(value) : new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(date);
+      };
+      const shortDate = (value) => {
+        if (!value) return "—";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? text(value) : new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(date);
+      };
+      const statusLabel = (value) => ({ instruction: "instrução", stop: "parou", error: "erro", budget: "limite", timeout: "timeout" }[value] || text(value, "desconhecido"));
+      const statusClass = (value) => ({ instruction: "instruction", stop: "stop", error: "error", budget: "budget", timeout: "timeout" }[value] || "");
+      const isFileProtocol = window.location.protocol === "file:";
+
+      async function fetchCandidate(source) {
+        for (const path of source.paths) {
+          try {
+            const response = await fetch(`${path}?_=${Date.now()}`, { cache: "no-store" });
+            if (response.ok) return { path, text: await response.text(), exists: true };
+          } catch (_) { /* File absence and an unavailable server are rendered below. */ }
+        }
+        return { path: source.paths[0], text: "", exists: false };
+      }
+
+      async function readSources() {
+        const entries = await Promise.all(Object.entries(SOURCES).map(async ([key, source]) => [key, await fetchCandidate(source)]));
+        return Object.fromEntries(entries);
+      }
+
+      function parseJson(result, fallback) {
+        try { return result.text ? JSON.parse(result.text) : fallback; } catch (_) { return fallback; }
+      }
+
+      function parseTrace(raw) {
+        const events = [];
+        let invalid = 0;
+        for (const line of raw.split(/\r?\n/).filter(Boolean)) {
+          try { events.push(JSON.parse(line)); } catch (_) { invalid++; }
+        }
+        return { events, invalid };
+      }
+
+      function deriveStatus(stateData, features, events) {
+        const terminal = text(stateData.TerminalReason, "");
+        const latest = events.at(-1);
+        if (terminal) return { key: "warning", label: "Interrompido", detail: terminal };
+        if (features.length && features.every((feature) => feature.passes === true)) return { key: "done", label: "Concluído", detail: "Todas as features passaram" };
+        if (latest?.outcome === "error") return { key: "error", label: "Erro", detail: "O último evento registrou um erro" };
+        if (latest?.outcome === "timeout") return { key: "error", label: "Timeout", detail: "A execução excedeu o tempo configurado" };
+        if (latest?.outcome === "budget") return { key: "warning", label: "Limite atingido", detail: "A execução atingiu o orçamento de passos" };
+        if (events.length || features.length || stateData.Step > 0) return { key: "running", label: "Em execução", detail: "O harness está acompanhando o próximo estado" };
+        return { key: "waiting", label: "Aguardando", detail: "Inicie o harness para acompanhar o progresso" };
+      }
+
+      function renderFeatures(features, currentId) {
+        $("feature-count").textContent = `${features.length} ${features.length === 1 ? "item" : "itens"}`;
+        const list = $("feature-list");
+        if (!features.length) { list.innerHTML = '<div class="empty">O backlog aparecerá após a etapa de planejamento.</div>'; return; }
+        list.innerHTML = features.map((feature) => {
+          const active = String(feature.id) === String(currentId) && !feature.passes;
+          const done = feature.passes === true;
+          const dependencies = Array.isArray(feature.dependsOn) && feature.dependsOn.length ? `depende de #${feature.dependsOn.join(", #")}` : "sem dependências";
+          const kind = done ? "done" : active ? "active" : "";
+          const label = done ? "concluída" : active ? "em andamento" : "pendente";
+          return `<div class="feature-item ${kind}"><div class="feature-top"><span class="feature-icon">${done ? "✓" : active ? "→" : escape(feature.id)}</span><div class="feature-title"><span class="feature-id">#${escape(feature.id)}</span> ${escape(feature.title || "Feature sem título")}</div><span class="feature-state">${label}</span></div><div class="feature-meta"><span class="tag">prioridade ${escape(feature.priority || "—")}</span><span>${escape(dependencies)}</span></div><div class="feature-bar"><span></span></div></div>`;
+        }).join("");
+      }
+
+      function renderTrace(events, invalid) {
+        $("trace-count").textContent = `${events.length} ${events.length === 1 ? "evento" : "eventos"}${invalid ? ` · ${invalid} inválido${invalid === 1 ? "" : "s"}` : ""}`;
+        const list = $("trace-list");
+        if (!events.length) { list.innerHTML = '<div class="empty">Os eventos do harness aparecerão aqui.</div>'; return; }
+        list.innerHTML = events.slice(-24).reverse().map((event) => {
+          const outcome = text(event.outcome, "evento");
+          const label = event.label || (event.command ? `comando: ${event.command}` : "sem label");
+          return `<div class="trace-item"><div class="trace-step">#${escape(event.step)}</div><div class="trace-main"><div class="trace-command">${escape(event.command || "—")}</div><div class="trace-label">${escape(label)} · ${formatNumber(event.instructionChars)} chars</div><span class="trace-outcome ${statusClass(outcome)}">${escape(statusLabel(outcome))}</span></div><div class="trace-time">${shortDate(event.timestamp)}</div></div>`;
+        }).join("");
+      }
+
+      function renderFiles(results) {
+        const keys = ["state", "features", "config", "trace", "inbox", "artifacts", "brief", "progress"];
+        $("file-list").innerHTML = keys.map((key) => {
+          const result = results[key];
+          return `<div class="file-item"><span class="file-name">${escape(result.path)}</span><span class="file-status ${result.exists ? "loaded" : ""}">${result.exists ? `${formatNumber(result.text.length)} chars` : "ausente"}</span></div>`;
+        }).join("");
+      }
+
+      function renderArtifacts(results, manifest) {
+        const brief = results.brief.exists ? results.brief.text : "";
+        const progress = results.progress.exists ? results.progress.text : "";
+        const content = [brief && `BRIEF\n${brief}`, progress && `PROGRESSO (tail)\n${progress.split(/\r?\n/).slice(-12).join("\n")}`].filter(Boolean).join("\n\n");
+        $("artifact-copy").textContent = content || "Nenhum brief ou progress.txt disponível.";
+        const artifactCount = Array.isArray(manifest.files) ? manifest.files.length : 0;
+        $("artifact-meta").textContent = `${artifactCount} artefato${artifactCount === 1 ? "" : "s"}`;
+      }
+
+      function render(results) {
+        const stateFile = parseJson(results.state, { Step: 0, Data: {}, CostChars: 0 });
+        const stateData = stateFile.Data || {};
+        const featureFile = parseJson(results.features, { items: [] });
+        const features = Array.isArray(featureFile) ? featureFile : (featureFile.items || []);
+        const { events, invalid } = parseTrace(results.trace.text);
+        const config = parseJson(results.config, {});
+        const manifest = parseJson(results.artifacts, { files: [] });
+        const latest = events.at(-1);
+        const currentId = stateData.current_feature_id;
+        const current = features.find((feature) => String(feature.id) === String(currentId));
+        const completed = features.filter((feature) => feature.passes === true).length;
+        const percentage = features.length ? Math.round((completed / features.length) * 100) : 0;
+        const derived = deriveStatus(stateFile, features, events);
+
+        $("progress-ring").style.setProperty("--progress", `${percentage}%`);
+        $("progress-value").textContent = `${percentage}%`;
+        $("headline").textContent = derived.label;
+        $("headline-detail").textContent = derived.detail;
+        $("status-pill").className = `status-pill ${derived.key}`;
+        $("status-text").textContent = derived.label;
+        $("last-update").textContent = latest ? `último evento ${shortDate(latest.timestamp)}` : "sem eventos";
+        $("run-source").textContent = results.state.path.includes("last-") ? "snapshot" : (results.state.exists ? "ao vivo" : "sem dados");
+        $("run-id").textContent = text(config.runId);
+        $("target-dir").textContent = text(config.targetDir);
+        $("verify-cmd").textContent = text(config.verifyCmd);
+        $("current-feature").textContent = current ? `#${text(current.id)} · ${text(current.title)}` : (currentId ? `#${currentId}` : "—");
+        $("metric-step").textContent = formatNumber(stateFile.Step);
+        $("metric-step-sub").textContent = latest ? `último: ${statusLabel(latest.outcome)}` : "sem eventos";
+        $("metric-features").textContent = `${completed} / ${features.length}`;
+        $("metric-features-sub").textContent = features.length ? `${features.length - completed} pendente${features.length - completed === 1 ? "" : "s"}` : "backlog ainda não criado";
+        $("metric-cost").textContent = formatNumber(stateFile.CostChars);
+        $("metric-event").textContent = latest ? statusLabel(latest.outcome) : "—";
+        $("metric-event-sub").textContent = latest ? `passo #${text(latest.step)}` : "trace.jsonl";
+
+        renderFeatures(features, currentId);
+        renderTrace(events, invalid);
+        renderFiles(results);
+        renderArtifacts(results, manifest);
+
+        const hasAnyData = Object.values(results).some((result) => result.exists);
+        $("file-notice").classList.toggle("show", !hasAnyData || isFileProtocol);
+        $("file-notice-text").textContent = isFileProtocol
+          ? "Abra esta página por um servidor HTTP local (a leitura de arquivos é bloqueada quando o HTML é aberto diretamente como file://)."
+          : hasAnyData ? "Alguns arquivos ainda não existem; o painel continuará consultando até o harness criá-los." : "Nenhum arquivo de execução foi encontrado ainda.";
+      }
+
+      function updateRefreshUi() {
+        $("refresh-dot").className = `refresh-dot ${state.auto ? "live" : "paused"}`;
+        $("refresh-label").textContent = state.auto ? "Atualização automática" : "Atualização pausada";
+        $("auto-toggle").textContent = state.auto ? "Pausar auto-refresh" : "Ativar auto-refresh";
+        $("auto-toggle").setAttribute("aria-pressed", String(state.auto));
+      }
+
+      async function refresh() {
+        if (state.refreshPromise) return state.refreshPromise;
+        state.refreshPromise = readSources().then((results) => {
+          state.lastRead = new Date();
+          render(results);
+          $("read-at").textContent = formatDate(state.lastRead);
+        }).catch((error) => {
+          $("file-notice").classList.add("show");
+          $("file-notice-text").textContent = `Falha ao ler os artefatos; nova tentativa em ${REFRESH_MS / 1000}s. ${error.message || "Verifique se a página está sendo servida por HTTP."}`;
+        }).finally(() => {
+          state.refreshPromise = null;
+        });
+        return state.refreshPromise;
+      }
+
+      function schedule() {
+        clearInterval(state.timer);
+        state.timer = state.auto ? setInterval(() => { refresh(); }, REFRESH_MS) : null;
+        updateRefreshUi();
+      }
+
+      $("refresh-button").addEventListener("click", refresh);
+      function toggleAutoRefresh() {
+        state.auto = !state.auto;
+        localStorage.setItem("harness-monitor-auto", String(state.auto));
+        schedule();
+      }
+      $("auto-toggle").addEventListener("click", toggleAutoRefresh);
+      $("refresh-state").style.cursor = "pointer";
+      $("refresh-state").addEventListener("click", toggleAutoRefresh);
+      schedule();
+      refresh();
+    })();
+  </script>
+</body>
+</html>

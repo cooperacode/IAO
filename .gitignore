@@ -4,7 +4,10 @@ obj/
 target/
 
 # Estado de runtime do harness
-.harness/
+.harness/*
+!.harness/
+!.harness/index.html
+!.harness/run.sh
 
 # Cruft de exemplos antigos
 __pycache__/
