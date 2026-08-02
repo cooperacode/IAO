@@ -128,6 +128,10 @@
     .trace-main { min-width: 0; }
     .trace-command { overflow: hidden; color: var(--text); font-family: "SFMono-Regular", Consolas, monospace; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
     .trace-label { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+    .trace-context { margin-top: 6px; color: var(--cyan); font-size: .68rem; }
+    .trace-context-meta { display: flex; justify-content: space-between; gap: 8px; }
+    .trace-gauge { height: 5px; margin-top: 5px; overflow: hidden; border-radius: 999px; background: rgba(145, 160, 191, .13); }
+    .trace-gauge span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--cyan)); box-shadow: 0 0 10px rgba(85, 224, 208, .35); }
     .trace-time { color: var(--faint); font-size: .68rem; white-space: nowrap; }
     .trace-outcome { display: inline-block; margin-top: 6px; padding: 2px 6px; border-radius: 4px; color: var(--muted); background: rgba(145, 160, 191, .1); font-size: .65rem; }
     .trace-outcome.stop, .trace-outcome.instruction { color: #a9f5c8; background: rgba(105, 221, 162, .1); }
@@ -260,6 +264,22 @@
       const text = (value, fallback = "—") => value === undefined || value === null || value === "" ? fallback : String(value);
       const escape = (value) => text(value, "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
       const formatNumber = (value) => new Intl.NumberFormat("pt-BR").format(Number(value) || 0);
+      const formatPercent = (value) => new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(value);
+      const contextUsage = (event) => {
+        const used = Number(event.contextUsedTokens);
+        const window = Number(event.contextWindowTokens);
+        if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return "";
+        const ratio = Number(event.contextRatio);
+        const percentage = Number.isFinite(ratio) ? ratio : used / window;
+        if (!Number.isFinite(percentage)) return "";
+        return {
+          used: formatNumber(used),
+          window: formatNumber(window),
+          percentage: formatPercent(percentage),
+          fill: `${Math.min(Math.max(percentage, 0), 1) * 100}%`,
+          ariaPercentage: Math.min(Math.max(percentage * 100, 0), 100)
+        };
+      };
       const formatDate = (value) => {
         if (!value) return "—";
         const date = new Date(value);
@@ -335,7 +355,9 @@
         list.innerHTML = events.slice(-24).reverse().map((event) => {
           const outcome = text(event.outcome, "evento");
           const label = event.label || (event.command ? `comando: ${event.command}` : "sem label");
-          return `<div class="trace-item"><div class="trace-step">#${escape(event.step)}</div><div class="trace-main"><div class="trace-command">${escape(event.command || "—")}</div><div class="trace-label">${escape(label)} · ${formatNumber(event.instructionChars)} chars</div><span class="trace-outcome ${statusClass(outcome)}">${escape(statusLabel(outcome))}</span></div><div class="trace-time">${shortDate(event.timestamp)}</div></div>`;
+          const usage = contextUsage(event);
+          const context = usage ? `<div class="trace-context"><div class="trace-context-meta"><span>${usage.used} / ${usage.window} tokens</span><span>${usage.percentage}</span></div><div class="trace-gauge" role="progressbar" aria-label="Uso da janela de contexto" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.ariaPercentage}"><span style="width:${usage.fill}"></span></div></div>` : "";
+          return `<div class="trace-item"><div class="trace-step">#${escape(event.step)}</div><div class="trace-main"><div class="trace-command">${escape(event.command || "—")}</div><div class="trace-label">${escape(label)} · ${formatNumber(event.instructionChars)} chars</div>${context}<span class="trace-outcome ${statusClass(outcome)}">${escape(statusLabel(outcome))}</span></div><div class="trace-time">${shortDate(event.timestamp)}</div></div>`;
         }).join("");
       }
 
