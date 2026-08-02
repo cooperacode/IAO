@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Validate and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python test dependencies
+        run: python -m pip install --upgrade pytest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Validate tag and version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/check-version.sh "$RELEASE_TAG"
+
+      - name: Run all checks
+        run: |
+          bash src/dotnet/run-checks.sh
+          bash src/python/run-checks-py.sh
+          bash src/rust/run-checks-rs.sh
+          bash src/go/run-checks-go.sh
+
+      - name: Build release packages
+        run: |
+          set -euo pipefail
+          VERSION="$(<VERSION)"
+          mkdir -p release
+
+          ./package.sh --engine dotnet --os linux-x64 --ide codex --version "$VERSION"
+          tar -czf "release/flows-dotnet-linux-x64-v${VERSION}.tar.gz" \
+            -C dist "flows-linux-x64-v${VERSION}"
+
+          ./package.sh --engine python --ide codex --version "$VERSION"
+          tar -czf "release/flows-python-v${VERSION}.tar.gz" \
+            -C dist "flows-python-v${VERSION}"
+
+          ./package.sh --engine rust --ide codex --version "$VERSION"
+          tar -czf "release/flows-rust-linux-x64-v${VERSION}.tar.gz" \
+            -C dist "flows-rust-linux-x64-v${VERSION}"
+
+          ./package.sh --engine go --ide codex --version "$VERSION"
+          tar -czf "release/flows-go-linux-x64-v${VERSION}.tar.gz" \
+            -C dist "flows-go-linux-x64-v${VERSION}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/*.tar.gz \
+            --title "IAO $RELEASE_TAG" \
+            --generate-notes

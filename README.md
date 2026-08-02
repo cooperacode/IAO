@@ -221,6 +221,22 @@ The included adapters call that packaged wrapper by default:
 Every package uses the same `.harness/inbox.json` protocol. Each port keeps its
 original `run-checks*.sh` parity gate in the corresponding language directory.
 
+## Versioning and releases
+
+The repository uses [Semantic Versioning](https://semver.org/) and
+[Conventional Commits](https://www.conventionalcommits.org/). The official
+repository version is kept in [`VERSION`](VERSION); the Python and Rust
+manifests are checked against it by `bash scripts/check-version.sh`.
+
+Use `MAJOR.MINOR.PATCH`: increment `MAJOR` for incompatible protocol or public
+contract changes, `MINOR` for compatible features, and `PATCH` for compatible
+fixes. Releases are annotated Git tags with the `v` prefix, such as `v0.1.0`.
+
+The checks workflow runs the four engine gates on every pull request and push to
+`main`. Pushing a matching `v*.*.*` tag runs the checks again, builds the Linux
+packages, and publishes them as GitHub Release assets. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the release checklist.
+
 ## Example Usage
 
 Intended IDE-agent usage:

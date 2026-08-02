@@ -56,7 +56,10 @@ FLOWS=(development)
 ENGINE=""
 RID=""
 IDE=""
-VERSION="1.0.0"
+VERSION_FILE="$DIR/VERSION"
+[[ -f "$VERSION_FILE" ]] || { echo "version file not found: $VERSION_FILE" >&2; exit 1; }
+REPOSITORY_VERSION="$(<"$VERSION_FILE")"
+VERSION="$REPOSITORY_VERSION"
 
 usage() {
   echo "usage: ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]"
@@ -168,6 +171,15 @@ elif [[ -n "$RID" ]]; then
 fi
 contains "$IDE" "${IDES[@]}" || { echo "invalid IDE: '$IDE' (use: ${IDES[*]})" >&2; exit 1; }
 [[ -n "$VERSION" ]] || { echo "empty version" >&2; exit 1; }
+SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+[[ "$VERSION" =~ $SEMVER_RE ]] || {
+  echo "invalid semantic version: '$VERSION' (expected MAJOR.MINOR.PATCH)" >&2
+  exit 1
+}
+bash "$DIR/scripts/check-version.sh"
+if [[ "$VERSION" != "$REPOSITORY_VERSION" ]]; then
+  echo "[package] [warning] using --version '$VERSION' instead of repository VERSION '$REPOSITORY_VERSION'" >&2
+fi
 
 bash "$DIR/.harness/scripts/check-development-contracts.sh"
 
@@ -219,6 +231,7 @@ chmod +x "$OUT/.harness/run.sh"
 cp -R .harness/skills "$OUT/.harness/skills"
 find "$OUT/.harness/skills" -name "__pycache__" -type d -prune -exec rm -rf {} +
 cp harness.json "$OUT/harness.json"   # harness variable config (ceilings, docs)
+printf '%s\n' "$VERSION" > "$OUT/VERSION"
 
 # .harness/scripts/ — dependency of .harness/skills/session-report/generate_report.py.
 # Keep provider usage scripts inside the harness container so the package root only exposes
