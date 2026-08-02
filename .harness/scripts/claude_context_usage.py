@@ -13,6 +13,30 @@ import claude_usage
 DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000
 
 
+def context_input_tokens(usage: dict[str, object]) -> int | None:
+    """Return the input size of the Claude request represented by ``usage``.
+
+    Anthropic reports uncached input, cache writes, and cache reads in separate
+    fields.  ``input_tokens`` alone is often only ``2`` when nearly all of the
+    prompt was served from the prompt cache, so it is not the current context
+    size.  Cache tokens are still part of the request context and must be
+    included here.
+    """
+    input_tokens = usage.get("input_tokens")
+    if isinstance(input_tokens, bool) or not isinstance(input_tokens, int) or input_tokens < 0:
+        return None
+
+    total = input_tokens
+    for field in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+        value = usage.get(field, 0)
+        if value is None:
+            value = 0
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        total += value
+    return total
+
+
 def configured_context_window() -> int:
     raw = (
         os.environ.get("CLAUDE_CONTEXT_WINDOW_TOKENS")
@@ -40,8 +64,8 @@ def latest_context_usage(session_id: str | None, context_window: int | None) -> 
         return None
 
     event_session_id, _, _, usage, timestamp = max(events, key=lambda item: item[4] or "")
-    used_tokens = usage.get("input_tokens")
-    if not isinstance(used_tokens, int) or used_tokens < 0:
+    used_tokens = context_input_tokens(usage)
+    if used_tokens is None:
         return None
 
     return {
