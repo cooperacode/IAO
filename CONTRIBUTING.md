@@ -1,8 +1,8 @@
-# Contribuindo
+# Contributing
 
-## Branches e pull requests
+## Branches and pull requests
 
-Use branches curtas para cada mudança:
+Use short-lived branches for each change:
 
 ```text
 feat/context-usage
@@ -10,12 +10,12 @@ fix/timeout-recovery
 docs/versioning
 ```
 
-Abra um pull request para `main` e aguarde os checks dos quatro engines. A
-branch `main` deve permanecer sempre publicável.
+Open a pull request against `main` and wait for the checks for all four engines.
+The `main` branch should always remain releasable.
 
 ## Commits
 
-Use [Conventional Commits](https://www.conventionalcommits.org/pt-br/v1.0.0/):
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ```text
 feat: add context usage tracking
@@ -26,38 +26,39 @@ test: cover invalid envelopes
 chore: update dependencies
 ```
 
-Para mudanças incompatíveis, use `!` ou um rodapé `BREAKING CHANGE`:
+For breaking changes, use `!` or a `BREAKING CHANGE` footer:
 
 ```text
 feat!: change the envelope contract
 ```
 
-## Versões e releases
+## Versions and releases
 
-A versão oficial fica em [`VERSION`](VERSION). Ela usa Semantic Versioning:
+The official version is stored in [`VERSION`](VERSION). It follows Semantic
+Versioning:
 
-- `MAJOR`: mudança incompatível no protocolo ou contrato público;
-- `MINOR`: funcionalidade nova compatível;
-- `PATCH`: correção compatível.
+- `MAJOR`: incompatible protocol or public contract change;
+- `MINOR`: new backwards-compatible feature;
+- `PATCH`: backwards-compatible fix.
 
-Os manifests Python e Rust devem permanecer iguais à versão em `VERSION`. A
-validação pode ser executada localmente com:
+The Python and Rust manifests must match the version in `VERSION`. Run the
+validation locally with:
 
 ```bash
 bash scripts/check-version.sh
 ```
 
-Para publicar uma versão:
+To publish a release:
 
-1. Atualize `VERSION`.
-2. Mova as alterações de `Unreleased` para a nova seção em `CHANGELOG.md`.
-3. Faça merge da mudança em `main`.
-4. Crie uma tag anotada com o mesmo número:
+1. Update `VERSION`.
+2. Move the changes from `Unreleased` into the new section in `CHANGELOG.md`.
+3. Merge the change into `main`.
+4. Create an annotated tag with the same version:
 
    ```bash
    git tag -a v0.1.0 -m "Release v0.1.0"
    git push origin v0.1.0
    ```
 
-O workflow de release valida a tag, executa os checks e publica os pacotes
-Linux dos quatro engines como assets da release do GitHub.
+The release workflow validates the tag, runs the checks, and publishes Linux
+packages for all four engines as GitHub Release assets.
