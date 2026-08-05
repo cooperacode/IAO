@@ -52,7 +52,7 @@ pub fn default_config() -> HarnessConfig {
         max_steps: 12,
         max_instruction_chars: 0,
         docs_max_chars: 40_000,
-        docs_folder: "docs".to_string(),
+        docs_folder: "specs".to_string(),
         timeout_ms: 10 * 60_000,
         context_reset_mode: "adaptive".to_string(),
         context_reset_threshold: 0.70,
@@ -212,6 +212,7 @@ mod tests {
         assert_eq!(config, default_config());
         assert_eq!(config.max_steps, 12);
         assert_eq!(config.max_instruction_chars, 0);
+        assert_eq!(config.docs_folder, "specs");
         assert_eq!(config.timeout_ms, 10 * 60_000);
     }
 

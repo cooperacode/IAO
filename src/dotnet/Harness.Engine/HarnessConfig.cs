@@ -31,7 +31,7 @@ public record HarnessConfig(
         MaxSteps: 12,
         MaxInstructionChars: 0,
         DocsMaxChars: 40_000,
-        DocsFolder: "docs",
+        DocsFolder: "specs",
         TimeoutMs: 10 * 60_000,
         ContextResetMode: "adaptive",
         ContextResetThreshold: 0.70,

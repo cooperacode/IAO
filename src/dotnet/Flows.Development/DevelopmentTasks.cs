@@ -73,13 +73,13 @@ public static partial class DevelopmentTasks
         // Flow that PRODUCES feature_list: a new run erases the previous run's.
         FeatureStore.Reset();
         RunConfigStore.Reset();
-        // Without this, a new run in interactive mode (no docs/) would silently inherit
+        // Without this, a new run in interactive mode (no specs/) would silently inherit
         // the brief.md from a previous run — interactive mode never calls
         // ArtifactStore.Write, so only this Reset guarantees no brief from an old topic
         // survives.
         ArtifactStore.Reset();
 
-        // Brief (what to build) comes from docs/ or, without docs, from interactive mode.
+        // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
         if (!DocsReader.HasDocs(DocsFolder))
             return InitializerInteractive();
 
@@ -87,7 +87,7 @@ public static partial class DevelopmentTasks
         // Persisted for auditability and compatibility; implementation sessions use the
         // bounded context copied into each feature by the planner.
         ArtifactStore.Write(BriefArtifactName, content);
-        StateStore.Set("origem", "docs");
+        StateStore.Set("origem", "specs");
         return InitializerPrompt(content, files);
     }
 

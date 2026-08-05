@@ -13,7 +13,7 @@ import (
 // id 1 has priority 2; id 2 has priority 1 → the highest priority is id 2.
 const featuresJSON = `[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]`
 
-func isolate(t *testing.T) (targetDir, docsDir string) {
+func isolate(t *testing.T) (targetDir, specsDir string) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -34,17 +34,17 @@ func isolate(t *testing.T) (targetDir, docsDir string) {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	docsDir = filepath.Join(dir, "docs")
+	specsDir = filepath.Join(dir, "specs")
 
-	return targetDir, docsDir
+	return targetDir, specsDir
 }
 
-func givenDocsBrief(t *testing.T, docsDir, content string) {
+func givenSpecsBrief(t *testing.T, specsDir, content string) {
 	t.Helper()
-	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+	if err := os.MkdirAll(specsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(docsDir, "brief.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(specsDir, "brief.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -223,8 +223,8 @@ func TestStart_WithPendingFeature_PreservesRunIdFromPreviousPlan(t *testing.T) {
 }
 
 func TestStart_WithDocs_PersistsBriefInArtifactStore(t *testing.T) {
-	_, docsDir := isolate(t)
-	givenDocsBrief(t, docsDir, "# Brief\n\nBuild a task app.")
+	_, specsDir := isolate(t)
+	givenSpecsBrief(t, specsDir, "# Brief\n\nBuild a task app.")
 
 	Start()
 
@@ -236,7 +236,7 @@ func TestStart_WithDocs_PersistsBriefInArtifactStore(t *testing.T) {
 func TestStart_InteractiveMode_DoesNotPersistBrief(t *testing.T) {
 	_, _ = isolate(t)
 
-	Start() // no docs/ → InitializerInteractive()
+	Start() // no specs/ → InitializerInteractive()
 
 	if engine.ReadArtifact("brief") != "" {
 		t.Fatal("expected no brief")
@@ -244,16 +244,16 @@ func TestStart_InteractiveMode_DoesNotPersistBrief(t *testing.T) {
 }
 
 func TestStart_NewRunWithoutDocs_ClearsPreviousBrief(t *testing.T) {
-	_, docsDir := isolate(t)
-	givenDocsBrief(t, docsDir, "topic A brief")
+	_, specsDir := isolate(t)
+	givenSpecsBrief(t, specsDir, "topic A brief")
 	Start()
 	planWith(".")
 	for _, f := range engine.LoadFeatures() {
 		engine.MarkFeaturePassed(f.Id)
 	}
-	os.RemoveAll(docsDir)
+	os.RemoveAll(specsDir)
 
-	Start() // new run, no docs/ → interactive
+	Start() // new run, no specs/ → interactive
 
 	if engine.ReadArtifact("brief") != "" {
 		t.Fatal("expected brief cleared")
@@ -261,8 +261,8 @@ func TestStart_NewRunWithoutDocs_ClearsPreviousBrief(t *testing.T) {
 }
 
 func TestPlan_ReturnsImplementWithoutBriefReinjection(t *testing.T) {
-	targetDir, docsDir := isolate(t)
-	givenDocsBrief(t, docsDir, "topic A brief")
+	targetDir, specsDir := isolate(t)
+	givenSpecsBrief(t, specsDir, "topic A brief")
 	Start()
 
 	result := planWith(targetDir)
@@ -273,8 +273,8 @@ func TestPlan_ReturnsImplementWithoutBriefReinjection(t *testing.T) {
 }
 
 func TestPick_ReturnsImplementWithoutBriefReinjection(t *testing.T) {
-	targetDir, docsDir := isolate(t)
-	givenDocsBrief(t, docsDir, "topic A brief")
+	targetDir, specsDir := isolate(t)
+	givenSpecsBrief(t, specsDir, "topic A brief")
 	Start()
 	result := planWith(targetDir)
 

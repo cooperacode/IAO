@@ -28,6 +28,7 @@ public class HarnessConfigTests : IDisposable
         Assert.Equal(HarnessConfig.Default, config);
         Assert.Equal(12, config.MaxSteps);
         Assert.Equal(0, config.MaxInstructionChars); // cost ceiling disabled by default
+        Assert.Equal("specs", config.DocsFolder);
         Assert.Equal(10 * 60_000, config.TimeoutMs);       // time guard is always enabled
     }
 

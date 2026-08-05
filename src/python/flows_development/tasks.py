@@ -73,12 +73,12 @@ def start() -> str:
     # PRODUCER flow of the feature list: a new run discards the previous one's.
     feature_store.reset()
     run_config_store.reset()
-    # Without this, a new run in interactive mode (no docs/) would silently inherit a
+    # Without this, a new run in interactive mode (no specs/) would silently inherit a
     # previous run's brief.md — interactive mode never calls artifact_store.write, so only
     # this reset guarantees no brief from an old topic survives.
     artifact_store.reset()
 
-    # The brief (what to build) comes from docs/, or, without docs, from interactive mode.
+    # The brief (what to build) comes from specs/, or, without specs, from interactive mode.
     if not docs_reader.has_docs(_docs_folder()):
         return prompts.initializer_interactive()
 
@@ -86,7 +86,7 @@ def start() -> str:
     # Persisted for auditability and compatibility; implementation sessions use the bounded
     # context copied into each feature by the planner.
     artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
-    state_store.set("origem", "docs")
+    state_store.set("origem", "specs")
     return prompts.initializer_prompt(content, files)
 
 

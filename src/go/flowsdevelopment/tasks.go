@@ -77,12 +77,12 @@ func Start() string {
 	// PRODUCER flow of the feature list: a new run discards the previous one's.
 	engine.ResetFeatures()
 	engine.ResetRunConfig()
-	// Without this, a new run in interactive mode (no docs/) would silently inherit a
+	// Without this, a new run in interactive mode (no specs/) would silently inherit a
 	// previous run's brief.md — interactive mode never calls WriteArtifact, so only this
 	// reset guarantees no brief from an old topic survives.
 	engine.ResetArtifacts()
 
-	// The brief (what to build) comes from docs/, or, without docs, from interactive mode.
+	// The brief (what to build) comes from specs/, or, without specs, from interactive mode.
 	if !engine.HasDocs(docsFolder()) {
 		return InitializerInteractive()
 	}
@@ -91,7 +91,7 @@ func Start() string {
 	// Persisted for auditability and compatibility; implementation sessions use the bounded
 	// context copied into each feature by the planner.
 	engine.WriteArtifact(briefArtifactName, content)
-	engine.SetState("origem", "docs")
+	engine.SetState("origem", "specs")
 	return InitializerPrompt(content, files)
 }
 

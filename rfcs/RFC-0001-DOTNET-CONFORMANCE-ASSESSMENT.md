@@ -102,7 +102,7 @@ confiança do RFC (§3), parte do que está fora da fronteira de confiança junt
 
 | Risco | Rating do RFC | Status em `src/dotnet` | Evidência |
 |---|---|---|---|
-| IAO-R01 — Prompt injection muda a hierarquia de instrução | Crítico | **Aberto** | `DocsReader` concatena todo `docs/*.md`/`*.txt` sem rótulo de confiança; `PromptFormatter` inlina skills sem digest |
+| IAO-R01 — Prompt injection muda a hierarquia de instrução | Crítico | **Aberto** | `DocsReader` concatena todo `specs/*.md`/`*.txt` sem rótulo de confiança; `PromptFormatter` inlina skills sem digest |
 | IAO-R02 — Path do agente escapa da raiz autorizada | Crítico | 🔧 **Parcialmente mitigado** | `PathResolver` fecha escape por symlink; `ResolveTargetDir` rejeita `/`/home/dir do harness. Containment contra uma raiz de política assinada arbitrária ainda exige o capability broker (Fase 2) — permanece Crítico até lá |
 | IAO-R03 — Verificador controlado pelo agente aprova falsamente | Crítico | **Aberto** | `verify-feature.sh` roda de dentro do `targetDir`, é o único gate |
 | IAO-R04 — Tampering de estado/trace esconde run inseguro | Alto | 🔧 **Parcialmente mitigado** | `trace.jsonl` agora tem hash-chain SHA-256 — edição/remoção retroativa de uma linha quebra a cadeia a partir dali. `state.json` ganhou escrita atômica (evita corrupção por crash) mas não hash-chain/assinatura — segue sem detectar edição deliberada |
@@ -110,7 +110,7 @@ confiança do RFC (§3), parte do que está fora da fronteira de confiança junt
 | IAO-R06 — Relatórios de sessão vazam segredos/dados pessoais | Alto | **Fora de `src/dotnet`** | Scripts de report não fazem parte do engine .NET avaliado |
 | IAO-R07 — Dependência/pacote comprometido entra em release | Alto | **Aberto** | Sem lockfile enforcement visível em CI, sem SBOM, sem CI (`.github/workflows` ausente) |
 | IAO-R08 — Drivers concorrentes corrompem/bifurcam um run | Alto | **Aberto** | Sem lease; dois processos podem escrever `.harness/state.json` ao mesmo tempo sem lock |
-| IAO-R09 — Diferenças de runtime quebram equivalência de protocolo/evidência | Moderado | 🔧 **Parcialmente mitigado** | A divergência específica citada (contagem de tamanho) foi fechada: as três engines agora medem docs/custo de instrução/snippets em octetos UTF-8. Outras fontes de divergência do Apêndice B (JSON canônico, ordenação de erro, semântica de timeout) seguem abertas |
+| IAO-R09 — Diferenças de runtime quebram equivalência de protocolo/evidência | Moderado | 🔧 **Parcialmente mitigado** | A divergência específica citada (contagem de tamanho) foi fechada: as três engines agora medem specs/custo de instrução/snippets em octetos UTF-8. Outras fontes de divergência do Apêndice B (JSON canônico, ordenação de erro, semântica de timeout) seguem abertas |
 | IAO-R10 — Config do workspace desliga budgets/aumenta timeouts | Alto | **Parcialmente mitigado** | `timeoutMs` não pode ser desligado, é limitado a 5 min e um timeout/budget não pode ser reaberto em nova invocação; `MaxSteps`/`MaxInstructionChars` **não** têm teto externo equivalente — o workspace pode aumentá-los livremente |
 | IAO-R11 — Falha de persistência tratada como estado vazio válido | Alto | **Aberto** | Padrão fail-open inalterado em todos os stores. A escrita agora ser atômica evita *corrupção* por crash no meio de uma escrita, mas não muda o que acontece quando a *leitura*/escrita falha por outro motivo — o `catch` ainda devolve default silenciosamente. Fail-closed foi deixado fora desta rodada por decisão explícita (ver Seção 6, item de alto impacto) |
 | IAO-R12 — Testes funcionais verdes escondem ausência de testes de segurança adversariais | Alto | 🔧 **Parcialmente mitigado** | A suíte ganhou testes pontuais para os cenários que a mudança fechou (symlink escape em `PathResolverTests`, adulteração de hash-chain em `TraceTests`, flags de isolamento em `GitCommandTests`, truncamento UTF-8 em `DocsReaderTests`, equivalentes em Python/Rust). Ainda cobre só uma fração dos 25 cenários adversariais do §11.2 — replay, tampering de política, hook malicioso *de fato* executando, etc. seguem sem teste |
@@ -192,7 +192,7 @@ schema/ADR compartilhada entre os três engines. Prioridade: acordar o novo form
   `TryAutomatedVerify`/`CompleteVerifiedFeature`; rotular explicitamente como
   `self_attested` e introduzir um verificador que roda fora do `targetDir` controlado pelo
   agente, sobre uma cópia isolada da árvore (`DevelopmentTasks.Verify.cs`, `DevelopmentTasks.Handoff.cs:13-27`).
-- Substituir a leitura indiscriminada de `docs/*.md`/`*.txt` em `DocsReader.Read` por um
+- Substituir a leitura indiscriminada de `specs/*.md`/`*.txt` em `DocsReader.Read` por um
   manifesto de input ativo explícito (path, digest, classe de confiança, byte count) e aplicar
   o mesmo tratamento a `PromptFormatter.ReadSkills` (digest de skill contra allowlist da
   política) (`DocsReader.cs`, `PromptFormatter.cs`).

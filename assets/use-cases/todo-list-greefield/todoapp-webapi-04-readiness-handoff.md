@@ -20,7 +20,7 @@ Refinement run `7ee5e9dc-bfbd-4d1b-8000-1a472c5e35a0`, baseline version 1:
 - `.harness/01-project-charter.md` — Project Charter, OBJ-001 to OBJ-005, MET-001 to MET-006, and RSK-001 to RSK-008.
 - `.harness/02-software-requirements-specification.md` — SRS, RF-001 to RF-009, RN-001 to RN-010, RNF-001 to RNF-011, and SEC-001 to SEC-005.
 - `.harness/03-software-design-document.md` — SDD, ADR-001 to ADR-010, and the full allocation.
-- `docs/todoapp-refinement-decisions.md` — the human greenfield decision that reconciles the sources.
+- `specs/todoapp-refinement-decisions.md` — the human greenfield decision that reconciles the sources.
 
 ## 3. Confirmed decisions
 - A greenfield product, with no legacy file/data/contract and no JSON migration.
@@ -53,7 +53,7 @@ The individual definitions in the SRS record the exact links, including requirem
 - Named owners and reviewers will be assigned when each slice begins; the roles are defined below.
 
 ## 6. Conflicts found and resolution
-- The original ADR mentioned a JSON migration, while the brief described a greenfield project. The human decision in `docs/todoapp-refinement-decisions.md` resolved the conflict: greenfield prevails and the old wording is obsolete context; the vertical-slices decision remains valid.
+- The original ADR mentioned a JSON migration, while the brief described a greenfield project. The human decision in `specs/todoapp-refinement-decisions.md` resolved the conflict: greenfield prevails and the old wording is obsolete context; the vertical-slices decision remains valid.
 - The diagram presents ListTasks as a single component for both listing and filtering; the SRS confirms both belong to the same slice, with no orphaned endpoint.
 - The source allowed either 500 or 503 for an unavailable database; the SRS/SDD standardized on 503 with Problem Details.
 - The library, bootstrap approach, and isolation strategy were delegated choices; the SDD chose Npgsql directly, bootstrap at startup, and serial integration with truncate/reset, recording the alternatives and trade-offs.
@@ -167,9 +167,9 @@ Each slice below is demonstrable, verifiable, and sized at up to half a sprint f
 
 ## 10. Suggested path for Flows.Development
 After automatic publication, use together:
-- `docs/todoapp-webapi-01-project-charter.md`
-- `docs/todoapp-webapi-02-software-requirements-specification.md`
-- `docs/todoapp-webapi-03-software-design-document.md`
-- `docs/todoapp-webapi-04-readiness-handoff.md`
+- `specs/todoapp-webapi-01-project-charter.md`
+- `specs/todoapp-webapi-02-software-requirements-specification.md`
+- `specs/todoapp-webapi-03-software-design-document.md`
+- `specs/todoapp-webapi-04-readiness-handoff.md`
 
 Handoff to Flows.Development remains manual, per the refinement protocol.

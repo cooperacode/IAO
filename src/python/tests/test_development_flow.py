@@ -69,8 +69,8 @@ def _verify_log_path(feature_id: int) -> Path:
 
 
 def _given_docs_brief(content: str) -> None:
-    Path("docs").mkdir(parents=True, exist_ok=True)
-    (Path("docs") / "brief.md").write_text(content)
+    Path("specs").mkdir(parents=True, exist_ok=True)
+    (Path("specs") / "brief.md").write_text(content)
 
 
 def test_start_sem_feature_pendente_reseta_feature_list_e_run_config():
@@ -124,23 +124,23 @@ def test_start_com_docs_populados_persiste_o_brief_no_artifact_store():
 
 
 def test_start_modo_interativo_nao_persiste_brief():
-    tasks.start()  # sem docs/ → initializer_interactive()
+    tasks.start()  # sem specs/ → initializer_interactive()
 
     assert artifact_store.read("brief") == ""
 
 
 def test_start_novo_run_sem_docs_apaga_brief_do_run_anterior():
-    # Um segundo run com o MESMO docs/ já se autocorrigiria via overwrite (não prova nada
-    # sobre o reset()); o caso que só artifact_store.reset() resolve é docs→interativo: o
+    # Um segundo run com o MESMO specs/ já se autocorrigiria via overwrite (não prova nada
+    # sobre o reset()); o caso que só artifact_store.reset() resolve é specs→interativo: o
     # modo interativo nunca chama write, então sem o reset() o brief antigo vazaria.
     _given_docs_brief("brief do topico A")
     tasks.start()
     _plan()
     for f in feature_store.load():
         feature_store.mark_passed(f.id)
-    shutil.rmtree("docs")
+    shutil.rmtree("specs")
 
-    tasks.start()  # run novo, sem docs/ → interativo
+    tasks.start()  # run novo, sem specs/ → interativo
 
     assert artifact_store.read("brief") == ""
 
@@ -163,7 +163,7 @@ def test_pick_retorna_implement_sem_reinjetar_o_brief():
 
 
 def test_bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief():
-    # Sem docs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
+    # Sem specs/: modo interativo, sem brief persistido — o bloco some, não fica vazio.
     bearings_result = _plan()
     implement_result = bearings_result
 

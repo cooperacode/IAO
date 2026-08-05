@@ -25,6 +25,7 @@ def test_load_sem_arquivo_usa_defaults():
     assert config == harness_config.DEFAULT
     assert config.max_steps == 12
     assert config.max_instruction_chars == 0  # cost ceiling disabled by default
+    assert config.docs_folder == "specs"
     assert config.timeout_ms == 10 * 60_000  # time guard is always enabled
 
 

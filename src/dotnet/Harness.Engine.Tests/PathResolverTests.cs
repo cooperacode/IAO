@@ -3,7 +3,7 @@ using Harness.Engine;
 namespace Harness.Engine.Tests;
 
 /// <summary>
-/// PathResolver is the sole entry point for docs/skills relative to the CWD; a symlink
+/// PathResolver is the sole entry point for specs/skills relative to the CWD; a symlink
 /// that steers the target outside the authorized base is the adversarial scenario the
 /// containment (RFC §6.3) needs to close without breaking legitimate use (a regular file,
 /// inside the same folder).

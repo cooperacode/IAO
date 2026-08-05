@@ -7,20 +7,20 @@ from harness_engine import docs_reader
 
 
 def test_has_docs_pasta_inexistente_false(tmp_path):
-    d = tmp_path / "docs-inexistente"
+    d = tmp_path / "specs-inexistente"
 
     assert not docs_reader.has_docs(str(d))
 
 
 def test_has_docs_pasta_vazia_false(tmp_path):
-    d = tmp_path / "docs-vazia"
+    d = tmp_path / "specs-vazia"
     d.mkdir()
 
     assert not docs_reader.has_docs(str(d))
 
 
 def test_has_docs_ignora_extensoes_nao_suportadas(tmp_path):
-    d = tmp_path / "docs"
+    d = tmp_path / "specs"
     d.mkdir()
     (d / "image.png").write_text("x")
     (d / "data.json").write_text("{}")
@@ -29,7 +29,7 @@ def test_has_docs_ignora_extensoes_nao_suportadas(tmp_path):
 
 
 def test_has_docs_com_markdown_true(tmp_path):
-    d = tmp_path / "docs"
+    d = tmp_path / "specs"
     d.mkdir()
     (d / "spec.md").write_text("content")
 
@@ -37,7 +37,7 @@ def test_has_docs_com_markdown_true(tmp_path):
 
 
 def test_read_concatena_md_e_txt_em_ordem_alfabetica(tmp_path):
-    d = tmp_path / "docs"
+    d = tmp_path / "specs"
     d.mkdir()
     (d / "b-notas.txt").write_text("notes")
     (d / "a-spec.md").write_text("spec")
@@ -51,7 +51,7 @@ def test_read_concatena_md_e_txt_em_ordem_alfabetica(tmp_path):
 
 
 def test_read_pasta_inexistente_vazio_sem_fontes(tmp_path):
-    d = tmp_path / "docs-inexistente"
+    d = tmp_path / "specs-inexistente"
 
     content, files = docs_reader.read(str(d))
 
@@ -62,7 +62,7 @@ def test_read_pasta_inexistente_vazio_sem_fontes(tmp_path):
 def test_read_conteudo_com_acento_e_emoji_nao_quebra_caractere_multibyte(tmp_path):
     # "café ☕" has "é" (2 bytes) and "☕" (3 bytes) in UTF-8 — a naive cut by byte
     # position in the middle of either would produce an invalid sequence.
-    d = tmp_path / "docs"
+    d = tmp_path / "specs"
     d.mkdir()
     (d / "a.md").write_text("café ☕ café ☕ café ☕")
 

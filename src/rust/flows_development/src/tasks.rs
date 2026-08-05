@@ -69,12 +69,12 @@ pub fn start() -> String {
     // Flow that PRODUCES feature_list: a new run erases the previous run's.
     feature_store::reset();
     run_config_store::reset();
-    // Without this, a new run in interactive mode (no docs/) would silently inherit the
+    // Without this, a new run in interactive mode (no specs/) would silently inherit the
     // brief.md from a previous run — interactive mode never calls artifact_store::write,
     // so only this reset guarantees no brief from an old topic survives.
     artifact_store::reset();
 
-    // Brief (what to build) comes from docs/ or, without docs, from interactive mode.
+    // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
     let folder = docs_folder();
     if !docs_reader::has_docs(&folder) {
         return prompts::initializer_interactive();
@@ -84,7 +84,7 @@ pub fn start() -> String {
     // Persisted for auditability and compatibility; implementation sessions use the bounded
     // context copied into each feature by the planner.
     artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
-    state_store::set("origem", "docs");
+    state_store::set("origem", "specs");
     prompts::initializer_prompt(&content, &files)
 }
 
@@ -440,8 +440,8 @@ mod tests {
     // --- brief: persistence in start() and reinjection in implement ----------------------
 
     fn given_docs_brief(content: &str) {
-        std::fs::create_dir_all("docs").unwrap();
-        std::fs::write("docs/brief.md", content).unwrap();
+        std::fs::create_dir_all("specs").unwrap();
+        std::fs::write("specs/brief.md", content).unwrap();
     }
 
     #[test]
@@ -461,7 +461,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        start(); // no docs/ → initializer_interactive()
+        start(); // no specs/ → initializer_interactive()
 
         assert_eq!(artifact_store::read("brief"), "");
     }
@@ -470,9 +470,9 @@ mod tests {
     fn start_novo_run_sem_docs_apaga_brief_do_run_anterior() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        // A second run with the SAME docs/ would already self-correct via overwrite (it
+        // A second run with the SAME specs/ would already self-correct via overwrite (it
         // doesn't prove anything about reset()); the case only artifact_store::reset()
-        // solves is docs→interactive: interactive mode never calls write, so without
+        // solves is specs→interactive: interactive mode never calls write, so without
         // reset() the old brief would leak through.
         given_docs_brief("brief do topico A");
         start();
@@ -480,9 +480,9 @@ mod tests {
         for f in feature_store::load() {
             feature_store::mark_passed(f.id);
         }
-        std::fs::remove_dir_all("docs").unwrap();
+        std::fs::remove_dir_all("specs").unwrap();
 
-        start(); // run novo, sem docs/ → interativo
+        start(); // run novo, sem specs/ → interativo
 
         assert_eq!(artifact_store::read("brief"), "");
     }
@@ -514,7 +514,7 @@ mod tests {
     fn bearings_e_implement_sem_brief_persistido_nao_tem_tag_brief() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        // No docs/: interactive mode, no persisted brief — the block disappears, not empty.
+        // No specs/: interactive mode, no persisted brief — the block disappears, not empty.
         let bearings_result = plan_default();
         let implement_result = bearings_result.clone();
 

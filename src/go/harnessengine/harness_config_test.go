@@ -13,7 +13,7 @@ func TestConfig_Load_MissingFile_UsesDefaults(t *testing.T) {
 	if config != DefaultHarnessConfig() {
 		t.Fatalf("unexpected config: %+v", config)
 	}
-	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.TimeoutMs != 10*60_000 {
+	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.DocsFolder != "specs" || config.TimeoutMs != 10*60_000 {
 		t.Fatalf("unexpected config: %+v", config)
 	}
 }

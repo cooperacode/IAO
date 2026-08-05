@@ -30,7 +30,7 @@ todo-*/
 app/
 .back_*/
 dist/
-docs/
+specs/
 
 #Files
 .DS_Store

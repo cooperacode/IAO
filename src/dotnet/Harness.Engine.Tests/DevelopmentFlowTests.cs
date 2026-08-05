@@ -14,9 +14,9 @@ public class DevelopmentFlowTests : IDisposable
     private const string FeaturesJson =
         """[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]""";
 
-    // "docs" folder relative to the test process's CWD (the same one HarnessConfig.DocsFolder
+    // "specs" folder relative to the test process's CWD (the same one HarnessConfig.DocsFolder
     // uses by default) — only the brief tests populate it; created/deleted by them.
-    private static readonly string DocsDir = Path.Combine(Directory.GetCurrentDirectory(), "docs");
+    private static readonly string SpecsDir = Path.Combine(Directory.GetCurrentDirectory(), "specs");
 
     private readonly string _targetDir;
 
@@ -33,8 +33,8 @@ public class DevelopmentFlowTests : IDisposable
         Clean();
         if (Directory.Exists(_targetDir))
             Directory.Delete(_targetDir, recursive: true);
-        if (Directory.Exists(DocsDir))
-            Directory.Delete(DocsDir, recursive: true);
+        if (Directory.Exists(SpecsDir))
+            Directory.Delete(SpecsDir, recursive: true);
     }
 
     private static void Clean()
@@ -48,8 +48,8 @@ public class DevelopmentFlowTests : IDisposable
 
     private static void GivenDocsBrief(string content)
     {
-        Directory.CreateDirectory(DocsDir);
-        File.WriteAllText(Path.Combine(DocsDir, "brief.md"), content);
+        Directory.CreateDirectory(SpecsDir);
+        File.WriteAllText(Path.Combine(SpecsDir, "brief.md"), content);
     }
 
     // Mirrors Flows.Development/Program.cs's real wiring: only resets StateStore/Trace on
@@ -232,7 +232,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Start_ModoInterativo_NaoPersisteBrief()
     {
-        DevelopmentTasks.Start(); // sem docs/ → InitializerInteractive()
+        DevelopmentTasks.Start(); // sem specs/ → InitializerInteractive()
 
         Assert.Equal("", ArtifactStore.Read("brief"));
     }
@@ -240,18 +240,18 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Start_NovoRunSemDocs_ApagaBriefDoRunAnterior()
     {
-        // A second run with the SAME docs/ would already self-correct via overwrite (it
+        // A second run with the SAME specs/ would already self-correct via overwrite (it
         // doesn't prove anything about Reset()); the case only ArtifactStore.Reset() solves
-        // is docs→interactive: interactive mode never calls Write, so without Reset() the
+        // is specs→interactive: interactive mode never calls Write, so without Reset() the
         // old brief would leak through.
         GivenDocsBrief("topic A brief");
         DevelopmentTasks.Start();
         Plan();
         foreach (var f in FeatureStore.Load())
             FeatureStore.MarkPassed(f.Id);
-        Directory.Delete(DocsDir, recursive: true);
+        Directory.Delete(SpecsDir, recursive: true);
 
-        DevelopmentTasks.Start(); // run novo, sem docs/ → interativo
+        DevelopmentTasks.Start(); // run novo, sem specs/ → interativo
 
         Assert.Equal("", ArtifactStore.Read("brief"));
     }
@@ -282,7 +282,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void BearingsEImplement_SemBriefPersistido_NaoTemTagBrief()
     {
-        // No docs/: interactive mode, no persisted brief — the block disappears, not empty.
+        // No specs/: interactive mode, no persisted brief — the block disappears, not empty.
         var implement = Plan();
 
         Assert.DoesNotContain("<brief>", implement);

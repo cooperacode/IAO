@@ -1,6 +1,6 @@
 [project]
 name = "harness-python"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python port of the Harness (Harness.Engine + Flows.Development) — a deterministic, prompt-driven orchestration engine, with no dependency on the .NET SDK."
 requires-python = ">=3.11"
 dependencies = []

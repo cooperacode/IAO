@@ -53,7 +53,7 @@ once per turn; the harness is single-shot per process.
 
 | Pattern participant | Realized as | Where |
 |---|---|---|
-| Brief | Documents seeding the initial plan | `docs/*.md`, `docs/*.txt` |
+| Brief | Documents seeding the initial plan | `specs/*.md`, `specs/*.txt` |
 | HarnessHost | Reusable flow entry point | `src/dotnet/Harness.Engine/HarnessHost.cs` |
 | TaskRegistry | Envelope dispatch, guards, validation | `src/dotnet/Harness.Engine/TaskRegistry.cs` |
 | Envelope | JSON contract between driver and harness | `src/dotnet/Harness.Engine/Envelope.cs` |
@@ -256,7 +256,7 @@ and the deterministic fallback remains active.
 
 | State | What happens |
 |---|---|
-| `start` | Resumes by reconstructing bounded repository context if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `docs/` or interactively) |
+| `start` | Resumes by reconstructing bounded repository context if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `specs/` or interactively) |
 | `plan` | Writes up to `MaxFeatures = 10` features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`), then starts deterministic session setup |
 | `bearings` | Internal compatibility command: captures the `progress.txt` tail and `git log`, then continues automatically |
 | `smoke` | Internal compatibility command: runs `./init.sh` with timeout and exit-code classification before selecting a feature |

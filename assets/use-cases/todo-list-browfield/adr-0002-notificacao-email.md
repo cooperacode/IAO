@@ -3,7 +3,7 @@
 ## Status
 Proposed — decision recorded, implementation not yet started. Accompanies the brief at
 `202607220120-todo-app-notificacao-email-status-brief.md`, already promoted to the root of
-`docs/` and ready to be read by the next `start` of the corresponding brownfield session.
+`specs/` and ready to be read by the next `start` of the corresponding brownfield session.
 
 ## Context
 The TodoApp WebAPI has no user model or authentication (out of scope since the original

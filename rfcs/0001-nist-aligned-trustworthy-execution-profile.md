@@ -217,7 +217,7 @@ The repository baseline has the following material gaps:
 | State and evidence are mutable and unsigned | JSON/JSONL files use direct writes and copies | Tampering, replay, truncation, and equivocation may be undetectable |
 | State writes are not transactional | stores write destination files directly | Crash or concurrency can corrupt or lose state |
 | No run identity or anti-replay fields exist | envelope contains `type`, `value`, `args`, and optional context | Stale or cross-run messages can be replayed |
-| Prompt inputs lack trust labeling | all top-level `docs/*.md` and `docs/*.txt` are concatenated; skills are inlined | Prompt injection and source confusion are not contained |
+| Prompt inputs lack trust labeling | all top-level `specs/*.md` and `specs/*.txt` are concatenated; skills are inlined | Prompt injection and source confusion are not contained |
 | Evidence can contain sensitive local transcripts | report scripts read local Codex, Claude, and Copilot session data | Privacy and confidentiality depend on operator discipline |
 | Release provenance is absent | no tracked CI workflow, SBOM, signed release manifest, or verification policy | Consumers cannot verify release origin or control execution |
 | Cross-engine semantics are not fully specified | string length, path, error ordering, timestamp, and timeout behavior depend on runtime | Protocol-compatible engines can produce different evidence |

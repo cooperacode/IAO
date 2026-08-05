@@ -25,7 +25,7 @@ and output contracts, cost limits, resumability, and termination are owned by
 the harness.
 
 In this repository, the concrete motivation is the **development** flow: it
-turns a brief in `docs/` into a prioritized feature list and guides
+turns a brief in `specs/` into a prioritized feature list and guides
 implementation one feature at a time until everything passes verification.
 
 ## Applicability
@@ -77,7 +77,7 @@ diagram, with the file that implements each component.
 
 ## Participants
 
-- **Brief**: documents in `docs/*.md` or `docs/*.txt` that describe what should
+- **Brief**: documents in `specs/*.md` or `specs/*.txt` that describe what should
   be built. Read once at `start` and used by `plan`; the planner copies each
   feature's relevant requirements into bounded structured `implementationContext` in
   `.harness/feature_list.json`, so later implementation sessions do not reopen
@@ -113,7 +113,7 @@ files across the engine and flow layers.
 
 ## Collaborations
 
-1. The user places a brief in `docs/`.
+1. The user places a brief in `specs/`.
 2. The agent starts the flow by sending the `start` envelope.
 3. The harness reads the documents, emits the planning instruction, and asks
    for a structured feature list.
@@ -241,7 +241,7 @@ packages, and publishes them as GitHub Release assets. See
 
 Intended IDE-agent usage:
 
-1. Put the brief in `docs/`.
+1. Put the brief in `specs/`.
 2. Ask the IDE agent to use the `development` flow.
 3. The agent writes the `start` envelope to `.harness/inbox.json`.
 4. The agent runs the selected runner with no arguments.
