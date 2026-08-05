@@ -75,14 +75,29 @@ public static partial class DevelopmentTasks
             output: new Envelope(EnvelopeType.Command, "plan", [FEATURES, VERIFY_CMD, TARGET_DIR]),
             skills: PromptFormatter.Skills("dev-initializer"));
 
-    private static string PlanRetryPrompt() =>
-        PromptFormatter.Format(
+    private static string PlanRetryPrompt()
+    {
+        // The retry instruction is short by design, but a driver that already dropped the
+        // original (possibly large) brief from its context would otherwise have nothing left
+        // to plan from and could fall back to inventing an unrelated feature. Reattaching the
+        // persisted artifact (written once, in Start) keeps the retry grounded in the source.
+        var brief = ArtifactStore.Read(BriefArtifactName).Trim();
+        var briefBlock = brief.Length == 0 ? "" : $"""
+            <brief>
+            {brief}
+            </brief>
+
+
+            """;
+
+        return PromptFormatter.Format(
             input: $"""
-            Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
+            {briefBlock}Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
             ARRAY, in exactly the format {FeaturesShape} — just the array, no surrounding text.
             Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`.
             """,
             output: new Envelope(EnvelopeType.Command, "plan", [FEATURES, VERIFY_CMD, TARGET_DIR]));
+    }
 
     // --- per-feature loop (one fresh-context session) ------------------
 

@@ -86,9 +86,18 @@ the command in '%s' and the directory in '%s'. `+"`verify-feature.sh`"+` may run
 }
 
 func PlanRetryPrompt() string {
-	input := fmt.Sprintf(`Could not parse the feature list. Resend in '%s' a valid JSON
+	// The retry instruction is short by design, but a driver that already dropped the
+	// original (possibly large) brief from its context would otherwise have nothing left
+	// to plan from and could fall back to inventing an unrelated feature. Reattaching the
+	// persisted artifact (written once, in Start) keeps the retry grounded in the source.
+	briefBlock := ""
+	if brief := strings.TrimSpace(engine.ReadArtifact(briefArtifactName)); brief != "" {
+		briefBlock = fmt.Sprintf("<brief>\n%s\n</brief>\n\n", brief)
+	}
+
+	input := fmt.Sprintf(`%sCould not parse the feature list. Resend in '%s' a valid JSON
 ARRAY, in exactly the format %s — just the array, no surrounding text.
-Repeat the command '%s' and '%s'.`, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
+Repeat the command '%s' and '%s'.`, briefBlock, tokenFeatures, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "plan", []string{tokenFeatures, tokenVerifyCmd, tokenTargetDir}),

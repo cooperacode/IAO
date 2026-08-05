@@ -6,7 +6,7 @@ same name the driver fills in and returns as the next envelope's arg.
 from __future__ import annotations
 
 from flows_development import state_keys
-from harness_engine import context_policy, feature_store, prompt_formatter, run_config_store, state_store
+from harness_engine import artifact_store, context_policy, feature_store, prompt_formatter, run_config_store, state_store
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 
@@ -82,7 +82,14 @@ may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print
 
 
 def plan_retry_prompt() -> str:
-    input_text = f"""Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
+    # The retry instruction is short by design, but a driver that already dropped the
+    # original (possibly large) brief from its context would otherwise have nothing left
+    # to plan from and could fall back to inventing an unrelated feature. Reattaching the
+    # persisted artifact (written once, in start) keeps the retry grounded in the source.
+    brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME).strip()
+    brief_block = f"<brief>\n{brief}\n</brief>\n\n" if brief else ""
+
+    input_text = f"""{brief_block}Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
 ARRAY, in exactly the format {FEATURES_SHAPE} — just the array, no surrounding text.
 Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."""
     return prompt_formatter.format(

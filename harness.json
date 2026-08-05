@@ -1,7 +1,7 @@
 {
   "maxSteps": 12,
   "maxInstructionChars": 0,
-  "docsMaxChars": 40000,
+  "docsMaxChars": 10000000,
   "docsFolder": "specs",
   "timeoutMs": 600000,
   "contextResetMode": "adaptive",

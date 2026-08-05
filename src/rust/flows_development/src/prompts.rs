@@ -5,11 +5,11 @@
 use harness_engine::envelope::{Envelope, envelope_type};
 use harness_engine::feature_store::{self, Feature};
 use harness_engine::{
-    context_policy, prompt_formatter, run_config_store, state_store,
+    artifact_store, context_policy, prompt_formatter, run_config_store, state_store,
 };
 
 use crate::tasks::{
-    CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY,
+    BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY,
 };
 
 // Output tokens (the driver stores the step's artifact in these and returns them as args).
@@ -120,8 +120,19 @@ may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print\n\
 }
 
 pub fn plan_retry_prompt() -> String {
+    // The retry instruction is short by design, but a driver that already dropped the
+    // original (possibly large) brief from its context would otherwise have nothing left
+    // to plan from and could fall back to inventing an unrelated feature. Reattaching the
+    // persisted artifact (written once, in start) keeps the retry grounded in the source.
+    let brief = artifact_store::read(BRIEF_ARTIFACT_NAME).trim().to_string();
+    let brief_block = if brief.is_empty() {
+        String::new()
+    } else {
+        format!("<brief>\n{brief}\n</brief>\n\n")
+    };
+
     let input = format!(
-        "Could not parse the feature list. Resend in '{FEATURES}' a valid JSON\n\
+        "{brief_block}Could not parse the feature list. Resend in '{FEATURES}' a valid JSON\n\
 ARRAY, in exactly the format {FEATURES_SHAPE} — just the array, no surrounding text.\n\
 Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."
     );
