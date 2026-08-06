@@ -2,7 +2,6 @@ package harnessengine
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -49,14 +48,15 @@ func Dispatch(
 		ConsumeInbox()
 	}
 
-	// Budget stops remain terminal. A timeout is recoverable only through an explicit
-	// `start`: the timed-out worker was abandoned with the previous process, and the
-	// driver is deliberately asking the flow to resume or restart.
+	// Budget stops remain terminal. A timeout or fault is recoverable only through an
+	// explicit `start`: the abandoned worker (timed out, or crashed on a harness bug)
+	// belonged to the previous process, and the driver is deliberately asking the flow to
+	// resume or restart — never by silently resending the same command.
 	if terminal := TerminalReason(); terminal != "" {
-		if terminal == "timeout" && envelope != nil && envelope.Value == "start" {
+		if (terminal == "timeout" || terminal == "fault") && envelope != nil && envelope.Value == "start" {
 			ClearTerminal()
 		} else {
-			fmt.Fprintf(os.Stderr, "[harness] run already stopped (%s); refusing another turn.\n", terminal)
+			LogError(fmt.Sprintf("[harness] run already stopped (%s); refusing another turn.", terminal))
 			return "stop"
 		}
 	}
@@ -76,6 +76,7 @@ func Dispatch(
 		if shouldReset {
 			ResetState()
 			ResetTrace()
+			ResetHarnessLog()
 		}
 
 		// The driver context (e.g. {"driver":"claude code"}) is born here and survives in
@@ -107,11 +108,18 @@ func Dispatch(
 		command = envelope.Value
 	}
 
+	// Logged BEFORE the action runs: trace.jsonl only gets a line once the step completes,
+	// so a slow or hung step (or one that faults below) would otherwise leave zero evidence
+	// the harness ever picked it up — the "feels idle" gap.
+	LogInfo(fmt.Sprintf("[step %d] enter '%s'", step, command))
+
 	result, outcome := resolve(envelope, step, costChars, actions, validators, maxSteps)
 
 	// UTF-8 octets, not runes (RFC Appendix B item 1): measures what actually crosses the
 	// transport, with the same meaning as .NET (UTF-8 byte count) and Rust (String::len()).
 	resultBytes := len([]byte(result))
+
+	LogInfo(fmt.Sprintf("[step %d] exit outcome=%s bytes=%d", step, outcome, resultBytes))
 
 	// One line per loop turn: feeds telemetry and the trajectory evaluator. Label is
 	// re-read (not from the Load() snapshot above) because the action itself may have just
@@ -144,7 +152,7 @@ func resolve(
 		effectiveMaxSteps = *maxSteps
 	}
 	if step > effectiveMaxSteps {
-		fmt.Fprintf(os.Stderr, "[harness] step limit of %d reached; stopping.\n", effectiveMaxSteps)
+		LogError(fmt.Sprintf("[harness] step limit of %d reached; stopping.", effectiveMaxSteps))
 		MarkTerminal("budget")
 		return "stop", TraceOutcome.Budget
 	}
@@ -154,8 +162,8 @@ func resolve(
 	// caller's billing metadata — an LLM driver has no way to honestly report them.
 	config := CurrentConfig()
 	if config.MaxInstructionChars > 0 && costChars > config.MaxInstructionChars {
-		fmt.Fprintf(os.Stderr, "[harness] instruction char limit of %d reached (%d); stopping.\n",
-			config.MaxInstructionChars, costChars)
+		LogError(fmt.Sprintf("[harness] instruction char limit of %d reached (%d); stopping.",
+			config.MaxInstructionChars, costChars))
 		MarkTerminal("budget")
 		return "stop", TraceOutcome.Budget
 	}
@@ -186,10 +194,17 @@ func resolve(
 	// Time guard: a stuck task (infinite loop in domain logic) would hang the process
 	// indefinitely. runWithTimeout enforces the per-step ceiling; a timeout becomes a typed
 	// error, caught here, following the same graceful path as the budget cut: stderr
-	// diagnostic + "stop" on stdout (the channel the IDE client reads).
+	// diagnostic + "stop" on stdout (the channel the IDE client reads). A panic inside the
+	// action itself (a real bug, not a driver protocol error) is recovered the same way —
+	// see runProtected — and reported as a distinct "fault" outcome instead of crashing the
+	// process or being silently mislabeled as a timeout.
 	result, err := runWithTimeout(action, envelope, config.TimeoutMs)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[harness] %s\n", err)
+		LogError(fmt.Sprintf("[harness] %s", err))
+		if _, ok := err.(*HarnessFaultError); ok {
+			MarkTerminal("fault")
+			return "stop", TraceOutcome.Fault
+		}
 		MarkTerminal("timeout")
 		return "stop", TraceOutcome.Timeout
 	}
@@ -207,20 +222,38 @@ func resolve(
 // .NET's Task.Run (threadpool) and Rust's spawned thread.
 func runWithTimeout(action Action, envelope *Envelope, timeoutMs int) (string, error) {
 	if timeoutMs <= 0 {
-		return action(envelope), nil // guard disabled — no goroutine overhead
+		return runProtected(action, envelope) // guard disabled — no goroutine overhead
 	}
 
-	done := make(chan string, 1)
+	type outcome struct {
+		result string
+		err    error
+	}
+	done := make(chan outcome, 1)
 	go func() {
-		done <- action(envelope)
+		result, err := runProtected(action, envelope)
+		done <- outcome{result, err}
 	}()
 
 	select {
-	case result := <-done:
-		return result, nil
+	case o := <-done:
+		return o.result, o.err
 	case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
 		return "", &HarnessTimeoutError{TimeoutMs: timeoutMs}
 	}
+}
+
+// runProtected recovers a panic raised inside the action — a bug in task logic, not a driver
+// protocol error — converting it into a typed HarnessFaultError instead of letting it crash
+// the whole process (direct path) or silently kill the goroutine before it can report back
+// (timeout path, where an unrecovered panic would otherwise terminate the process outright).
+func runProtected(action Action, envelope *Envelope) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = &HarnessFaultError{Reason: fmt.Sprintf("%v", r)}
+		}
+	}()
+	return action(envelope), nil
 }
 
 func errorInstruction(reason string, actions map[string]Action) string {

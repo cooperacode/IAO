@@ -8,10 +8,9 @@ code), only the synthesis is left to the model.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-from harness_engine import harness_config, path_resolver
+from harness_engine import harness_config, harness_log, path_resolver
 
 _EXTENSIONS = {".md", ".txt"}
 
@@ -45,7 +44,7 @@ def read(folder: str) -> tuple[str, list[str]]:
         try:
             text = path.read_text()
         except Exception as ex:
-            print(f"[DocsReader] failed to read {path.name}: {ex}", file=sys.stderr)
+            harness_log.error(f"[DocsReader] failed to read {path.name}: {ex}")
             continue
 
         names.append(path.name)
@@ -54,7 +53,7 @@ def read(folder: str) -> tuple[str, list[str]]:
         total_len += len(chunk.encode("utf-8"))
 
         if total_len > max_chars:
-            print(f"[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {path.name}.", file=sys.stderr)
+            harness_log.error(f"[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {path.name}.")
             # Cuts at bytes, not codepoints (RFC Appendix B item 1): decoding with
             # errors="ignore" automatically discards any multibyte sequence cut in half
             # at the limit's edge.

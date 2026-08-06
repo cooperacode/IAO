@@ -32,7 +32,7 @@ func ReadInbox() string {
 	}
 	data, err := os.ReadFile(InboxPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[Inbox] failed to read %s: %s\n", InboxPath, err)
+		LogError(fmt.Sprintf("[Inbox] failed to read %s: %s", InboxPath, err))
 		return ""
 	}
 	return string(data)
@@ -44,10 +44,10 @@ func ConsumeInbox() {
 		return
 	}
 	if err := ensureDir(inboxDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[Inbox] failed to consume %s: %s\n", InboxPath, err)
+		LogError(fmt.Sprintf("[Inbox] failed to consume %s: %s", InboxPath, err))
 		return
 	}
 	if err := os.Rename(InboxPath, InboxConsumedPath); err != nil {
-		fmt.Fprintf(os.Stderr, "[Inbox] failed to consume %s: %s\n", InboxPath, err)
+		LogError(fmt.Sprintf("[Inbox] failed to consume %s: %s", InboxPath, err))
 	}
 }

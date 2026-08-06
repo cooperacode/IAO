@@ -11,6 +11,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::harness_log;
+
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/feature_list.json";
 
@@ -122,7 +124,7 @@ struct RawFeature {
 /// Overwrites the entire list — used by `plan` (session 0) and by `mark_passed`.
 pub fn write(features: &[Feature]) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[FeatureStore] failed to write: {e}");
+        harness_log::error(&format!("[FeatureStore] failed to write: {e}"));
         return;
     }
     let list = FeatureList {
@@ -131,10 +133,10 @@ pub fn write(features: &[Feature]) {
     match serde_json::to_string_pretty(&list) {
         Ok(json) => {
             if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json) {
-                eprintln!("[FeatureStore] failed to write: {e}");
+                harness_log::error(&format!("[FeatureStore] failed to write: {e}"));
             }
         }
-        Err(e) => eprintln!("[FeatureStore] failed to write: {e}"),
+        Err(e) => harness_log::error(&format!("[FeatureStore] failed to write: {e}")),
     }
 }
 
@@ -147,7 +149,7 @@ pub fn parse(json: &str) -> Vec<Feature> {
     let parsed: Vec<RawFeature> = match serde_json::from_str(json) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("[FeatureStore] failed to parse features: {e}");
+            harness_log::error(&format!("[FeatureStore] failed to parse features: {e}"));
             return Vec::new();
         }
     };
@@ -159,7 +161,7 @@ pub fn parse(json: &str) -> Vec<Feature> {
     let explicit: Vec<i32> = parsed.iter().filter(|f| f.id > 0).map(|f| f.id).collect();
     let explicit_set: HashSet<i32> = explicit.iter().copied().collect();
     if explicit.len() != explicit_set.len() {
-        eprintln!("[FeatureStore] failed to parse features: duplicate explicit feature id");
+        harness_log::error("[FeatureStore] failed to parse features: duplicate explicit feature id");
         return Vec::new();
     }
     let mut used = explicit_set;
@@ -184,7 +186,7 @@ pub fn parse(json: &str) -> Vec<Feature> {
         .unwrap_or_default();
 
     if let Some(error) = dependency_graph_error(&reindexed) {
-        eprintln!("[FeatureStore] invalid dependency graph: {error}");
+        harness_log::error(&format!("[FeatureStore] invalid dependency graph: {error}"));
         return Vec::new();
     }
 
@@ -324,7 +326,7 @@ pub fn load() -> Vec<Feature> {
     match loaded {
         Ok(list) => list.items,
         Err(e) => {
-            eprintln!("[FeatureStore] failed to load: {e}");
+            harness_log::error(&format!("[FeatureStore] failed to load: {e}"));
             Vec::new()
         }
     }
@@ -374,7 +376,7 @@ pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
         if let Err(e) = std::fs::remove_file(p) {
-            eprintln!("[FeatureStore] failed to clear: {e}");
+            harness_log::error(&format!("[FeatureStore] failed to clear: {e}"));
         }
     }
 }

@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::harness_log;
+
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/run_config.json";
 
@@ -41,7 +43,7 @@ impl Default for RunConfig {
 /// `plan`, deleted only when `start` decides there's no run to resume).
 pub fn write(config: &RunConfig) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[RunConfigStore] failed to write: {e}");
+        harness_log::error(&format!("[RunConfigStore] failed to write: {e}"));
         return;
     }
     match serde_json::to_string(config) {
@@ -49,10 +51,10 @@ pub fn write(config: &RunConfig) {
             if let Err(e) =
                 crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
             {
-                eprintln!("[RunConfigStore] failed to write: {e}");
+                harness_log::error(&format!("[RunConfigStore] failed to write: {e}"));
             }
         }
-        Err(e) => eprintln!("[RunConfigStore] failed to write: {e}"),
+        Err(e) => harness_log::error(&format!("[RunConfigStore] failed to write: {e}")),
     }
 }
 
@@ -66,7 +68,7 @@ pub fn load() -> RunConfig {
 
         match loaded {
             Ok(config) => return config,
-            Err(e) => eprintln!("[RunConfigStore] failed to load: {e}"),
+            Err(e) => harness_log::error(&format!("[RunConfigStore] failed to load: {e}")),
         }
     }
     RunConfig::default()
@@ -77,7 +79,7 @@ pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
         if let Err(e) = std::fs::remove_file(p) {
-            eprintln!("[RunConfigStore] failed to clear: {e}");
+            harness_log::error(&format!("[RunConfigStore] failed to clear: {e}"));
         }
     }
 }

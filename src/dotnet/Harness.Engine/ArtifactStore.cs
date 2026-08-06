@@ -32,7 +32,7 @@ public static class ArtifactStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ArtifactStore] failed to clear: {ex.Message}");
+            HarnessLog.Error($"[ArtifactStore] failed to clear: {ex.Message}");
         }
     }
 
@@ -55,7 +55,7 @@ public static class ArtifactStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ArtifactStore] failed to write {name}: {ex.Message}");
+            HarnessLog.Error($"[ArtifactStore] failed to write {name}: {ex.Message}");
         }
 
         return path;
@@ -76,7 +76,7 @@ public static class ArtifactStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ArtifactStore] failed to load the manifest: {ex.Message}");
+            HarnessLog.Error($"[ArtifactStore] failed to load the manifest: {ex.Message}");
         }
 
         return [];
@@ -96,7 +96,7 @@ public static class ArtifactStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ArtifactStore] failed to read {name}: {ex.Message}");
+            HarnessLog.Error($"[ArtifactStore] failed to read {name}: {ex.Message}");
             return "";
         }
     }
@@ -115,7 +115,7 @@ public static class ArtifactStore
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[ArtifactStore] failed to read {file}: {ex.Message}");
+                HarnessLog.Error($"[ArtifactStore] failed to read {file}: {ex.Message}");
             }
         }
 

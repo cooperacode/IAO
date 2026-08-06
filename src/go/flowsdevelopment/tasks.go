@@ -47,6 +47,13 @@ const (
 	// briefArtifactName is retained in the ArtifactStore (.harness/brief.md) for auditability
 	// and compatibility; implementation sessions use each feature's bounded context.
 	briefArtifactName = "brief"
+
+	// planFilePath is where the driver writes the raw (unescaped) feature-list JSON array
+	// with its file-write tool. Requiring it inline in the envelope's args would force the
+	// driver to serialize and escape a large JSON document as a single string value inside
+	// another single-line JSON object — a format-compliance task large drivers have been
+	// observed to fail at, falling back to echoing the placeholder token itself.
+	planFilePath = ".harness/plan.json"
 )
 
 func state(key string) string {
@@ -69,8 +76,7 @@ func Start() string {
 	// still-pending feature — without needing to know exactly where the previous session
 	// stopped.
 	if engine.PendingFeatureCount() > 0 {
-		fmt.Fprintln(os.Stderr,
-			"[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.")
+		engine.LogInfo("[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.")
 		return Bearings(nil)
 	}
 
@@ -81,6 +87,9 @@ func Start() string {
 	// previous run's brief.md — interactive mode never calls WriteArtifact, so only this
 	// reset guarantees no brief from an old topic survives.
 	engine.ResetArtifacts()
+	// A stale plan.json from a previous (or aborted) run must not satisfy this one before
+	// the driver writes a fresh array — best-effort, absence is not an error.
+	_ = os.Remove(planFilePath)
 
 	// The brief (what to build) comes from specs/, or, without specs, from interactive mode.
 	if !engine.HasDocs(docsFolder()) {
@@ -95,9 +104,10 @@ func Start() string {
 	return InitializerPrompt(content, files)
 }
 
-// Plan interprets the driver's feature array and persists the run configuration.
+// Plan interprets the driver's feature array (written to planFilePath, not the envelope —
+// see the comment on planFilePath) and persists the run configuration.
 func Plan(envelope *engine.Envelope) string {
-	features := engine.ParseFeatures(arg(envelope))
+	features := engine.ParseFeatures(readPlanFile())
 	if len(features) == 0 {
 		return PlanRetryPrompt() // didn't parse → re-request (corrective loop)
 	}
@@ -131,8 +141,8 @@ func Plan(envelope *engine.Envelope) string {
 	// following session without needing to appear in the Envelope exchanged with the model
 	// (RFC §6.4 — run identity is a control-plane concern, not the contract's).
 	engine.WriteRunConfig(engine.RunConfig{
-		VerifyCmd: envOrArg("HARNESS_VERIFY_CMD", envelope, 1, "dotnet test"),
-		TargetDir: envOrArg("HARNESS_TARGET_DIR", envelope, 2, "."),
+		VerifyCmd: envOrArg("HARNESS_VERIFY_CMD", envelope, 0, "dotnet test"),
+		TargetDir: envOrArg("HARNESS_TARGET_DIR", envelope, 1, "."),
 		RunId:     newRunId(),
 	})
 
@@ -277,20 +287,19 @@ func overFeatureBudget() bool {
 	engine.SetState(featureStepsKey, strconv.Itoa(steps))
 
 	if steps > StepsPerFeature {
-		fmt.Fprintf(os.Stderr, "[dev] feature '%s' exceeded %d steps; stopping.\n", state(currentFeatureTitleKey), StepsPerFeature)
+		engine.LogError(fmt.Sprintf("[dev] feature '%s' exceeded %d steps; stopping.", state(currentFeatureTitleKey), StepsPerFeature))
 		return true
 	}
 	return false
 }
 
 func stopFlow(reason string) string {
-	fmt.Fprintf(os.Stderr, "[dev] stopped due to %s. feature_list in .harness/feature_list.json\n", reason)
+	engine.LogError(fmt.Sprintf("[dev] stopped due to %s. feature_list in .harness/feature_list.json", reason))
 	return "stop"
 }
 
 func done() string {
-	fmt.Fprintf(os.Stderr,
-		"[dev] all %d features pass; done. State in .harness/feature_list.json\n", len(engine.LoadFeatures()))
+	engine.LogInfo(fmt.Sprintf("[dev] all %d features pass; done. State in .harness/feature_list.json", len(engine.LoadFeatures())))
 	return "stop"
 }
 
@@ -329,6 +338,16 @@ func captureBearings() {
 	log := engine.RunGitCommand(target, "log", "-n", "10", "--oneline")
 	evidence := fmt.Sprintf("cwd: %s\nprogress tail:\n%s\ngit log:\n%s", target, strings.Join(lines, "\n"), oneLine(log.Output, "no git history"))
 	engine.SetState(currentBearingsKey, evidence)
+}
+
+// readPlanFile reads the driver-written feature array from planFilePath. "" if
+// absent/unreadable — Plan() treats that the same as an unparseable array (retry).
+func readPlanFile() string {
+	data, err := os.ReadFile(planFilePath)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func runSmoke() string {

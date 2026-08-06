@@ -8,3 +8,14 @@
 pub struct HarnessTimeoutError {
     pub timeout_ms: i32,
 }
+
+/// A recovered panic from inside a task action — a bug in the harness/flow itself, not a
+/// driver protocol error the driver can fix by resending. Recovered via `catch_unwind` in
+/// `task_registry::run_protected` so it never crashes the process (nor gets silently
+/// mislabeled as a timeout — see the regression test in `task_registry`); surfaced as the
+/// `"fault"` trace outcome.
+#[derive(Debug, thiserror::Error)]
+#[error("unhandled fault in task action: {reason}")]
+pub struct HarnessFaultError {
+    pub reason: String,
+}

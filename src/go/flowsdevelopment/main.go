@@ -25,10 +25,11 @@ func main() {
 
 	// Contextual expectation per command; a rejection becomes a corrective error (the
 	// driver fixes and resends). `pick` has no validator — it doesn't carry a driver
-	// artifact (the selection is the harness's).
-	validators := map[string]engine.Validator{
-		"plan":      engine.NotEmpty("the JSON array of features [{id,title,priority}]"),
-	}
+	// artifact (the selection is the harness's). `plan` no longer carries the feature
+	// array in its args (see planFilePath in tasks.go) — Plan() itself validates the
+	// file's content and re-requests it via PlanRetryPrompt, so no envelope-arg
+	// validator applies here either.
+	validators := map[string]engine.Validator{}
 
 	// Own snapshots: if this flow shares .harness/ with other flows (same workspace), it
 	// must NOT overwrite the last-run.* another flow consumes. Freezes at its own path.

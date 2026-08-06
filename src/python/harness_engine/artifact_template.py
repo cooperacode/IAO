@@ -6,10 +6,9 @@ package. Pure string substitution: deterministic and zero token.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-from harness_engine import path_resolver
+from harness_engine import harness_log, path_resolver
 
 
 def load(skill_name: str) -> str | None:
@@ -18,7 +17,7 @@ def load(skill_name: str) -> str | None:
         path = Path(path_resolver.resolve(str(Path(".harness") / "skills" / skill_name / "ARTIFACT.md")))
         return path.read_text() if path.exists() else None
     except Exception as ex:
-        print(f"[ArtifactTemplate] failed to read template for {skill_name}: {ex}", file=sys.stderr)
+        harness_log.error(f"[ArtifactTemplate] failed to read template for {skill_name}: {ex}")
         return None
 
 

@@ -31,13 +31,13 @@ func ResetArtifacts() {
 	for _, file := range ArtifactFiles() {
 		if fileExists(file) {
 			if err := os.Remove(file); err != nil {
-				fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to clear: %s\n", err)
+				LogError(fmt.Sprintf("[ArtifactStore] failed to clear: %s", err))
 			}
 		}
 	}
 	if fileExists(ArtifactManifestPath) {
 		if err := os.Remove(ArtifactManifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to clear: %s\n", err)
+			LogError(fmt.Sprintf("[ArtifactStore] failed to clear: %s", err))
 		}
 	}
 }
@@ -48,11 +48,11 @@ func WriteArtifact(name, content string) string {
 	path := filepath.Join(artifactDir, name+".md")
 
 	if err := ensureDir(artifactDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to write %s: %s\n", name, err)
+		LogError(fmt.Sprintf("[ArtifactStore] failed to write %s: %s", name, err))
 		return path
 	}
 	if err := writeAtomic(path, content); err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to write %s: %s\n", name, err)
+		LogError(fmt.Sprintf("[ArtifactStore] failed to write %s: %s", name, err))
 		return path
 	}
 
@@ -84,9 +84,9 @@ func ArtifactFiles() []string {
 				}
 				return manifest.Files
 			}
-			fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to load manifest: %s\n", err)
+			LogError(fmt.Sprintf("[ArtifactStore] failed to load manifest: %s", err))
 		} else {
-			fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to load manifest: %s\n", err)
+			LogError(fmt.Sprintf("[ArtifactStore] failed to load manifest: %s", err))
 		}
 	}
 	return []string{}
@@ -111,7 +111,7 @@ func ReadArtifact(name string) string {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to read %s: %s\n", name, err)
+		LogError(fmt.Sprintf("[ArtifactStore] failed to read %s: %s", name, err))
 		return ""
 	}
 	return string(data)
@@ -126,7 +126,7 @@ func ReadAllArtifacts() string {
 		}
 		data, err := os.ReadFile(file)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to read %s: %s\n", file, err)
+			LogError(fmt.Sprintf("[ArtifactStore] failed to read %s: %s", file, err))
 			continue
 		}
 		sb.WriteString(strings.TrimRight(string(data), " \t\r\n"))
@@ -137,15 +137,15 @@ func ReadAllArtifacts() string {
 
 func saveArtifactManifest(files []string) {
 	if err := ensureDir(artifactDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to load manifest: %s\n", err)
+		LogError(fmt.Sprintf("[ArtifactStore] failed to load manifest: %s", err))
 		return
 	}
 	data, err := json.Marshal(artifactManifest{Files: files})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to load manifest: %s\n", err)
+		LogError(fmt.Sprintf("[ArtifactStore] failed to load manifest: %s", err))
 		return
 	}
 	if err := writeAtomic(ArtifactManifestPath, string(data)); err != nil {
-		fmt.Fprintf(os.Stderr, "[ArtifactStore] failed to load manifest: %s\n", err)
+		LogError(fmt.Sprintf("[ArtifactStore] failed to load manifest: %s", err))
 	}
 }

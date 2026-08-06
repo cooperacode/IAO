@@ -137,7 +137,12 @@ What leaves the harness each turn: an instruction block with `input`, a
 `response` contract, and only the skill required by the current step.
 
 - **`PromptFormatter`** — composes the block handed to the driver and
-  substitutes the planning tokens (`$FEATURES`, `$VERIFY_CMD`, `$TARGET_DIR`). Later
+  substitutes the small planning tokens (`$VERIFY_CMD`, `$TARGET_DIR`). The
+  feature-list array itself is not one of these tokens: the driver writes it as a real
+  file (`.harness/plan.json`) instead of escaping it as a string inside the envelope —
+  serializing a large JSON document as a single-line string value inside another JSON
+  object proved to be a format-compliance task some drivers fail at, silently echoing the
+  placeholder back instead of the real content. Later
   commands carry no model-authored evidence: summaries come from Git and verification/
   handoff are inspected deterministically. It
   re-injects the driver context captured at `start` (e.g. `{"driver": "codex"}`)
@@ -191,10 +196,21 @@ viable.
   *ready* — every id in its `dependsOn` already passed.
   (`src/dotnet/Harness.Engine/FeatureStore.cs` → `.harness/feature_list.json`)
 - **`Trace`** — one line per turn: step, command, outcome
-  (`instruction`/`stop`/`error`/`budget`/`timeout`), instruction size, and,
-  when available, context window, context usage, and normalized usage ratio.
-  This is the audit trail — evidence that doesn't depend on chat history.
+  (`instruction`/`stop`/`error`/`budget`/`timeout`/`fault`), instruction size,
+  and, when available, context window, context usage, and normalized usage
+  ratio. This is the audit trail — evidence that doesn't depend on chat
+  history. `fault` marks an unhandled exception inside a task action (a
+  harness bug), distinct from `error` (a typed protocol error the driver can
+  fix and resend) — both stop the run the same way `budget`/`timeout` do.
   (`src/dotnet/Harness.Engine/Trace.cs` → `.harness/trace.jsonl`)
+- **`HarnessLog`** — append-only, human-readable engine log: a `[step N]
+  enter`/`exit` line around every task action (so a slow or crashed step is
+  visible before — not just after — it finishes) plus every harness-level
+  diagnostic that used to reach only ephemeral stderr (guard cutoffs, store
+  I/O failures, unhandled faults). Deliberately separate from `Trace`, which
+  keeps its one-line-per-completed-turn, hash-chained contract for evaluators
+  and cost-correlation tooling.
+  (`src/dotnet/Harness.Engine/HarnessLog.cs` → `.harness/harness.log`)
 
 **Closing snapshots**, written only when the flow emits `stop`, so a later
 evaluation reads a stable file instead of one the next run has already reset:

@@ -19,12 +19,14 @@ public class TaskRegistryTests : IDisposable
     {
         StateStore.Reset();
         Trace.Reset();
+        HarnessLog.Reset();
     }
 
     public void Dispose()
     {
         StateStore.Reset();
         Trace.Reset();
+        HarnessLog.Reset();
     }
 
     [Fact]
@@ -167,5 +169,62 @@ public class TaskRegistryTests : IDisposable
         var result = TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["x"]}"""], Tasks);
 
         Assert.Equal("stop", result);
+    }
+
+    private static readonly Dictionary<string, Func<Envelope?, string>> FaultyTasks = new()
+    {
+        ["start"] = _ => "PROMPT_START",
+        ["boom"] = _ => throw new InvalidOperationException("a real bug, not a driver protocol error"),
+    };
+
+    [Fact]
+    public void Dispatch_ActionLancaExcecaoNaoTratada_RetornaStopEnaoDeixaVazar()
+    {
+        // The regression this guards: before the "fault" guard, any exception a task action
+        // threw (not just HarnessTimeoutException) propagated all the way out of Dispatch,
+        // crashing the process instead of a graceful "stop" — see TaskRegistry.Resolve.
+        var result = TaskRegistry.Dispatch(["""{"type":"tool","value":"boom"}"""], FaultyTasks);
+
+        Assert.Equal("stop", result);
+    }
+
+    [Fact]
+    public void Dispatch_ActionLancaExcecaoNaoTratada_GravaDesfechoFaultEMarcaTerminal()
+    {
+        TaskRegistry.Dispatch(["""{"type":"tool","value":"boom"}"""], FaultyTasks);
+
+        Assert.Equal(TraceOutcome.Fault, Trace.Load()[^1].Outcome);
+        Assert.Equal("fault", StateStore.TerminalReason());
+    }
+
+    [Fact]
+    public void Dispatch_ActionLancaExcecaoNaoTratada_RunPermaneceTerminalAteUmStartExplicito()
+    {
+        TaskRegistry.Dispatch(["""{"type":"tool","value":"boom"}"""], FaultyTasks);
+
+        // A subsequent, non-start turn keeps refusing — same recoverable-only-via-"start"
+        // contract as timeout/budget.
+        var result = TaskRegistry.Dispatch(["""{"type":"text","value":"start"}"""], FaultyTasks);
+
+        Assert.Equal("PROMPT_START", result);
+        Assert.Null(StateStore.TerminalReason());
+    }
+
+    [Fact]
+    public void Dispatch_LogaEntradaAntesDaActionRodarESaidaDepoisDeConcluir()
+    {
+        var logPath = Path.Combine(".harness", "harness.log");
+        if (File.Exists(logPath))
+            File.Delete(logPath);
+
+        TaskRegistry.Dispatch(["""{"type":"tool","value":"classify","args":["Login"]}"""], Tasks);
+
+        var lines = File.ReadAllLines(logPath);
+        var enterIndex = Array.FindIndex(lines, l => l.Contains("enter 'classify'"));
+        var exitIndex = Array.FindIndex(lines, l => l.Contains("exit outcome="));
+
+        Assert.True(enterIndex >= 0, "expected an 'enter' line in harness.log");
+        Assert.True(exitIndex >= 0, "expected an 'exit' line in harness.log");
+        Assert.True(enterIndex < exitIndex, "entry must be logged before exit");
     }
 }

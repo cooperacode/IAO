@@ -6,7 +6,6 @@ package harnessengine
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -62,11 +61,22 @@ func ParseEnvelope(value string) *Envelope {
 	envelope, err := tryParseEnvelope(value)
 	if err != nil {
 		// Diagnostics go to stderr — stdout is the harness transport channel (the driver
-		// reads stdout as the next instruction) and must not be polluted.
-		fmt.Fprintln(os.Stderr, err)
+		// reads stdout as the next instruction) and must not be polluted. The raw payload
+		// (truncated) is included because it's otherwise lost forever: the inbox file gets
+		// overwritten by the driver's next attempt before anyone can inspect what it
+		// actually sent.
+		LogError(fmt.Sprintf("[Envelope] failed to parse: %s. Raw payload: %s", err, truncate(value, 500)))
 		return nil
 	}
 	return envelope
+}
+
+func truncate(value string, maxChars int) string {
+	runes := []rune(value)
+	if len(runes) <= maxChars {
+		return value
+	}
+	return string(runes[:maxChars]) + "...(truncated)"
 }
 
 func tryParseEnvelope(value string) (*Envelope, error) {

@@ -31,17 +31,18 @@ public static class TaskRegistry
         if (fromInbox && envelope is not null)
             Inbox.Consume();
 
-        // Budget stops remain terminal. A timeout is recoverable only through an explicit
-        // `start`: the timed-out worker was abandoned with the previous process, and the
-        // driver is deliberately asking the flow to resume or restart.
+        // Budget stops remain terminal. A timeout or fault is recoverable only through an
+        // explicit `start`: the abandoned worker (timed out, or crashed on a harness bug)
+        // belonged to the previous process, and the driver is deliberately asking the flow
+        // to resume or restart — never by silently resending the same command.
         var terminal = StateStore.TerminalReason();
         if (terminal is not null)
         {
-            if (terminal == "timeout" && envelope?.Value == "start")
+            if (terminal is "timeout" or "fault" && envelope?.Value == "start")
                 StateStore.ClearTerminal();
             else
             {
-                Console.Error.WriteLine($"[harness] run already stopped ({terminal}); refusing another turn.");
+                HarnessLog.Error($"[harness] run already stopped ({terminal}); refusing another turn.");
                 return "stop";
             }
         }
@@ -59,6 +60,7 @@ public static class TaskRegistry
             {
                 StateStore.Reset();
                 Trace.Reset();
+                HarnessLog.Reset();
             }
 
             // The driver context (e.g. {"driver":"claude code"}) is born here and survives in
@@ -78,11 +80,18 @@ public static class TaskRegistry
         var costChars = StateStore.Load().CostChars;
         var command = envelope?.Value is { Length: > 0 } value ? value : "(unparsed)";
 
+        // Logged BEFORE the action runs: trace.jsonl only gets a line once the step
+        // completes, so a slow or hung step (or one that crashes below) would otherwise
+        // leave zero evidence the harness ever picked it up — the "feels idle" gap.
+        HarnessLog.Info($"[step {step}] enter '{command}'");
+
         var (result, outcome) = Resolve(envelope, step, costChars, actions, validators, maxSteps);
 
         // UTF-8 octets, not .NET chars (RFC Appendix B item 1): measures what actually crosses
         // the transport, with the same meaning as Python (len(bytes)) and Rust (String::len()).
         var resultBytes = Encoding.UTF8.GetByteCount(result);
+
+        HarnessLog.Info($"[step {step}] exit outcome={outcome} bytes={resultBytes}");
 
         // One line per loop turn: feeds telemetry and the trajectory evaluator. Label is
         // re-read (not from the Load() snapshot above) because the action itself may have
@@ -109,7 +118,7 @@ public static class TaskRegistry
         var effectiveMaxSteps = maxSteps ?? MaxSteps;
         if (step > effectiveMaxSteps)
         {
-            Console.Error.WriteLine($"[harness] step limit of {effectiveMaxSteps} reached; stopping.");
+            HarnessLog.Error($"[harness] step limit of {effectiveMaxSteps} reached; stopping.");
             StateStore.MarkTerminal("budget");
             return ("stop", TraceOutcome.Budget);
         }
@@ -120,7 +129,7 @@ public static class TaskRegistry
         var config = HarnessConfig.Current;
         if (config.MaxInstructionChars > 0 && costChars > config.MaxInstructionChars)
         {
-            Console.Error.WriteLine(
+            HarnessLog.Error(
                 $"[harness] instruction char limit of {config.MaxInstructionChars} reached ({costChars}); stopping.");
             StateStore.MarkTerminal("budget");
             return ("stop", TraceOutcome.Budget);
@@ -156,9 +165,19 @@ public static class TaskRegistry
         }
         catch (HarnessTimeoutException ex)
         {
-            Console.Error.WriteLine($"[harness] {ex.Message}");
+            HarnessLog.Error($"[harness] {ex.Message}");
             StateStore.MarkTerminal("timeout");
             return ("stop", TraceOutcome.Timeout);
+        }
+        catch (Exception ex)
+        {
+            // A bug in the task action itself (not a driver protocol error) — must not
+            // crash the process silently. Logged in full, then the same graceful
+            // termination shape as budget/timeout: stderr+log diagnostic, "stop" on
+            // stdout, recoverable only via an explicit "start" (see TerminalReason()).
+            HarnessLog.Error($"[harness] unhandled fault in command '{envelope.Value}': {ex}");
+            StateStore.MarkTerminal("fault");
+            return ("stop", TraceOutcome.Fault);
         }
     }
 

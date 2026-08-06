@@ -43,7 +43,7 @@ func ReadDocs(folder string) (string, []string) {
 		name := filepath.Base(path)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[DocsReader] failed to read %s: %s\n", name, err)
+			LogError(fmt.Sprintf("[DocsReader] failed to read %s: %s", name, err))
 			continue
 		}
 
@@ -55,7 +55,7 @@ func ReadDocs(folder string) (string, []string) {
 		sb.WriteString("\n\n")
 
 		if sb.Len() > maxChars {
-			fmt.Fprintf(os.Stderr, "[DocsReader] content exceeded %d bytes (UTF-8); truncating at %s.\n", maxChars, name)
+			LogError(fmt.Sprintf("[DocsReader] content exceeded %d bytes (UTF-8); truncating at %s.", maxChars, name))
 			truncated := truncateUtf8Bytes(sb.String(), maxChars)
 			sb.Reset()
 			sb.WriteString(truncated)

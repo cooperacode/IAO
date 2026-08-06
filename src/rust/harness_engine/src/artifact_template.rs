@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::path_resolver;
+use crate::{harness_log, path_resolver};
 
 /// Reads the skill's template; `None` if the skill doesn't define one (the caller decides the fallback).
 pub fn load(skill_name: &str) -> Option<String> {
@@ -18,7 +18,7 @@ pub fn load(skill_name: &str) -> Option<String> {
     match std::fs::read_to_string(path) {
         Ok(content) => Some(content),
         Err(e) => {
-            eprintln!("[ArtifactTemplate] failed to read template for {skill_name}: {e}");
+            harness_log::error(&format!("[ArtifactTemplate] failed to read template for {skill_name}: {e}"));
             None
         }
     }

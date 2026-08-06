@@ -54,11 +54,35 @@ func cmd(value string, args ...string) *engine.Envelope {
 	return &e
 }
 
+// writePlanFile writes the driver-side feature array to planFilePath — Plan() reads
+// features from that file, not from the envelope's args (see planFilePath in tasks.go).
+func writePlanFile(t *testing.T, features string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(planFilePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planFilePath, []byte(features), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func planCmd(t *testing.T, features string, verifyCmd, targetDir string) *engine.Envelope {
+	t.Helper()
+	writePlanFile(t, features)
+	return cmd("plan", verifyCmd, targetDir)
+}
+
 func planWith(targetDir string) string {
 	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		panic(err)
 	}
-	result := Plan(cmd("plan", featuresJSON, "dotnet test", targetDir))
+	if err := os.MkdirAll(filepath.Dir(planFilePath), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(planFilePath, []byte(featuresJSON), 0o644); err != nil {
+		panic(err)
+	}
+	result := Plan(cmd("plan", "dotnet test", targetDir))
 	return result
 }
 
@@ -183,7 +207,7 @@ func TestPlan_PersistsFeaturesAndRoutesToBearings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := Plan(cmd("plan", featuresJSON, "npm test", "web"))
+	result := Plan(planCmd(t, featuresJSON, "npm test", "web"))
 
 	if len(engine.LoadFeatures()) != 2 {
 		t.Fatal("expected two features")
@@ -199,7 +223,7 @@ func TestPlan_PersistsFeaturesAndRoutesToBearings(t *testing.T) {
 func TestPlan_GeneratesNonEmptyRunId(t *testing.T) {
 	_, _ = isolate(t)
 
-	Plan(cmd("plan", featuresJSON, "npm test", "web"))
+	Plan(planCmd(t, featuresJSON, "npm test", "web"))
 
 	if runId := engine.LoadRunConfig().RunId; strings.TrimSpace(runId) == "" {
 		t.Fatal("expected non-empty run id")
@@ -300,7 +324,7 @@ func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(targetDir, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	Plan(cmd("plan", json, "dotnet test", targetDir)) // picks "B" (priority 1)
+	Plan(planCmd(t, json, "dotnet test", targetDir)) // picks "B" (priority 1)
 	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\n")
 	result := Implement(cmd("implement", "done")) // verifies B, hands off, and picks A
 
@@ -324,7 +348,7 @@ func TestPick_WithoutDescriptionOrReferences_HasNoContextBlock(t *testing.T) {
 func TestPlan_InvalidFeatures_ReemitsThePlan(t *testing.T) {
 	_, _ = isolate(t)
 
-	result := Plan(cmd("plan", "not json", "dotnet test", "."))
+	result := Plan(planCmd(t, "not json", "dotnet test", "."))
 
 	if len(engine.LoadFeatures()) != 0 {
 		t.Fatal("expected no features")
@@ -520,7 +544,7 @@ func TestVerify_Pass_AutomatedHandoffOnlyCommitsTargetDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(target, "init.sh"), []byte("#!/usr/bin/env bash\nset -e\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	Plan(cmd("plan", featuresJSON, "dotnet test", target))
+	Plan(planCmd(t, featuresJSON, "dotnet test", target))
 	writeVerifyFeatureScript(t, target, "#!/usr/bin/env bash\nset -e\n")
 	result := Implement(cmd("implement", "done in target"))
 
@@ -552,7 +576,7 @@ func TestPerFeatureGuard_ExceedingCeiling_Stops(t *testing.T) {
 func TestPlan_CyclicDependsOn_ReemitsThePlan(t *testing.T) {
 	_, _ = isolate(t)
 
-	result := Plan(cmd("plan",
+	result := Plan(planCmd(t,
 		`[{"id":1,"title":"A","priority":1,"dependsOn":[2]},{"id":2,"title":"B","priority":2,"dependsOn":[1]}]`,
 		"dotnet test", "."))
 
@@ -570,7 +594,7 @@ func TestPlan_CyclicDependsOn_ReemitsThePlan(t *testing.T) {
 func TestPlan_NonExistentDependsOnId_ReemitsThePlan(t *testing.T) {
 	_, _ = isolate(t)
 
-	result := Plan(cmd("plan", `[{"id":1,"title":"A","priority":1,"dependsOn":[99]}]`, "dotnet test", "."))
+	result := Plan(planCmd(t, `[{"id":1,"title":"A","priority":1,"dependsOn":[99]}]`, "dotnet test", "."))
 
 	if len(engine.LoadFeatures()) != 0 {
 		t.Fatal("expected empty features")
@@ -595,7 +619,7 @@ func TestPlan_CappingMaxFeatures_RemovesDependencyOnCutId(t *testing.T) {
 	}
 	json := fmt.Sprintf(`[{"id":1,"title":"survivor","priority":1,"dependsOn":[2]},{"id":2,"title":"cut","priority":1000},%s]`, extras.String())
 
-	Plan(cmd("plan", json, "dotnet test", "."))
+	Plan(planCmd(t, json, "dotnet test", "."))
 
 	for _, f := range engine.LoadFeatures() {
 		if f.Id == 2 {
@@ -621,7 +645,7 @@ func TestPlan_CappingMaxFeatures_RemovesDependencyOnCutId(t *testing.T) {
 func TestPick_RespectsDependency_PicksDependencyBeforeDependent(t *testing.T) {
 	_, _ = isolate(t)
 	json := `[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"dependent","priority":1,"dependsOn":[1]}]`
-	Plan(cmd("plan", json, "dotnet test", "."))
+	Plan(planCmd(t, json, "dotnet test", "."))
 	Bearings(cmd("bearings", "ok"))
 	Smoke(cmd("smoke", "ok"))
 

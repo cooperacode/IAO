@@ -18,11 +18,11 @@ var tasks = new Dictionary<string, Func<Envelope?, string>>
 
 // Contextual expectation per command; a rejection becomes a corrective error (the driver
 // fixes and resends). Bearings, smoke, and pick are retained as compatibility commands, but
-// the normal path executes them internally; their textual payloads are ignored.
-var validators = new Dictionary<string, Func<Envelope, ValidationResult>>
-{
-    ["plan"] = EnvelopeValidation.NotEmpty("the JSON array of features [{id,title,priority}]"),
-};
+// the normal path executes them internally; their textual payloads are ignored. `plan` no
+// longer carries the feature array in its args (see DevelopmentTasks.PlanFilePath) —
+// Plan() itself validates the file's content and re-requests it via PlanRetryPrompt, so no
+// envelope-arg validator applies here either.
+var validators = new Dictionary<string, Func<Envelope, ValidationResult>>();
 
 // Own snapshots: if this flow shares `.harness/` with refinement+evaluation (same
 // workspace), it must NOT overwrite the last-run.* that evaluation consumes. Freezes at

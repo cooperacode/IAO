@@ -48,9 +48,9 @@ func LoadStateFrom(path string) HarnessState {
 				}
 				return state
 			}
-			fmt.Fprintf(os.Stderr, "[StateStore] failed to load: %s\n", err)
+			LogError(fmt.Sprintf("[StateStore] failed to load: %s", err))
 		} else {
-			fmt.Fprintf(os.Stderr, "[StateStore] failed to load: %s\n", err)
+			LogError(fmt.Sprintf("[StateStore] failed to load: %s", err))
 		}
 	}
 
@@ -60,16 +60,16 @@ func LoadStateFrom(path string) HarnessState {
 // SaveState persists state to the live state.json.
 func SaveState(state HarnessState) {
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] failed to save: %s\n", err)
+		LogError(fmt.Sprintf("[StateStore] failed to save: %s", err))
 		return
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] failed to save: %s\n", err)
+		LogError(fmt.Sprintf("[StateStore] failed to save: %s", err))
 		return
 	}
 	if err := writeAtomic(stateFilePath, string(data)); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] failed to save: %s\n", err)
+		LogError(fmt.Sprintf("[StateStore] failed to save: %s", err))
 	}
 }
 
@@ -85,11 +85,11 @@ func SnapshotState(destination string) {
 		return
 	}
 	if err := ensureDir(stateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] failed to freeze: %s\n", err)
+		LogError(fmt.Sprintf("[StateStore] failed to freeze: %s", err))
 		return
 	}
 	if err := copyAtomic(stateFilePath, destination); err != nil {
-		fmt.Fprintf(os.Stderr, "[StateStore] failed to freeze: %s\n", err)
+		LogError(fmt.Sprintf("[StateStore] failed to freeze: %s", err))
 	}
 }
 

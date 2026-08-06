@@ -78,7 +78,7 @@ public record HarnessConfig(
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[HarnessConfig] failed to load; using defaults: {ex.Message}");
+            HarnessLog.Error($"[HarnessConfig] failed to load; using defaults: {ex.Message}");
             config = Default;
         }
 

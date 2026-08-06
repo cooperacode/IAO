@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::harness_log;
+
 const DIR: &str = ".harness";
 pub const MANIFEST_PATH: &str = ".harness/artifacts.json";
 
@@ -24,14 +26,14 @@ pub fn reset() {
         let p = std::path::Path::new(&file);
         if p.exists() {
             if let Err(e) = std::fs::remove_file(p) {
-                eprintln!("[ArtifactStore] failed to clear: {e}");
+                harness_log::error(&format!("[ArtifactStore] failed to clear: {e}"));
             }
         }
     }
     let manifest = std::path::Path::new(MANIFEST_PATH);
     if manifest.exists() {
         if let Err(e) = std::fs::remove_file(manifest) {
-            eprintln!("[ArtifactStore] failed to clear: {e}");
+            harness_log::error(&format!("[ArtifactStore] failed to clear: {e}"));
         }
     }
 }
@@ -41,11 +43,11 @@ pub fn write(name: &str, content: &str) -> String {
     let path = format!("{DIR}/{name}.md");
 
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[ArtifactStore] failed to write {name}: {e}");
+        harness_log::error(&format!("[ArtifactStore] failed to write {name}: {e}"));
         return path;
     }
     if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(&path), content) {
-        eprintln!("[ArtifactStore] failed to write {name}: {e}");
+        harness_log::error(&format!("[ArtifactStore] failed to write {name}: {e}"));
         return path;
     }
 
@@ -66,7 +68,7 @@ pub fn read(name: &str) -> String {
     if p.exists() {
         match std::fs::read_to_string(p) {
             Ok(content) => return content,
-            Err(e) => eprintln!("[ArtifactStore] failed to read {name}: {e}"),
+            Err(e) => harness_log::error(&format!("[ArtifactStore] failed to read {name}: {e}")),
         }
     }
 
@@ -85,7 +87,7 @@ pub fn files() -> Vec<String> {
 
         match loaded {
             Ok(manifest) => return manifest.files,
-            Err(e) => eprintln!("[ArtifactStore] failed to load manifest: {e}"),
+            Err(e) => harness_log::error(&format!("[ArtifactStore] failed to load manifest: {e}")),
         }
     }
     Vec::new()
@@ -108,7 +110,7 @@ pub fn read_all() -> String {
                     parts.push_str(content.trim_end());
                     parts.push('\n');
                 }
-                Err(e) => eprintln!("[ArtifactStore] failed to read {file}: {e}"),
+                Err(e) => harness_log::error(&format!("[ArtifactStore] failed to read {file}: {e}")),
             }
         }
     }
@@ -118,7 +120,7 @@ pub fn read_all() -> String {
 
 fn save_manifest(file_list: &[String]) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[ArtifactStore] failed to load manifest: {e}");
+        harness_log::error(&format!("[ArtifactStore] failed to load manifest: {e}"));
         return;
     }
     let manifest = ArtifactManifest {
@@ -129,10 +131,10 @@ fn save_manifest(file_list: &[String]) {
             if let Err(e) =
                 crate::atomic_io::write_atomic(std::path::Path::new(MANIFEST_PATH), &json)
             {
-                eprintln!("[ArtifactStore] failed to load manifest: {e}");
+                harness_log::error(&format!("[ArtifactStore] failed to load manifest: {e}"));
             }
         }
-        Err(e) => eprintln!("[ArtifactStore] failed to load manifest: {e}"),
+        Err(e) => harness_log::error(&format!("[ArtifactStore] failed to load manifest: {e}")),
     }
 }
 

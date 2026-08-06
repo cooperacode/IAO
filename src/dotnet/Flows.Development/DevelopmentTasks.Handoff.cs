@@ -16,11 +16,11 @@ public static partial class DevelopmentTasks
         var handoff = TryAutomatedHandoff(verifyResult);
         if (!handoff.Success)
         {
-            Console.Error.WriteLine($"[dev] automatic handoff failed: {handoff.Failure}");
+            HarnessLog.Error($"[dev] automatic handoff failed: {handoff.Failure}");
             return HandoffPrompt(handoff.Failure);
         }
 
-        Console.Error.WriteLine($"[dev] automatic handoff completed: {handoff.Confirmation}");
+        HarnessLog.Info($"[dev] automatic handoff completed: {handoff.Confirmation}");
         if (int.TryParse(State(CurrentFeatureIdKey), out var id))
             FeatureStore.MarkPassed(id);
 

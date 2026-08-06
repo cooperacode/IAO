@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use crate::envelope::Envelope;
 use crate::envelope_validation::Validator;
-use crate::errors::HarnessTimeoutError;
+use crate::errors::{HarnessFaultError, HarnessTimeoutError};
 use crate::trace::trace_outcome;
-use crate::{context_policy, harness_config, inbox, state_store, trace};
+use crate::{context_policy, harness_config, harness_log, inbox, state_store, trace};
 
 /// `Arc` (not `Box`) on purpose: the time guard needs to move the action onto a detached,
 /// abandonable thread (see `run_with_timeout`) without depending on the caller's command
@@ -53,18 +53,19 @@ pub fn dispatch(
         inbox::consume();
     }
 
-    // Budget stops remain terminal. A timeout is recoverable only through an explicit
-    // `start`: the timed-out worker was abandoned with the previous process, and the
-    // driver is deliberately asking the flow to resume or restart.
+    // Budget stops remain terminal. A timeout or fault is recoverable only through an
+    // explicit `start`: the abandoned worker (timed out, or crashed on a harness bug)
+    // belonged to the previous process, and the driver is deliberately asking the flow to
+    // resume or restart — never by silently resending the same command.
     if let Some(terminal) = state_store::terminal_reason() {
-        if terminal == "timeout"
+        if (terminal == "timeout" || terminal == "fault")
             && envelope
                 .as_ref()
                 .is_some_and(|envelope| envelope.value == "start")
         {
             state_store::clear_terminal();
         } else {
-            eprintln!("[harness] run already stopped ({terminal}); refusing another turn.");
+            harness_log::error(&format!("[harness] run already stopped ({terminal}); refusing another turn."));
             return "stop".to_string();
         }
     }
@@ -82,6 +83,7 @@ pub fn dispatch(
             if should_reset {
                 state_store::reset();
                 trace::reset();
+                harness_log::reset();
             }
 
             // Driver context (e.g. {"driver":"claude code"}) is born here and survives in
@@ -117,6 +119,11 @@ pub fn dispatch(
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| "(unparsed)".to_string());
 
+    // Logged BEFORE the action runs: trace.jsonl only gets a line once the step completes,
+    // so a slow or hung step (or one that faults below) would otherwise leave zero evidence
+    // the harness ever picked it up — the "feels idle" gap.
+    harness_log::info(&format!("[step {step}] enter '{command}'"));
+
     let (result, outcome) = resolve(
         envelope.as_ref(),
         step,
@@ -125,6 +132,11 @@ pub fn dispatch(
         validators,
         max_steps,
     );
+
+    harness_log::info(&format!(
+        "[step {step}] exit outcome={outcome} bytes={}",
+        result.len()
+    ));
 
     // One line per loop iteration: feeds telemetry and the trajectory evaluator. Label is
     // read again (not from the load() snapshot above) because the action itself may have
@@ -158,7 +170,7 @@ fn resolve(
     // global. Without an override, the config's value applies.
     let effective_max_steps = max_steps.unwrap_or_else(default_max_steps);
     if step > effective_max_steps {
-        eprintln!("[harness] step limit of {effective_max_steps} reached; stopping.");
+        harness_log::error(&format!("[harness] step limit of {effective_max_steps} reached; stopping."));
         state_store::mark_terminal("budget");
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
@@ -168,10 +180,10 @@ fn resolve(
     // the caller's billing metadata — an LLM driver has no way to honestly report them.
     let config = harness_config::current();
     if config.max_instruction_chars > 0 && cost_chars > config.max_instruction_chars {
-        eprintln!(
+        harness_log::error(&format!(
             "[harness] instruction char limit of {} reached ({cost_chars}); stopping.",
             config.max_instruction_chars
-        );
+        ));
         state_store::mark_terminal("budget");
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
@@ -225,7 +237,10 @@ fn resolve(
     // Time guard: a stuck task (infinite loop in domain logic) would hang the process
     // indefinitely. `run_with_timeout` enforces the per-step ceiling; the overrun becomes
     // a typed error, caught here, and follows the same graceful path as the budget cutoff:
-    // diagnostic on stderr + "stop" on stdout (the channel read by the IDE client).
+    // diagnostic on stderr + "stop" on stdout (the channel read by the IDE client). A panic
+    // inside the action itself (a real bug, not a driver protocol error) is recovered the
+    // same way — see `run_protected` — and reported as a distinct "fault" outcome instead
+    // of crashing the process or being silently mislabeled as a timeout.
     match run_with_timeout(action, Some(envelope), config.timeout_ms) {
         Ok(result) => {
             let outcome = if result == "stop" {
@@ -235,12 +250,30 @@ fn resolve(
             };
             (result, outcome)
         }
-        Err(e) => {
-            eprintln!("[harness] {e}");
+        Err(RunError::Timeout(e)) => {
+            harness_log::error(&format!("[harness] {e}"));
             state_store::mark_terminal("timeout");
             ("stop".to_string(), trace_outcome::TIMEOUT)
         }
+        Err(RunError::Fault(e)) => {
+            harness_log::error(&format!(
+                "[harness] unhandled fault in command '{}': {e}",
+                envelope.value
+            ));
+            state_store::mark_terminal("fault");
+            ("stop".to_string(), trace_outcome::FAULT)
+        }
     }
+}
+
+/// A task action's execution can fail two structurally different ways, both surfaced as
+/// distinct trace outcomes (see `resolve`): the per-step ceiling was exceeded, or the
+/// action itself panicked (a harness bug). Kept as separate variants — rather than
+/// collapsing into one error type — so `resolve` can never accidentally conflate a real
+/// timeout with a recovered panic, which is exactly the bug `run_protected` fixes below.
+enum RunError {
+    Timeout(HarnessTimeoutError),
+    Fault(HarnessFaultError),
 }
 
 // The task is a synchronous, OPAQUE closure — it doesn't cooperate with cancellation.
@@ -254,9 +287,9 @@ fn run_with_timeout(
     action: &Action,
     envelope: Option<&Envelope>,
     timeout_ms: i32,
-) -> Result<String, HarnessTimeoutError> {
+) -> Result<String, RunError> {
     if timeout_ms <= 0 {
-        return Ok(action(envelope)); // guard disabled — no thread overhead
+        return run_protected(action, envelope).map_err(RunError::Fault); // guard disabled — no thread overhead
     }
 
     let action = Arc::clone(action);
@@ -264,12 +297,39 @@ fn run_with_timeout(
 
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let result = action(envelope_owned.as_ref());
+        let result = run_protected(&action, envelope_owned.as_ref());
+        // The receiver always gets a message now (Ok or Err) — recv_timeout only ever
+        // returns Disconnected if the sender is dropped before sending, which no longer
+        // happens: run_protected can't panic past this send.
         let _ = tx.send(result);
     });
 
-    rx.recv_timeout(Duration::from_millis(timeout_ms as u64))
-        .map_err(|_| HarnessTimeoutError { timeout_ms })
+    match rx.recv_timeout(Duration::from_millis(timeout_ms as u64)) {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(fault)) => Err(RunError::Fault(fault)),
+        Err(_) => Err(RunError::Timeout(HarnessTimeoutError { timeout_ms })),
+    }
+}
+
+/// Recovers a panic raised inside the action — a bug in task logic, not a driver protocol
+/// error — converting it into a typed `HarnessFaultError` instead of letting it unwind past
+/// the thread boundary. Before this guard, a panicking action on the timeout-guard thread
+/// dropped the channel's sender without sending, and `recv_timeout` returned
+/// `Disconnected` immediately — indistinguishable from the `Timeout` case at the call site,
+/// so a real bug was silently misreported as a timeout (see the regression test below).
+fn run_protected(action: &Action, envelope: Option<&Envelope>) -> Result<String, HarnessFaultError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(envelope)))
+        .map_err(|payload| HarnessFaultError { reason: panic_message(payload) })
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }
 
 fn error_instruction(reason: &str, actions: &HashMap<String, Action>) -> String {
@@ -639,5 +699,151 @@ mod tests {
         );
         assert_eq!(resumed, "PROMPT_START");
         assert!(state_store::terminal_reason().is_none());
+    }
+
+    type PanicHook = dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static;
+
+    /// Silences the default panic hook's stderr backtrace for the duration of a test that
+    /// deliberately panics — the panic itself is the assertion, not noise CI should print.
+    struct QuietPanics {
+        previous: Option<Box<PanicHook>>,
+    }
+
+    impl QuietPanics {
+        fn new() -> Self {
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            Self {
+                previous: Some(previous),
+            }
+        }
+    }
+
+    impl Drop for QuietPanics {
+        fn drop(&mut self) {
+            if let Some(hook) = self.previous.take() {
+                std::panic::set_hook(hook);
+            }
+        }
+    }
+
+    fn faulty_tasks() -> HashMap<String, Action> {
+        let mut map: HashMap<String, Action> = HashMap::new();
+        map.insert(
+            "start".to_string(),
+            Arc::new(|_| "PROMPT_START".to_string()),
+        );
+        map.insert(
+            "boom".to_string(),
+            Arc::new(|_| panic!("a real bug, not a driver protocol error")),
+        );
+        map
+    }
+
+    #[test]
+    fn run_protected_action_normal_devolve_ok() {
+        let action: Action = Arc::new(|_| "PROMPT_START".to_string());
+
+        let result = run_protected(&action, None);
+
+        assert_eq!(result.unwrap(), "PROMPT_START");
+    }
+
+    #[test]
+    fn run_protected_action_entra_em_panico_devolve_fault_com_a_mensagem() {
+        let _quiet = QuietPanics::new();
+        let action: Action = Arc::new(|_| panic!("a real bug"));
+
+        let err = run_protected(&action, None).unwrap_err();
+
+        assert_eq!(err.reason, "a real bug");
+    }
+
+    #[test]
+    fn dispatch_action_entra_em_panico_retorna_stop_em_vez_de_derrubar_o_processo() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        let _quiet = QuietPanics::new();
+
+        // The regression this guards: before run_protected's catch_unwind, a panicking
+        // action on the timeout-guard thread dropped the channel sender without sending,
+        // and recv_timeout's resulting Disconnected was mapped straight to
+        // HarnessTimeoutError — misreporting a real bug as a timeout (see the next test).
+        let result = dispatch(
+            &arg(r#"{"type":"tool","value":"boom"}"#),
+            &faulty_tasks(),
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(result, "stop");
+    }
+
+    #[test]
+    fn dispatch_action_entra_em_panico_grava_desfecho_fault_nao_timeout_e_marca_terminal() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        let _quiet = QuietPanics::new();
+
+        dispatch(
+            &arg(r#"{"type":"tool","value":"boom"}"#),
+            &faulty_tasks(),
+            None,
+            None,
+            None,
+        );
+
+        let entries = trace::load();
+        assert_eq!(entries.last().unwrap().outcome, trace_outcome::FAULT);
+        assert_eq!(state_store::terminal_reason().as_deref(), Some("fault"));
+    }
+
+    #[test]
+    fn dispatch_action_entra_em_panico_run_permanece_terminal_ate_um_start_explicito() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        let _quiet = QuietPanics::new();
+
+        dispatch(
+            &arg(r#"{"type":"tool","value":"boom"}"#),
+            &faulty_tasks(),
+            None,
+            None,
+            None,
+        );
+
+        let result = dispatch(
+            &arg(r#"{"type":"text","value":"start"}"#),
+            &faulty_tasks(),
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(result, "PROMPT_START");
+        assert!(state_store::terminal_reason().is_none());
+    }
+
+    #[test]
+    fn dispatch_loga_entrada_antes_da_action_rodar_e_saida_depois_de_concluir() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        dispatch(
+            &arg(r#"{"type":"tool","value":"classify","args":["Login"]}"#),
+            &tasks(),
+            None,
+            None,
+            None,
+        );
+
+        let content = std::fs::read_to_string(".harness/harness.log").unwrap();
+        let enter_index = content.find("enter 'classify'");
+        let exit_index = content.find("exit outcome=");
+
+        assert!(enter_index.is_some(), "expected an 'enter' line in harness.log");
+        assert!(exit_index.is_some(), "expected an 'exit' line in harness.log");
+        assert!(enter_index.unwrap() < exit_index.unwrap(), "entry must be logged before exit");
     }
 }

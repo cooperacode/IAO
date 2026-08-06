@@ -42,7 +42,7 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] failed to clear: {ex.Message}");
+            HarnessLog.Error($"[Trace] failed to clear: {ex.Message}");
         }
     }
 
@@ -68,7 +68,7 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] failed to write: {ex.Message}");
+            HarnessLog.Error($"[Trace] failed to write: {ex.Message}");
         }
     }
 
@@ -119,7 +119,7 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] failed to freeze: {ex.Message}");
+            HarnessLog.Error($"[Trace] failed to freeze: {ex.Message}");
         }
     }
 
@@ -142,7 +142,7 @@ public static class Trace
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Trace] failed to load: {ex.Message}");
+            HarnessLog.Error($"[Trace] failed to load: {ex.Message}");
             return [];
         }
     }
@@ -184,4 +184,5 @@ public static class TraceOutcome
     public const string Error = "error";             // typed error returned to the driver
     public const string Budget = "budget";           // cut off by the step ceiling
     public const string Timeout = "timeout";          // cut off by the per-step time ceiling
+    public const string Fault = "fault";             // unhandled exception inside a task action — a harness bug, not a driver protocol error
 }

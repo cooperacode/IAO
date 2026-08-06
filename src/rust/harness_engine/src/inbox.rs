@@ -7,6 +7,8 @@
 //! writes the JSON here with its file-write tool (never touching a shell) and runs the
 //! script with NO arguments, a bare command that has no way to be left unterminated.
 
+use crate::harness_log;
+
 const DIR: &str = ".harness";
 pub const PATH: &str = ".harness/inbox.json";
 
@@ -20,7 +22,7 @@ pub fn read() -> String {
     if p.exists() {
         match std::fs::read_to_string(p) {
             Ok(content) => return content,
-            Err(e) => eprintln!("[Inbox] failed to read {PATH}: {e}"),
+            Err(e) => harness_log::error(&format!("[Inbox] failed to read {PATH}: {e}")),
         }
     }
     String::new()
@@ -31,11 +33,11 @@ pub fn consume() {
     let p = std::path::Path::new(PATH);
     if p.exists() {
         if let Err(e) = std::fs::create_dir_all(DIR) {
-            eprintln!("[Inbox] failed to consume {PATH}: {e}");
+            harness_log::error(&format!("[Inbox] failed to consume {PATH}: {e}"));
             return;
         }
         if let Err(e) = std::fs::rename(p, CONSUMED_PATH) {
-            eprintln!("[Inbox] failed to consume {PATH}: {e}");
+            harness_log::error(&format!("[Inbox] failed to consume {PATH}: {e}"));
         }
     }
 }

@@ -50,7 +50,7 @@ public static class StateStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[StateStore] failed to load: {ex.Message}");
+            HarnessLog.Error($"[StateStore] failed to load: {ex.Message}");
         }
 
         return new HarnessState(0, new());
@@ -65,7 +65,7 @@ public static class StateStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[StateStore] failed to save: {ex.Message}");
+            HarnessLog.Error($"[StateStore] failed to save: {ex.Message}");
         }
     }
 
@@ -84,7 +84,7 @@ public static class StateStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[StateStore] failed to freeze: {ex.Message}");
+            HarnessLog.Error($"[StateStore] failed to freeze: {ex.Message}");
         }
     }
 

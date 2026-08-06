@@ -7,7 +7,6 @@
 //! `task_registry`); real tokens live in the caller's billing metadata.
 
 use std::collections::HashMap;
-use std::io::Write;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,7 +57,13 @@ impl Envelope {
             Err(err) => {
                 // Diagnostic goes to stderr — stdout is the harness's transport channel
                 // (the driver reads stdout as the next instruction) and must not be polluted.
-                let _ = writeln!(std::io::stderr(), "{err}");
+                // The raw payload (truncated) is included because it's otherwise lost
+                // forever: the inbox file gets overwritten by the driver's next attempt
+                // before anyone can inspect what it actually sent.
+                crate::harness_log::error(&format!(
+                    "[Envelope] failed to parse: {err}. Raw payload: {}",
+                    truncate(value, 500)
+                ));
                 None
             }
         }
@@ -151,9 +156,41 @@ impl Envelope {
     }
 }
 
+fn truncate(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut truncated: String = value.chars().take(max_chars).collect();
+    truncated.push_str("...(truncated)");
+    truncated
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Isolated {
+        _dir: tempfile::TempDir,
+        previous: std::path::PathBuf,
+    }
+
+    impl Isolated {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let previous = std::env::current_dir().unwrap();
+            std::env::set_current_dir(dir.path()).unwrap();
+            Self {
+                _dir: dir,
+                previous,
+            }
+        }
+    }
+
+    impl Drop for Isolated {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.previous);
+        }
+    }
 
     #[test]
     fn parse_json_valido_preenche_os_tres_campos() {
@@ -202,6 +239,9 @@ mod tests {
 
     #[test]
     fn parse_entrada_invalida_retorna_none() {
+        let _guard = crate::test_support::lock_cwd();
+        let _iso = Isolated::new();
+
         for raw in [
             "",
             "   ",
@@ -211,6 +251,32 @@ mod tests {
         ] {
             assert!(Envelope::parse(raw).is_none(), "expected None for {raw:?}");
         }
+    }
+
+    #[test]
+    fn parse_entrada_invalida_grava_o_payload_cru_no_harness_log() {
+        let _guard = crate::test_support::lock_cwd();
+        let _iso = Isolated::new();
+
+        // The raw driver payload is otherwise lost forever — the inbox file gets
+        // overwritten by the next attempt before anyone can inspect what actually failed.
+        Envelope::parse("this is not json");
+
+        let content = std::fs::read_to_string(".harness/harness.log").unwrap();
+        assert!(content.contains("this is not json"));
+    }
+
+    #[test]
+    fn parse_payload_maior_que_o_teto_trunca_no_harness_log() {
+        let _guard = crate::test_support::lock_cwd();
+        let _iso = Isolated::new();
+
+        let oversized = format!("{}not json", "x".repeat(600));
+        Envelope::parse(&oversized);
+
+        let content = std::fs::read_to_string(".harness/harness.log").unwrap();
+        assert!(content.contains("...(truncated)"));
+        assert!(!content.contains(&oversized));
     }
 
     #[test]

@@ -13,7 +13,7 @@ import (
 func LoadGoldenCase(path string) (*GoldenCase, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[GoldenCaseStore] failed to load %s: %s\n", path, err)
+		LogError(fmt.Sprintf("[GoldenCaseStore] failed to load %s: %s", path, err))
 		return nil, false
 	}
 
@@ -25,7 +25,7 @@ func LoadGoldenCase(path string) (*GoldenCase, bool) {
 		ExpectPass         *bool    `json:"expectPass"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		fmt.Fprintf(os.Stderr, "[GoldenCaseStore] failed to load %s: %s\n", path, err)
+		LogError(fmt.Sprintf("[GoldenCaseStore] failed to load %s: %s", path, err))
 		return nil, false
 	}
 

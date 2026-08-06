@@ -9,11 +9,10 @@ use harness_engine::{
 };
 
 use crate::tasks::{
-    BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY,
+    BRIEF_ARTIFACT_NAME, CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_TITLE_KEY, PLAN_FILE_PATH,
 };
 
 // Output tokens (the driver stores the step's artifact in these and returns them as args).
-const FEATURES: &str = "$FEATURES";
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
 
@@ -71,11 +70,16 @@ pub fn initializer_prompt(content: &str, files: &[String]) -> String {
 {content}\n\
 </brief>\n\
 \n\
-Store a JSON ARRAY in '{FEATURES}': {FEATURES_SHAPE}\n\
+Write a JSON ARRAY to the file '{PLAN_FILE_PATH}' (a real file, written with your file-write\n\
+tool — NOT escaped or embedded inside the envelope you send back): {FEATURES_SHAPE}\n\
 (just the array, no passes — every feature is born pending). Store the verify\n\
-command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test`) and the target directory\n\
+command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test` — never a placeholder that always\n\
+passes, like `echo`, `true`, or `exit 0`; it must run the project's real build/test\n\
+pipeline, creating one first if none exists yet) and the target directory\n\
 in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:\n\
-`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0."
+`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0.\n\
+Plan one feature per distinct capability the brief describes — a single feature that\n\
+scaffolds everything is not a valid plan for a multi-requirement goal."
     );
 
     prompt_formatter::format(
@@ -83,11 +87,7 @@ in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:\
         &Envelope::new(
             envelope_type::COMMAND,
             "plan",
-            vec![
-                FEATURES.to_string(),
-                VERIFY_CMD.to_string(),
-                TARGET_DIR.to_string(),
-            ],
+            vec![VERIFY_CMD.to_string(), TARGET_DIR.to_string()],
         ),
         Some(&prompt_formatter::skills(&["dev-initializer"])),
     )
@@ -98,10 +98,14 @@ pub fn initializer_interactive() -> String {
         "No brief was supplied. Ask the user for the goal, target directory, and\n\
 established verification command, then follow the injected `dev-initializer` skill.\n\
 \n\
-Store a JSON ARRAY in '{FEATURES}' {FEATURES_SHAPE},\n\
-the command in '{VERIFY_CMD}' and the directory in '{TARGET_DIR}'. The `verify-feature.sh`\n\
-may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print\n\
-`PASS: feature <id> ...` and exit 0."
+Write a JSON ARRAY to the file '{PLAN_FILE_PATH}' (a real file, written with your file-write\n\
+tool — NOT escaped or embedded inside the envelope you send back) {FEATURES_SHAPE},\n\
+the command in '{VERIFY_CMD}' (never a placeholder that always passes, like `echo`, `true`,\n\
+or `exit 0`; it must run the project's real build/test pipeline) and the directory in\n\
+'{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:\n\
+`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0.\n\
+Plan one feature per distinct capability the goal describes — a single feature that\n\
+scaffolds everything is not a valid plan for a multi-requirement goal."
     );
 
     prompt_formatter::format(
@@ -109,11 +113,7 @@ may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print\n\
         &Envelope::new(
             envelope_type::COMMAND,
             "plan",
-            vec![
-                FEATURES.to_string(),
-                VERIFY_CMD.to_string(),
-                TARGET_DIR.to_string(),
-            ],
+            vec![VERIFY_CMD.to_string(), TARGET_DIR.to_string()],
         ),
         Some(&prompt_formatter::skills(&["dev-initializer"])),
     )
@@ -132,9 +132,10 @@ pub fn plan_retry_prompt() -> String {
     };
 
     let input = format!(
-        "{brief_block}Could not parse the feature list. Resend in '{FEATURES}' a valid JSON\n\
-ARRAY, in exactly the format {FEATURES_SHAPE} — just the array, no surrounding text.\n\
-Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."
+        "{brief_block}Could not read a valid JSON array from '{PLAN_FILE_PATH}'. Write the array\n\
+itself to that exact path with your file-write tool — do not put it in the envelope's args\n\
+and do not escape it as a string. Format: {FEATURES_SHAPE} — just the array in the file, no\n\
+surrounding text. Repeat the command with '{VERIFY_CMD}' and '{TARGET_DIR}'."
     );
 
     prompt_formatter::format(
@@ -142,11 +143,7 @@ Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."
         &Envelope::new(
             envelope_type::COMMAND,
             "plan",
-            vec![
-                FEATURES.to_string(),
-                VERIFY_CMD.to_string(),
-                TARGET_DIR.to_string(),
-            ],
+            vec![VERIFY_CMD.to_string(), TARGET_DIR.to_string()],
         ),
         None,
     )

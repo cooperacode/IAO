@@ -5,7 +5,7 @@
 //! Analogous to how `prompt_formatter` injects skills — the reading is deterministic (done
 //! in code), only the synthesis is left to the model.
 
-use crate::{harness_config, path_resolver};
+use crate::{harness_config, harness_log, path_resolver};
 
 const EXTENSIONS: [&str; 2] = ["md", "txt"];
 
@@ -58,7 +58,7 @@ pub fn read(folder: &str) -> (String, Vec<String>) {
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("[DocsReader] failed to read {name}: {e}");
+                harness_log::error(&format!("[DocsReader] failed to read {name}: {e}"));
                 continue;
             }
         };
@@ -71,7 +71,7 @@ pub fn read(folder: &str) -> (String, Vec<String>) {
         content.push_str("\n\n");
 
         if content.len() > max_chars {
-            eprintln!("[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {name}.");
+            harness_log::error(&format!("[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {name}."));
             content = truncate_utf8_bytes(&content, max_chars);
             break;
         }

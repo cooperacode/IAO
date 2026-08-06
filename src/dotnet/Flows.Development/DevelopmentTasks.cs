@@ -40,6 +40,16 @@ public static partial class DevelopmentTasks
     /// auditability and compatibility after planning; implement/fix use feature context.
     /// </summary>
     private const string BriefArtifactName = "brief";
+
+    /// <summary>
+    /// Where the driver writes the raw (unescaped) feature-list JSON array with its
+    /// file-write tool. Requiring it inline in the envelope's args would force the driver
+    /// to serialize and escape a large JSON document as a single string value inside
+    /// another single-line JSON object — a format-compliance task large drivers have been
+    /// observed to fail at, falling back to echoing the placeholder token itself.
+    /// </summary>
+    private const string PlanFilePath = ".harness/plan.json";
+
     private static string State(string key) => StateStore.Get(key) ?? "";
     private static string DocsFolder => HarnessConfig.Current.DocsFolder;
 }
@@ -65,7 +75,7 @@ public static partial class DevelopmentTasks
     {
         if (FeatureStore.PendingCount() > 0)
         {
-            Error.WriteLine(
+            HarnessLog.Info(
                 "[dev] run in progress detected (pending feature); resuming deterministically.");
             return Bearings(null);
         }
@@ -78,6 +88,16 @@ public static partial class DevelopmentTasks
         // ArtifactStore.Write, so only this Reset guarantees no brief from an old topic
         // survives.
         ArtifactStore.Reset();
+        // A stale plan.json from a previous (or aborted) run must not satisfy this one
+        // before the driver writes a fresh array — best-effort, absence is not an error.
+        try
+        {
+            File.Delete(PlanFilePath);
+        }
+        catch (Exception ex)
+        {
+            HarnessLog.Error($"[dev] failed to clear {PlanFilePath}: {ex.Message}");
+        }
 
         // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
         if (!DocsReader.HasDocs(DocsFolder))
@@ -91,9 +111,13 @@ public static partial class DevelopmentTasks
         return InitializerPrompt(content, files);
     }
 
+    /// <summary>
+    /// Interprets the driver's feature array (written to PlanFilePath, not the envelope —
+    /// see the doc comment on PlanFilePath) and persists the run configuration.
+    /// </summary>
     public static string Plan(Envelope? envelope)
     {
-        var features = FeatureStore.Parse(Arg(envelope));
+        var features = FeatureStore.Parse(ReadPlanFile());
         if (features.Count == 0)
             return PlanRetryPrompt(); // couldn't parse → re-request (corrective loop)
 
@@ -117,8 +141,8 @@ public static partial class DevelopmentTasks
         // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
         // concern, not part of the contract).
         RunConfigStore.Write(new RunConfig(
-            ExternalOrArg("HARNESS_VERIFY_CMD", envelope, 1, "dotnet test"),
-            ExternalOrArg("HARNESS_TARGET_DIR", envelope, 2, "."),
+            ExternalOrArg("HARNESS_VERIFY_CMD", envelope, 0, "dotnet test"),
+            ExternalOrArg("HARNESS_TARGET_DIR", envelope, 1, "."),
             Guid.NewGuid().ToString()));
 
         // Bearings, smoke and pick are deterministic harness work. The first driver turn
@@ -251,26 +275,40 @@ public static partial class DevelopmentTasks
         StateStore.Set(FeatureStepsKey, steps.ToString());
 
         if (steps <= StepsPerFeature) return false;
-        Error.WriteLine($"[dev] feature '{State(CurrentFeatureTitleKey)}' exceeded {StepsPerFeature} steps; stopping.");
+        HarnessLog.Error($"[dev] feature '{State(CurrentFeatureTitleKey)}' exceeded {StepsPerFeature} steps; stopping.");
         return true;
     }
 
     private static string Stop(string reason)
     {
-        Error.WriteLine($"[dev] stopped due to {reason}. feature_list in .harness/feature_list.json");
+        HarnessLog.Error($"[dev] stopped due to {reason}. feature_list in .harness/feature_list.json");
         return "stop";
     }
 
     private static string Done()
     {
-        Error.WriteLine(
+        HarnessLog.Info(
             $"[dev] all {FeatureStore.Load().Count} features pass; done. "
             + "State in .harness/feature_list.json");
         return "stop";
     }
 
-    private static string Arg(Envelope? envelope) =>
-        envelope?.Args is { Length: > 0 } ? envelope.Args[0] : string.Empty;
+    /// <summary>
+    /// Reads the driver-written feature array from PlanFilePath. "" if absent/unreadable —
+    /// Plan() treats that the same as an unparseable array (retry).
+    /// </summary>
+    private static string ReadPlanFile()
+    {
+        try
+        {
+            return File.Exists(PlanFilePath) ? File.ReadAllText(PlanFilePath) : "";
+        }
+        catch (Exception ex)
+        {
+            HarnessLog.Error($"[dev] failed to read {PlanFilePath}: {ex.Message}");
+            return "";
+        }
+    }
 
     private static string ArgAt(Envelope? envelope, int index, string fallback) =>
         envelope?.Args is { } args && args.Length > index && !string.IsNullOrWhiteSpace(args[index])

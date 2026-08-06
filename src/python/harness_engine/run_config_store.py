@@ -8,10 +8,10 @@ survive that reset.
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness_engine import harness_log
 from harness_engine.atomic_io import write_text_atomic
 
 _DIR = ".harness"
@@ -48,7 +48,7 @@ def write(config: RunConfig) -> None:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         write_text_atomic(_FILE_PATH, json.dumps(config.to_dict(), separators=(",", ":")))
     except Exception as ex:
-        print(f"[RunConfigStore] failed to write: {ex}", file=sys.stderr)
+        harness_log.error(f"[RunConfigStore] failed to write: {ex}")
 
 
 def load() -> RunConfig:
@@ -58,7 +58,7 @@ def load() -> RunConfig:
         if p.exists():
             return RunConfig.from_dict(json.loads(p.read_text()))
     except Exception as ex:
-        print(f"[RunConfigStore] failed to load: {ex}", file=sys.stderr)
+        harness_log.error(f"[RunConfigStore] failed to load: {ex}")
 
     return RunConfig()
 
@@ -68,4 +68,4 @@ def reset() -> None:
     try:
         Path(_FILE_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[RunConfigStore] failed to clear: {ex}", file=sys.stderr)
+        harness_log.error(f"[RunConfigStore] failed to clear: {ex}")

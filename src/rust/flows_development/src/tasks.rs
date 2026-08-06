@@ -13,7 +13,8 @@
 use harness_engine::Envelope;
 use harness_engine::run_config_store::RunConfig;
 use harness_engine::{
-    artifact_store, docs_reader, feature_store, harness_config, run_config_store, state_store,
+    artifact_store, docs_reader, feature_store, harness_config, harness_log, run_config_store,
+    state_store,
 };
 
 use crate::{handoff, prompts, verify};
@@ -44,6 +45,13 @@ pub const FEATURE_STEPS_KEY: &str = "feature_steps";
 // auditability and compatibility; implementation sessions use each feature's bounded context.
 pub const BRIEF_ARTIFACT_NAME: &str = "brief";
 
+// Where the driver writes the raw (unescaped) feature-list JSON array with its file-write
+// tool. Requiring it inline in the envelope's args would force the driver to serialize and
+// escape a large JSON document as a single string value inside another single-line JSON
+// object — a format-compliance task large drivers have been observed to fail at, falling
+// back to echoing the placeholder token itself.
+pub const PLAN_FILE_PATH: &str = ".harness/plan.json";
+
 fn state(key: &str) -> String {
     state_store::get(key).unwrap_or_default()
 }
@@ -60,8 +68,8 @@ pub fn start() -> String {
     // feature, still pending — without needing to know exactly where the previous
     // session stopped.
     if feature_store::pending_count() > 0 {
-        eprintln!(
-            "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting."
+        harness_log::info(
+            "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.",
         );
         return bearings(None);
     }
@@ -73,6 +81,9 @@ pub fn start() -> String {
     // brief.md from a previous run — interactive mode never calls artifact_store::write,
     // so only this reset guarantees no brief from an old topic survives.
     artifact_store::reset();
+    // A stale plan.json from a previous (or aborted) run must not satisfy this one before
+    // the driver writes a fresh array — best-effort, absence is not an error.
+    let _ = std::fs::remove_file(PLAN_FILE_PATH);
 
     // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
     let folder = docs_folder();
@@ -88,8 +99,10 @@ pub fn start() -> String {
     prompts::initializer_prompt(&content, &files)
 }
 
+// plan interprets the driver's feature array (written to PLAN_FILE_PATH, not the
+// envelope — see the comment on PLAN_FILE_PATH) and persists the run configuration.
 pub fn plan(envelope: Option<&Envelope>) -> String {
-    let features = feature_store::parse(&arg(envelope));
+    let features = feature_store::parse(&read_plan_file());
     if features.is_empty() {
         return prompts::plan_retry_prompt(); // couldn't parse → re-request (corrective loop)
     }
@@ -118,8 +131,8 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
     // concern, not part of the contract).
     run_config_store::write(&RunConfig {
-        verify_cmd: std::env::var("HARNESS_VERIFY_CMD").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 1, "dotnet test")),
-        target_dir: std::env::var("HARNESS_TARGET_DIR").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 2, ".")),
+        verify_cmd: std::env::var("HARNESS_VERIFY_CMD").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 0, "dotnet test")),
+        target_dir: std::env::var("HARNESS_TARGET_DIR").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 1, ".")),
         run_id: uuid::Uuid::new_v4().to_string(),
     });
 
@@ -269,33 +282,32 @@ fn over_feature_budget() -> bool {
     state_store::set(FEATURE_STEPS_KEY, &steps.to_string());
 
     if steps > STEPS_PER_FEATURE {
-        eprintln!(
+        harness_log::error(&format!(
             "[dev] feature '{}' exceeded {STEPS_PER_FEATURE} steps; stopping.",
             state(CURRENT_FEATURE_TITLE_KEY)
-        );
+        ));
         return true;
     }
     false
 }
 
 pub(crate) fn stop(reason: &str) -> String {
-    eprintln!("[dev] stopped due to {reason}. feature_list in .harness/feature_list.json");
+    harness_log::error(&format!("[dev] stopped due to {reason}. feature_list in .harness/feature_list.json"));
     "stop".to_string()
 }
 
 pub(crate) fn done() -> String {
-    eprintln!(
+    harness_log::info(&format!(
         "[dev] all {} features pass; done. State in .harness/feature_list.json",
         feature_store::load().len()
-    );
+    ));
     "stop".to_string()
 }
 
-fn arg(envelope: Option<&Envelope>) -> String {
-    envelope
-        .and_then(|e| e.args.first())
-        .cloned()
-        .unwrap_or_default()
+/// Reads the driver-written feature array from PLAN_FILE_PATH. Empty string if
+/// absent/unreadable — plan() treats that the same as an unparseable array (retry).
+fn read_plan_file() -> String {
+    std::fs::read_to_string(PLAN_FILE_PATH).unwrap_or_default()
 }
 
 fn arg_at(envelope: Option<&Envelope>, index: usize, fallback: &str) -> String {
@@ -358,14 +370,27 @@ mod tests {
         )
     }
 
+    /// Writes the driver-side feature array to PLAN_FILE_PATH — plan() reads features from
+    /// that file, not from the envelope's args (see PLAN_FILE_PATH above).
+    fn write_plan_file(features: &str) {
+        std::fs::create_dir_all(
+            std::path::Path::new(PLAN_FILE_PATH)
+                .parent()
+                .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(PLAN_FILE_PATH, features).unwrap();
+    }
+
+    fn plan_cmd(features: &str, verify_cmd: &str, target_dir: &str) -> Envelope {
+        write_plan_file(features);
+        cmd("plan", vec![verify_cmd, target_dir])
+    }
+
     fn plan_default() -> String {
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
-        let result = plan(Some(&cmd(
-            "plan",
-            vec![FEATURES_JSON, "dotnet test", "src/app"],
-        )));
-        result
+        plan(Some(&plan_cmd(FEATURES_JSON, "dotnet test", "src/app")))
     }
 
     /// Advances the flow until a feature is chosen and implemented (ready for verify),
@@ -529,7 +554,7 @@ mod tests {
         let json = r#"[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],"implementationContext":{"requirements":["inline X"]}},{"id":2,"title":"B","priority":1}]"#;
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
-        plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"]))); // escolhe "B"
+        plan(Some(&plan_cmd(json, "dotnet test", "src/app"))); // escolhe "B"
         write_verify_feature_script(std::path::Path::new("src/app"), "#!/usr/bin/env bash\nset -e\n");
         let result = implement(Some(&cmd("implement", vec!["feito"]))); // verifica B, entrega A
 
@@ -557,7 +582,7 @@ mod tests {
         std::fs::create_dir_all("web").unwrap();
         std::fs::write("web/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
 
-        let result = plan(Some(&cmd("plan", vec![FEATURES_JSON, "npm test", "web"])));
+        let result = plan(Some(&plan_cmd(FEATURES_JSON, "npm test", "web")));
 
         assert_eq!(feature_store::load().len(), 2);
         assert_eq!(run_config_store::load().verify_cmd, "npm test");
@@ -570,7 +595,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        plan(Some(&cmd("plan", vec![FEATURES_JSON, "npm test", "web"])));
+        plan(Some(&plan_cmd(FEATURES_JSON, "npm test", "web")));
 
         let run_id = run_config_store::load().run_id;
 
@@ -583,7 +608,7 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        let result = plan(Some(&cmd("plan", vec!["not json", "dotnet test", "."])));
+        let result = plan(Some(&plan_cmd("not json", "dotnet test", ".")));
 
         assert!(feature_store::load().is_empty());
         assert_eq!(run_config_store::load(), RunConfig::default());
@@ -597,7 +622,7 @@ mod tests {
         let _iso = Isolated::new();
 
         let json = r#"[{"id":1,"title":"A","priority":1,"dependsOn":[2]},{"id":2,"title":"B","priority":2,"dependsOn":[1]}]"#;
-        let result = plan(Some(&cmd("plan", vec![json, "dotnet test", "."])));
+        let result = plan(Some(&plan_cmd(json, "dotnet test", ".")));
 
         assert!(feature_store::load().is_empty());
         assert!(result.contains(r#""value":"plan"#));
@@ -620,7 +645,7 @@ mod tests {
             r#"[{{"id":1,"title":"sobrevivente","priority":1,"dependsOn":[2]}},{{"id":2,"title":"cortada","priority":1000}},{extras}]"#
         );
 
-        plan(Some(&cmd("plan", vec![&json, "dotnet test", "."])));
+        plan(Some(&plan_cmd(&json, "dotnet test", ".")));
 
         assert!(!feature_store::load().iter().any(|f| f.id == 2));
         let survivor = feature_store::load()
@@ -654,7 +679,7 @@ mod tests {
         let json = r#"[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"depende","priority":1,"dependsOn":[1]}]"#;
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
-        plan(Some(&cmd("plan", vec![json, "dotnet test", "src/app"])));
+        plan(Some(&plan_cmd(json, "dotnet test", "src/app")));
 
         assert_eq!(
             state_store::get(CURRENT_FEATURE_ID_KEY),

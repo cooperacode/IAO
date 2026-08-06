@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import sys
 import threading
+import traceback
 from typing import Callable, Mapping
 
-from harness_engine import context_policy, harness_config, inbox, state_store, trace
+from harness_engine import context_policy, harness_config, harness_log, inbox, state_store, trace
 from harness_engine.envelope import Envelope
 from harness_engine.envelope_validation import ValidationResult
 from harness_engine.errors import HarnessTimeoutError
@@ -41,15 +41,16 @@ def dispatch(
     if from_inbox and envelope is not None:
         inbox.consume()
 
-    # Budget stops remain terminal. A timeout is recoverable only through an explicit
-    # `start`: the timed-out worker was abandoned with the previous process, and the
-    # driver is deliberately asking the flow to resume or restart.
+    # Budget stops remain terminal. A timeout or fault is recoverable only through an
+    # explicit `start`: the abandoned worker (timed out, or crashed on a harness bug)
+    # belonged to the previous process, and the driver is deliberately asking the flow to
+    # resume or restart — never by silently resending the same command.
     terminal = state_store.terminal_reason()
     if terminal is not None:
-        if terminal == "timeout" and envelope is not None and envelope.value == "start":
+        if terminal in ("timeout", "fault") and envelope is not None and envelope.value == "start":
             state_store.clear_terminal()
         else:
-            print(f"[harness] run already stopped ({terminal}); refusing another turn.", file=sys.stderr)
+            harness_log.error(f"[harness] run already stopped ({terminal}); refusing another turn.")
             return "stop"
 
     if envelope is not None and envelope.value == "start":
@@ -63,6 +64,7 @@ def dispatch(
         if should_reset_on_start is None or should_reset_on_start():
             state_store.reset()
             trace.reset()
+            harness_log.reset()
 
         # The driver context (e.g. {"driver":"claude code"}) is born here and survives in
         # state_store — prompt_formatter reinjects it into every output until the next
@@ -83,12 +85,19 @@ def dispatch(
     cost_chars = state_store.load().cost_chars
     command = envelope.value if envelope is not None and envelope.value else "(unparsed)"
 
+    # Logged BEFORE the action runs: trace.jsonl only gets a line once the step completes,
+    # so a slow or hung step (or one that faults below) would otherwise leave zero evidence
+    # the harness ever picked it up — the "feels idle" gap.
+    harness_log.info(f"[step {step}] enter '{command}'")
+
     result, outcome = _resolve(envelope, step, cost_chars, actions, validators, max_steps)
 
     # UTF-8 octets, not codepoints (RFC Appendix B item 1) — the same unit across every
     # engine (.NET/Python/Rust), so the cost ceiling means the same thing cross-engine
     # regardless of accents/emoji in the emitted instruction.
     result_bytes = len(result.encode("utf-8"))
+
+    harness_log.info(f"[step {step}] exit outcome={outcome} bytes={result_bytes}")
 
     # One line per loop turn: feeds telemetry and the trajectory evaluator. Label is
     # re-read (not from the load() snapshot above) because the action itself may have
@@ -114,7 +123,7 @@ def _resolve(
     # Development, which needs more slack) takes precedence over harness.json's global one.
     effective_max_steps = max_steps if max_steps is not None else default_max_steps()
     if step > effective_max_steps:
-        print(f"[harness] step limit of {effective_max_steps} reached; stopping.", file=sys.stderr)
+        harness_log.error(f"[harness] step limit of {effective_max_steps} reached; stopping.")
         state_store.mark_terminal("budget")
         return "stop", trace.TraceOutcome.BUDGET
 
@@ -123,10 +132,9 @@ def _resolve(
     # caller's billing metadata — an LLM driver has no way to honestly report them.
     config = harness_config.current()
     if config.max_instruction_chars > 0 and cost_chars > config.max_instruction_chars:
-        print(
+        harness_log.error(
             f"[harness] instruction char limit of {config.max_instruction_chars} "
-            f"reached ({cost_chars}); stopping.",
-            file=sys.stderr,
+            f"reached ({cost_chars}); stopping."
         )
         state_store.mark_terminal("budget")
         return "stop", trace.TraceOutcome.BUDGET
@@ -165,9 +173,19 @@ def _resolve(
         result = _run_with_timeout(action, envelope, config.timeout_ms)
         return result, (trace.TraceOutcome.STOP if result == "stop" else trace.TraceOutcome.INSTRUCTION)
     except HarnessTimeoutError as ex:
-        print(f"[harness] {ex}", file=sys.stderr)
+        harness_log.error(f"[harness] {ex}")
         state_store.mark_terminal("timeout")
         return "stop", trace.TraceOutcome.TIMEOUT
+    except Exception as ex:  # noqa: BLE001 — a bug in the task action itself, not a driver
+        # protocol error. Must not crash the process silently. Logged in full (with
+        # traceback), then the same graceful termination shape as budget/timeout: stderr+log
+        # diagnostic, "stop" on stdout, recoverable only via an explicit "start".
+        harness_log.error(
+            f"[harness] unhandled fault in command '{envelope.value}': "
+            f"{''.join(traceback.format_exception(type(ex), ex, ex.__traceback__))}"
+        )
+        state_store.mark_terminal("fault")
+        return "stop", trace.TraceOutcome.FAULT
 
 
 # The task is a synchronous, OPAQUE function — it does not cooperate with cancellation.

@@ -52,7 +52,7 @@ public static class DocsReader
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[DocsReader] failed to read {name}: {ex.Message}");
+                HarnessLog.Error($"[DocsReader] failed to read {name}: {ex.Message}");
                 continue;
             }
 
@@ -61,7 +61,7 @@ public static class DocsReader
 
             if (Encoding.UTF8.GetByteCount(sb.ToString()) > MaxChars)
             {
-                Console.Error.WriteLine(
+                HarnessLog.Error(
                     $"[DocsReader] content exceeded {MaxChars} bytes (UTF-8); truncating at {name}.");
                 var truncated = TruncateUtf8Bytes(sb.ToString(), MaxChars);
                 sb.Clear().Append(truncated);

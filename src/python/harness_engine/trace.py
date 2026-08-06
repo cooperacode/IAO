@@ -11,10 +11,11 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from harness_engine import harness_log
 
 _DIR = ".harness"
 _FILE_PATH = ".harness/trace.jsonl"
@@ -42,6 +43,7 @@ class TraceOutcome:
     ERROR = "error"              # typed error returned to the driver
     BUDGET = "budget"            # cut off by the step ceiling
     TIMEOUT = "timeout"          # cut off by the per-step time ceiling
+    FAULT = "fault"              # unhandled exception inside a task action — a harness bug, not a driver protocol error
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,7 @@ def reset() -> None:
     try:
         Path(_FILE_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[Trace] failed to clear: {ex}", file=sys.stderr)
+        harness_log.error(f"[Trace] failed to clear: {ex}")
 
 
 def append(
@@ -137,7 +139,7 @@ def append(
         with open(_FILE_PATH, "a") as f:
             f.write(line)  # a single write() — the whole event is atomic at the line level
     except Exception as ex:
-        print(f"[Trace] failed to write: {ex}", file=sys.stderr)
+        harness_log.error(f"[Trace] failed to write: {ex}")
 
 
 def _last_entry_hash() -> str:
@@ -158,7 +160,7 @@ def _last_entry_hash() -> str:
 
         return hashlib.sha256(last_line.encode("utf-8")).hexdigest()
     except Exception as ex:
-        print(f"[Trace] failed to compute prevHash: {ex}", file=sys.stderr)
+        harness_log.error(f"[Trace] failed to compute prevHash: {ex}")
         return _GENESIS_HASH
 
 
@@ -169,7 +171,7 @@ def snapshot(destination: str) -> None:
             Path(_DIR).mkdir(parents=True, exist_ok=True)
             shutil.copyfile(_FILE_PATH, destination)
     except Exception as ex:
-        print(f"[Trace] failed to freeze: {ex}", file=sys.stderr)
+        harness_log.error(f"[Trace] failed to freeze: {ex}")
 
 
 def load() -> list[TraceEntry]:
@@ -191,7 +193,7 @@ def load_from(path: str) -> list[TraceEntry]:
             entries.append(TraceEntry.from_dict(json.loads(line)))
         return entries
     except Exception as ex:
-        print(f"[Trace] failed to load: {ex}", file=sys.stderr)
+        harness_log.error(f"[Trace] failed to load: {ex}")
         return []
 
 

@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from harness_engine import path_resolver
+from harness_engine import harness_log, path_resolver
 
 _FILE_PATH = "harness.json"
 
@@ -122,7 +121,7 @@ def load() -> HarnessConfig:
                 context_fallback_features=int(payload.get("contextFallbackFeatures", 0) or 0),
             )
     except Exception as ex:
-        print(f"[HarnessConfig] failed to load; using defaults: {ex}", file=sys.stderr)
+        harness_log.error(f"[HarnessConfig] failed to load; using defaults: {ex}")
         config = DEFAULT
 
     return _normalize(_apply_timeout_env_override(config))

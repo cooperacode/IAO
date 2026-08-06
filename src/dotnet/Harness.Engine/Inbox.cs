@@ -29,7 +29,7 @@ public static class Inbox
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Inbox] failed to read {Path}: {ex.Message}");
+            HarnessLog.Error($"[Inbox] failed to read {Path}: {ex.Message}");
         }
 
         return string.Empty;
@@ -48,7 +48,7 @@ public static class Inbox
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Inbox] failed to consume {Path}: {ex.Message}");
+            HarnessLog.Error($"[Inbox] failed to consume {Path}: {ex.Message}");
         }
     }
 }

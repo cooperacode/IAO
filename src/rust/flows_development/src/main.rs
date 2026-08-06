@@ -32,12 +32,11 @@ fn main() {
 
     // Contextual expectation per command; a rejection becomes a corrective error (the
     // driver fixes and resends). `pick` has no validator — it doesn't carry a driver
-    // artifact (the selection is the harness's).
-    let mut validators: HashMap<String, envelope_validation::Validator> = HashMap::new();
-    validators.insert(
-        "plan".to_string(),
-        envelope_validation::not_empty("the JSON array of features [{id,title,priority}]"),
-    );
+    // artifact (the selection is the harness's). `plan` no longer carries the feature
+    // array in its args (see PLAN_FILE_PATH in tasks.rs) — plan() itself validates the
+    // file's content and re-requests it via plan_retry_prompt, so no envelope-arg
+    // validator applies here either.
+    let validators: HashMap<String, envelope_validation::Validator> = HashMap::new();
 
     // Own snapshots: if this flow shares `.harness/` with other flows (same workspace), it
     // must NOT overwrite the last-run.* another flow consumes. Freezes at its own path.

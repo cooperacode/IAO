@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 
 from flows_development import tasks
-from harness_engine import envelope_validation, feature_store, harness_host
+from harness_engine import feature_store, harness_host
 
 TASKS = {
     "start": lambda _envelope: tasks.start(),
@@ -24,10 +24,10 @@ TASKS = {
 
 # Contextual expectation per command; a rejection becomes a corrective error (the driver
 # fixes and resends). `pick` has no validator — it doesn't carry a driver artifact (the
-# selection is the harness's).
-VALIDATORS = {
-    "plan": envelope_validation.not_empty("the JSON array of features [{id,title,priority}]"),
-}
+# selection is the harness's). `plan` no longer carries the feature array in its args (see
+# state_keys.PLAN_FILE_PATH) — tasks.plan() itself validates the file's content and
+# re-requests it via plan_retry_prompt, so no envelope-arg validator applies here either.
+VALIDATORS: dict = {}
 
 
 def main(argv: list[str]) -> int:

@@ -19,7 +19,7 @@ public static class ArtifactTemplate
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ArtifactTemplate] failed to read {skillName}'s template: {ex.Message}");
+            HarnessLog.Error($"[ArtifactTemplate] failed to read {skillName}'s template: {ex.Message}");
             return null;
         }
     }

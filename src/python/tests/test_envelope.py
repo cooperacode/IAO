@@ -1,5 +1,7 @@
 """Data contract: parsing needs to tolerate what models actually return."""
 
+from pathlib import Path
+
 import pytest
 
 from harness_engine.context_policy import ContextUsage
@@ -60,6 +62,25 @@ def test_parse_ignora_args_vazios_ou_em_branco():
 )
 def test_parse_entrada_invalida_retorna_none(raw):
     assert Envelope.parse(raw) is None
+
+
+def test_parse_entrada_invalida_grava_o_payload_cru_no_harness_log():
+    # The raw driver payload is otherwise lost forever — the inbox file gets overwritten
+    # by the next attempt before anyone can inspect what actually failed.
+    Envelope.parse("this is not json")
+
+    content = Path(".harness", "harness.log").read_text()
+    assert "this is not json" in content
+
+
+def test_parse_payload_maior_que_o_teto_trunca_no_harness_log():
+    oversized = "x" * 600 + "not json"
+
+    Envelope.parse(oversized)
+
+    content = Path(".harness", "harness.log").read_text()
+    assert "...(truncated)" in content
+    assert oversized not in content
 
 
 def test_to_json_faz_roundtrip():

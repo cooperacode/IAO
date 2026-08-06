@@ -17,7 +17,7 @@ public static class GoldenCaseStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[GoldenCaseStore] failed to load {path}: {ex.Message}");
+            HarnessLog.Error($"[GoldenCaseStore] failed to load {path}: {ex.Message}");
             return null;
         }
     }

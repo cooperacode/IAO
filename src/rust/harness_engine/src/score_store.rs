@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::harness_log;
+
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/scores.jsonl";
 
@@ -24,13 +26,13 @@ pub struct ScoreReport {
 
 pub fn append(report: &ScoreReport) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[ScoreStore] failed to write: {e}");
+        harness_log::error(&format!("[ScoreStore] failed to write: {e}"));
         return;
     }
     let line = match serde_json::to_string(report) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[ScoreStore] failed to write: {e}");
+            harness_log::error(&format!("[ScoreStore] failed to write: {e}"));
             return;
         }
     };
@@ -43,10 +45,10 @@ pub fn append(report: &ScoreReport) {
     {
         Ok(mut f) => {
             if let Err(e) = writeln!(f, "{line}") {
-                eprintln!("[ScoreStore] failed to write: {e}");
+                harness_log::error(&format!("[ScoreStore] failed to write: {e}"));
             }
         }
-        Err(e) => eprintln!("[ScoreStore] failed to write: {e}"),
+        Err(e) => harness_log::error(&format!("[ScoreStore] failed to write: {e}")),
     }
 }
 
@@ -63,7 +65,7 @@ pub fn load() -> Vec<ScoreReport> {
             .filter_map(|line| serde_json::from_str::<ScoreReport>(line).ok())
             .collect(),
         Err(e) => {
-            eprintln!("[ScoreStore] failed to load: {e}");
+            harness_log::error(&format!("[ScoreStore] failed to load: {e}"));
             Vec::new()
         }
     }

@@ -1,6 +1,7 @@
 package harnessengine
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -49,6 +50,8 @@ func TestParseEnvelope_IgnoresEmptyOrBlankArgs(t *testing.T) {
 }
 
 func TestParseEnvelope_InvalidInput_ReturnsNil(t *testing.T) {
+	isolate(t)
+
 	cases := []string{
 		"",
 		"   ",
@@ -60,6 +63,41 @@ func TestParseEnvelope_InvalidInput_ReturnsNil(t *testing.T) {
 		if ParseEnvelope(raw) != nil {
 			t.Errorf("expected nil for %q", raw)
 		}
+	}
+}
+
+func TestParseEnvelope_InvalidInput_WritesRawPayloadToHarnessLog(t *testing.T) {
+	isolate(t)
+
+	// The raw driver payload is otherwise lost forever — the inbox file gets overwritten
+	// by the next attempt before anyone can inspect what actually failed.
+	ParseEnvelope("this is not json")
+
+	data, err := os.ReadFile(harnessLogFilePath)
+	if err != nil {
+		t.Fatalf("expected harness.log to exist: %v", err)
+	}
+	if !strings.Contains(string(data), "this is not json") {
+		t.Fatalf("expected raw payload in harness.log, got: %s", data)
+	}
+}
+
+func TestParseEnvelope_OversizedPayload_TruncatedInHarnessLog(t *testing.T) {
+	isolate(t)
+
+	oversized := strings.Repeat("x", 600) + "not json"
+	ParseEnvelope(oversized)
+
+	data, err := os.ReadFile(harnessLogFilePath)
+	if err != nil {
+		t.Fatalf("expected harness.log to exist: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "...(truncated)") {
+		t.Fatalf("expected truncation marker, got: %s", content)
+	}
+	if strings.Contains(content, oversized) {
+		t.Fatalf("expected payload to be truncated, got the full string in: %s", content)
 	}
 }
 

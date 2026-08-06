@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::path_resolver;
+use crate::{harness_log, path_resolver};
 
 const FILE_PATH: &str = "harness.json";
 
@@ -78,7 +78,7 @@ pub fn load() -> HarnessConfig {
         match loaded {
             Ok(parsed) => config = parsed,
             Err(e) => {
-                eprintln!("[HarnessConfig] failed to load; using defaults: {e}");
+                harness_log::error(&format!("[HarnessConfig] failed to load; using defaults: {e}"));
                 config = default_config();
             }
         }

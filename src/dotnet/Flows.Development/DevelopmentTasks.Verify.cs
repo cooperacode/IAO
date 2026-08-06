@@ -37,7 +37,7 @@ public static partial class DevelopmentTasks
             // verification not attempted" path as a target_dir with no
             // verify-feature.sh; doesn't bring down the process with an unhandled
             // exception.
-            Console.Error.WriteLine($"[dev] invalid target_dir for automatic verify: {ex.Message}");
+            HarnessLog.Error($"[dev] invalid target_dir for automatic verify: {ex.Message}");
             return AutomatedVerifyResult.Missing();
         }
 

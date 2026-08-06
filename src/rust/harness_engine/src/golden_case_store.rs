@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::harness_log;
+
 /// A golden set case: the expectation the recorded evidence is measured against.
 /// `expect_pass = false` marks an INTENTIONAL NEGATIVE case — a run that MUST fail on the
 /// metrics (e.g. a perfect trajectory but missing content), used to prove the evaluators
@@ -31,7 +33,7 @@ pub fn load(path: &str) -> Option<GoldenCase> {
     {
         Ok(case) => Some(case),
         Err(e) => {
-            eprintln!("[GoldenCaseStore] failed to load {path}: {e}");
+            harness_log::error(&format!("[GoldenCaseStore] failed to load {path}: {e}"));
             None
         }
     }
@@ -62,6 +64,32 @@ pub fn load_directory(directory: &str) -> Vec<GoldenCase> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `load`'s failure path now writes to the cwd-relative `.harness/harness.log`
+    // (harness_log::error) — tests that exercise it must isolate the process cwd into a
+    // temp dir, or they'd leak a real `.harness/` into the crate's source tree.
+    struct Isolated {
+        _dir: tempfile::TempDir,
+        previous: std::path::PathBuf,
+    }
+
+    impl Isolated {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let previous = std::env::current_dir().unwrap();
+            std::env::set_current_dir(dir.path()).unwrap();
+            Self {
+                _dir: dir,
+                previous,
+            }
+        }
+    }
+
+    impl Drop for Isolated {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.previous);
+        }
+    }
 
     fn temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
@@ -100,6 +128,8 @@ mod tests {
 
     #[test]
     fn load_arquivo_inexistente_retorna_none_sem_lancar() {
+        let _guard = crate::test_support::lock_cwd();
+        let _iso = Isolated::new();
         let dir = temp_dir();
         let path = dir.path().join("does-not-exist.json");
 
@@ -108,6 +138,8 @@ mod tests {
 
     #[test]
     fn load_directory_ordena_por_nome_e_ignora_invalidos() {
+        let _guard = crate::test_support::lock_cwd();
+        let _iso = Isolated::new();
         let dir = temp_dir();
         std::fs::write(dir.path().join("b.json"), r#"{"id":"b"}"#).unwrap();
         std::fs::write(dir.path().join("a.json"), r#"{"id":"a"}"#).unwrap();

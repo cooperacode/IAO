@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from harness_engine import harness_log
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ def load(path: str) -> GoldenCase | None:
     try:
         return GoldenCase.from_dict(json.loads(Path(path).read_text()))
     except Exception as ex:
-        print(f"[GoldenCaseStore] failed to load {path}: {ex}", file=sys.stderr)
+        harness_log.error(f"[GoldenCaseStore] failed to load {path}: {ex}")
         return None
 
 

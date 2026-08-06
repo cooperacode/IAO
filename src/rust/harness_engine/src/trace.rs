@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::context_policy::ContextUsage;
+use crate::harness_log;
 
 const DIR: &str = ".harness";
 const FILE_PATH: &str = ".harness/trace.jsonl";
@@ -29,6 +30,7 @@ pub mod trace_outcome {
     pub const ERROR: &str = "error"; // typed error returned to the driver
     pub const BUDGET: &str = "budget"; // cut off by the step ceiling
     pub const TIMEOUT: &str = "timeout"; // cut off by the per-step time ceiling
+    pub const FAULT: &str = "fault"; // unhandled panic inside a task action — a harness bug, not a driver protocol error
 }
 
 /// One loop iteration: step, received command, outcome, cost (chars of the emitted
@@ -97,7 +99,7 @@ pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
         if let Err(e) = std::fs::remove_file(p) {
-            eprintln!("[Trace] failed to clear: {e}");
+            harness_log::error(&format!("[Trace] failed to clear: {e}"));
         }
     }
 }
@@ -127,7 +129,7 @@ pub fn append_with_context(
     context_usage: Option<&ContextUsage>,
 ) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[Trace] failed to write: {e}");
+        harness_log::error(&format!("[Trace] failed to write: {e}"));
         return;
     }
 
@@ -156,7 +158,7 @@ pub fn append_with_context(
     let mut line = match serde_json::to_string(&entry) {
         Ok(line) => line,
         Err(e) => {
-            eprintln!("[Trace] failed to write: {e}");
+            harness_log::error(&format!("[Trace] failed to write: {e}"));
             return;
         }
     };
@@ -174,10 +176,10 @@ pub fn append_with_context(
     match file {
         Ok(mut f) => {
             if let Err(e) = f.write_all(line.as_bytes()) {
-                eprintln!("[Trace] failed to write: {e}");
+                harness_log::error(&format!("[Trace] failed to write: {e}"));
             }
         }
-        Err(e) => eprintln!("[Trace] failed to write: {e}"),
+        Err(e) => harness_log::error(&format!("[Trace] failed to write: {e}")),
     }
 }
 
@@ -185,11 +187,11 @@ pub fn append_with_context(
 pub fn snapshot(destination: &str) {
     if std::path::Path::new(FILE_PATH).exists() {
         if let Err(e) = std::fs::create_dir_all(DIR) {
-            eprintln!("[Trace] failed to freeze: {e}");
+            harness_log::error(&format!("[Trace] failed to freeze: {e}"));
             return;
         }
         if let Err(e) = std::fs::copy(FILE_PATH, destination) {
-            eprintln!("[Trace] failed to freeze: {e}");
+            harness_log::error(&format!("[Trace] failed to freeze: {e}"));
         }
     }
 }
@@ -213,7 +215,7 @@ pub fn load_from(path: &str) -> Vec<TraceEntry> {
             .filter_map(|line| serde_json::from_str::<TraceEntry>(line).ok())
             .collect(),
         Err(e) => {
-            eprintln!("[Trace] falha ao carregar: {e}");
+            harness_log::error(&format!("[Trace] falha ao carregar: {e}"));
             Vec::new()
         }
     }

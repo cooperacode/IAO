@@ -10,7 +10,6 @@ namespace Flows.Development;
 public static partial class DevelopmentTasks
 {
     // Output tokens (the driver stores the step's artifact in these and returns them as args).
-    private const string FEATURES = "$FEATURES";
     private const string VERIFY_CMD = "$VERIFY_CMD";
     private const string TARGET_DIR = "$TARGET_DIR";
 
@@ -52,13 +51,18 @@ public static partial class DevelopmentTasks
             {content}
             </brief>
 
-            Store a JSON ARRAY in '{FEATURES}': {FeaturesShape}
+            Write a JSON ARRAY to the file '{PlanFilePath}' (a real file, written with your
+            file-write tool — NOT escaped or embedded inside the envelope you send back): {FeaturesShape}
             (just the array, no passes — every feature is born pending). Store the verify
-            command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test`) and the target directory
+            command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test` — never a placeholder that
+            always passes, like `echo`, `true`, or `exit 0`; it must run the project's real
+            build/test pipeline, creating one first if none exists yet) and the target directory
             in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:
             `./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0.
+            Plan one feature per distinct capability the brief describes — a single feature that
+            scaffolds everything is not a valid plan for a multi-requirement goal.
             """,
-            output: new Envelope(EnvelopeType.Command, "plan", [FEATURES, VERIFY_CMD, TARGET_DIR]),
+            output: new Envelope(EnvelopeType.Command, "plan", [VERIFY_CMD, TARGET_DIR]),
             skills: PromptFormatter.Skills("dev-initializer"));
 
     private static string InitializerInteractive() =>
@@ -67,12 +71,16 @@ public static partial class DevelopmentTasks
             No brief was supplied. Ask the user for the goal, target directory, and established
             verification command, then follow the injected `dev-initializer` skill.
 
-            Store a JSON ARRAY in '{FEATURES}' {FeaturesShape},
-            the command in '{VERIFY_CMD}' and the directory in '{TARGET_DIR}'. The `verify-feature.sh`
-            may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print
-            `PASS: feature <id> ...` and exit 0.
+            Write a JSON ARRAY to the file '{PlanFilePath}' (a real file, written with your
+            file-write tool — NOT escaped or embedded inside the envelope you send back) {FeaturesShape},
+            the command in '{VERIFY_CMD}' (never a placeholder that always passes, like `echo`,
+            `true`, or `exit 0`; it must run the project's real build/test pipeline) and the
+            directory in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the
+            start: `./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0.
+            Plan one feature per distinct capability the goal describes — a single feature that
+            scaffolds everything is not a valid plan for a multi-requirement goal.
             """,
-            output: new Envelope(EnvelopeType.Command, "plan", [FEATURES, VERIFY_CMD, TARGET_DIR]),
+            output: new Envelope(EnvelopeType.Command, "plan", [VERIFY_CMD, TARGET_DIR]),
             skills: PromptFormatter.Skills("dev-initializer"));
 
     private static string PlanRetryPrompt()
@@ -92,11 +100,12 @@ public static partial class DevelopmentTasks
 
         return PromptFormatter.Format(
             input: $"""
-            {briefBlock}Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
-            ARRAY, in exactly the format {FeaturesShape} — just the array, no surrounding text.
-            Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`.
+            {briefBlock}Could not read a valid JSON array from '{PlanFilePath}'. Write the array
+            itself to that exact path with your file-write tool — do not put it in the envelope's
+            args and do not escape it as a string. Format: {FeaturesShape} — just the array in the
+            file, no surrounding text. Repeat the command with `{VERIFY_CMD}` and `{TARGET_DIR}`.
             """,
-            output: new Envelope(EnvelopeType.Command, "plan", [FEATURES, VERIFY_CMD, TARGET_DIR]));
+            output: new Envelope(EnvelopeType.Command, "plan", [VERIFY_CMD, TARGET_DIR]));
     }
 
     // --- per-feature loop (one fresh-context session) ------------------

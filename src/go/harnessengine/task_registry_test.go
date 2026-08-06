@@ -7,6 +7,81 @@ import (
 	"time"
 )
 
+// faultyTasks defines a "boom" command that panics — a real bug in task logic, not a driver
+// protocol error — to exercise the fault-recovery path in runProtected/resolve.
+func faultyTasks() map[string]Action {
+	return map[string]Action{
+		"start": func(*Envelope) string { return "PROMPT_START" },
+		"boom": func(*Envelope) string {
+			panic("a real bug, not a driver protocol error")
+		},
+	}
+}
+
+func TestDispatch_ActionPanics_ReturnsStopInsteadOfCrashing(t *testing.T) {
+	isolate(t)
+
+	// The regression this guards: before runProtected's recover(), a panicking action
+	// crashed the whole process (direct path) or was silently dropped by the goroutine
+	// (timeout path) instead of a graceful "stop".
+	result := Dispatch([]string{`{"type":"tool","value":"boom"}`}, faultyTasks(), nil, nil, nil)
+
+	if result != "stop" {
+		t.Fatalf("expected stop, got %s", result)
+	}
+}
+
+func TestDispatch_ActionPanics_RecordsFaultOutcomeAndMarksTerminal(t *testing.T) {
+	isolate(t)
+
+	Dispatch([]string{`{"type":"tool","value":"boom"}`}, faultyTasks(), nil, nil, nil)
+
+	entries := LoadTrace()
+	if last := entries[len(entries)-1]; last.Outcome != TraceOutcome.Fault {
+		t.Fatalf("expected fault outcome, got %s", last.Outcome)
+	}
+	if TerminalReason() != "fault" {
+		t.Fatalf("expected terminal reason fault, got %q", TerminalReason())
+	}
+}
+
+func TestDispatch_ActionPanics_RunStaysTerminalUntilExplicitStart(t *testing.T) {
+	isolate(t)
+
+	Dispatch([]string{`{"type":"tool","value":"boom"}`}, faultyTasks(), nil, nil, nil)
+
+	result := Dispatch([]string{`{"type":"text","value":"start"}`}, faultyTasks(), nil, nil, nil)
+
+	if result != "PROMPT_START" || TerminalReason() != "" {
+		t.Fatalf("expected fault recovery via start, got result=%q reason=%q", result, TerminalReason())
+	}
+}
+
+func TestDispatch_LogsEntryBeforeActionRunsAndExitAfter(t *testing.T) {
+	isolate(t)
+
+	os.Remove(".harness/harness.log")
+
+	Dispatch([]string{`{"type":"tool","value":"classify","args":["Login"]}`}, testTasks(), nil, nil, nil)
+
+	data, err := os.ReadFile(".harness/harness.log")
+	if err != nil {
+		t.Fatalf("expected harness.log to exist: %v", err)
+	}
+	content := string(data)
+	enterIdx := strings.Index(content, "enter 'classify'")
+	exitIdx := strings.Index(content, "exit outcome=")
+	if enterIdx < 0 {
+		t.Fatal("expected an 'enter' line in harness.log")
+	}
+	if exitIdx < 0 {
+		t.Fatal("expected an 'exit' line in harness.log")
+	}
+	if enterIdx > exitIdx {
+		t.Fatal("entry must be logged before exit")
+	}
+}
+
 func testTasks() map[string]Action {
 	return map[string]Action{
 		"start": func(*Envelope) string { return "PROMPT_START" },

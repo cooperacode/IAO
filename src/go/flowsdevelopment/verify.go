@@ -38,7 +38,7 @@ func tryAutomatedVerify() automatedVerifyResult {
 		// Invalid target_dir (root, home, harness install) -> same "didn't attempt
 		// automated verification" path as a target_dir with no verify-feature.sh; doesn't
 		// bring the process down with an unhandled error.
-		fmt.Fprintf(os.Stderr, "[dev] invalid target_dir for automatic verify: %s\n", err)
+		engine.LogError(fmt.Sprintf("[dev] invalid target_dir for automatic verify: %s", err))
 		return missingVerify()
 	}
 

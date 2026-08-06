@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 from dataclasses import replace
 from pathlib import Path
 
+from harness_engine import harness_log
 from harness_engine.atomic_io import write_text_atomic
 from harness_engine.harness_state import HarnessState
 
@@ -47,7 +47,7 @@ def load_from(path: str) -> HarnessState:
             payload = json.loads(p.read_text())
             return HarnessState.from_dict(payload)
     except Exception as ex:
-        print(f"[StateStore] failed to load: {ex}", file=sys.stderr)
+        harness_log.error(f"[StateStore] failed to load: {ex}")
 
     return HarnessState(step=0, data={})
 
@@ -57,7 +57,7 @@ def save(state: HarnessState) -> None:
         Path(_DIR).mkdir(parents=True, exist_ok=True)
         write_text_atomic(_FILE_PATH, json.dumps(state.to_dict(), separators=(",", ":")))
     except Exception as ex:
-        print(f"[StateStore] failed to save: {ex}", file=sys.stderr)
+        harness_log.error(f"[StateStore] failed to save: {ex}")
 
 
 def reset() -> None:
@@ -71,7 +71,7 @@ def snapshot(destination: str) -> None:
             Path(_DIR).mkdir(parents=True, exist_ok=True)
             shutil.copyfile(_FILE_PATH, destination)
     except Exception as ex:
-        print(f"[StateStore] failed to freeze: {ex}", file=sys.stderr)
+        harness_log.error(f"[StateStore] failed to freeze: {ex}")
 
 
 def increment() -> int:

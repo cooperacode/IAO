@@ -13,3 +13,14 @@ type HarnessTimeoutError struct {
 func (e *HarnessTimeoutError) Error() string {
 	return fmt.Sprintf("task execution exceeded the %dms timeout; stopping.", e.TimeoutMs)
 }
+
+// HarnessFaultError wraps a recovered panic from inside a task action — a bug in the
+// harness/flow itself, not a driver protocol error the driver can fix by resending. Recovered
+// in runProtected so it never crashes the process; surfaced as the "fault" trace outcome.
+type HarnessFaultError struct {
+	Reason string
+}
+
+func (e *HarnessFaultError) Error() string {
+	return fmt.Sprintf("unhandled fault in task action: %s", e.Reason)
+}

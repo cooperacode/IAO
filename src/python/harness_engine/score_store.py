@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from harness_engine import harness_log
 
 _DIR = ".harness"
 _FILE_PATH = ".harness/scores.jsonl"
@@ -48,7 +49,7 @@ def append(report: ScoreReport) -> None:
         with open(_FILE_PATH, "a") as f:
             f.write(json.dumps(report.to_dict(), separators=(",", ":")) + "\n")
     except Exception as ex:
-        print(f"[ScoreStore] failed to write: {ex}", file=sys.stderr)
+        harness_log.error(f"[ScoreStore] failed to write: {ex}")
 
 
 def load() -> list[ScoreReport]:
@@ -63,5 +64,5 @@ def load() -> list[ScoreReport]:
             if line.strip()
         ]
     except Exception as ex:
-        print(f"[ScoreStore] failed to load: {ex}", file=sys.stderr)
+        harness_log.error(f"[ScoreStore] failed to load: {ex}")
         return []

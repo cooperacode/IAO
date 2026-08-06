@@ -11,8 +11,9 @@ arguments, a bare command that has no way of being left unterminated.
 from __future__ import annotations
 
 import shutil
-import sys
 from pathlib import Path
+
+from harness_engine import harness_log
 
 _DIR = ".harness"
 PATH = ".harness/inbox.json"
@@ -29,7 +30,7 @@ def read() -> str:
         if p.exists():
             return p.read_text()
     except Exception as ex:
-        print(f"[Inbox] failed to read {PATH}: {ex}", file=sys.stderr)
+        harness_log.error(f"[Inbox] failed to read {PATH}: {ex}")
 
     return ""
 
@@ -42,4 +43,4 @@ def consume() -> None:
             Path(_DIR).mkdir(parents=True, exist_ok=True)
             shutil.move(str(p), CONSUMED_PATH)
     except Exception as ex:
-        print(f"[Inbox] failed to consume {PATH}: {ex}", file=sys.stderr)
+        harness_log.error(f"[Inbox] failed to consume {PATH}: {ex}")

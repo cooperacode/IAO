@@ -15,7 +15,6 @@ Prompts in `prompts.py`.
 from __future__ import annotations
 
 import subprocess
-import sys
 import uuid
 import os
 import shlex
@@ -31,6 +30,7 @@ from harness_engine import (
     feature_store,
     git_command,
     harness_config,
+    harness_log,
     run_config_store,
     state_store,
 )
@@ -64,9 +64,8 @@ def start() -> str:
     # still-pending feature — without needing to know exactly where the previous session
     # stopped.
     if feature_store.pending_count() > 0:
-        print(
-            "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting.",
-            file=sys.stderr,
+        harness_log.info(
+            "[dev] run in progress detected (pending feature); resuming via bearings instead of resetting."
         )
         return bearings(None)
 
@@ -77,6 +76,9 @@ def start() -> str:
     # previous run's brief.md — interactive mode never calls artifact_store.write, so only
     # this reset guarantees no brief from an old topic survives.
     artifact_store.reset()
+    # A stale plan.json from a previous (or aborted) run must not satisfy this one before
+    # the driver writes a fresh array — best-effort, absence is not an error.
+    Path(state_keys.PLAN_FILE_PATH).unlink(missing_ok=True)
 
     # The brief (what to build) comes from specs/, or, without specs, from interactive mode.
     if not docs_reader.has_docs(_docs_folder()):
@@ -91,7 +93,9 @@ def start() -> str:
 
 
 def plan(envelope: Envelope | None) -> str:
-    features = feature_store.parse(_arg(envelope))
+    """Interprets the driver's feature array (written to PLAN_FILE_PATH, not the envelope —
+    see the comment on state_keys.PLAN_FILE_PATH) and persists the run configuration."""
+    features = feature_store.parse(_read_plan_file())
     if not features:
         return prompts.plan_retry_prompt()  # didn't parse → re-request (corrective loop)
 
@@ -114,8 +118,8 @@ def plan(envelope: Envelope | None) -> str:
     # exchanged with the model (RFC §6.4 — run identity is a control-plane concern, not
     # the contract's).
     run_config_store.write(RunConfig(
-        os.environ.get("HARNESS_VERIFY_CMD", "").strip() or _arg_at(envelope, 1, "dotnet test"),
-        os.environ.get("HARNESS_TARGET_DIR", "").strip() or _arg_at(envelope, 2, "."),
+        os.environ.get("HARNESS_VERIFY_CMD", "").strip() or _arg_at(envelope, 0, "dotnet test"),
+        os.environ.get("HARNESS_TARGET_DIR", "").strip() or _arg_at(envelope, 1, "."),
         str(uuid.uuid4()),
     ))
 
@@ -208,10 +212,10 @@ def handoff(envelope: Envelope | None) -> str:
 def _complete_verified_feature(verify_result: str) -> str:
     ok, confirmation, failure = _try_automated_handoff(verify_result)
     if not ok:
-        print(f"[dev] automatic handoff failed: {failure}", file=sys.stderr)
+        harness_log.error(f"[dev] automatic handoff failed: {failure}")
         return prompts.handoff_prompt(failure)
 
-    print(f"[dev] automatic handoff completed: {confirmation}", file=sys.stderr)
+    harness_log.info(f"[dev] automatic handoff completed: {confirmation}")
     try:
         feature_store.mark_passed(int(_state(state_keys.CURRENT_FEATURE_ID)))
     except ValueError:
@@ -284,7 +288,7 @@ def _try_automated_verify() -> tuple[bool, bool, str]:
     try:
         target_dir = _resolve_target_dir(run_config_store.load().target_dir)
     except ValueError as ex:
-        print(f"[dev] invalid target directory, automatic verify not attempted: {ex}", file=sys.stderr)
+        harness_log.error(f"[dev] invalid target directory, automatic verify not attempted: {ex}")
         return False, False, ""
 
     script = target_dir / "verify-feature.sh"
@@ -568,31 +572,33 @@ def _over_feature_budget() -> bool:
     state_store.set(state_keys.FEATURE_STEPS, str(steps))
 
     if steps > STEPS_PER_FEATURE:
-        print(
+        harness_log.error(
             f"[dev] feature '{_state(state_keys.CURRENT_FEATURE_TITLE)}' exceeded {STEPS_PER_FEATURE} "
-            "steps; stopping.",
-            file=sys.stderr,
-        )
+            "steps; stopping.",)
         return True
     return False
 
 
 def _stop(motivo: str) -> str:
-    print(f"[dev] stopped due to {motivo}. feature_list in .harness/feature_list.json", file=sys.stderr)
+    harness_log.error(f"[dev] stopped due to {motivo}. feature_list in .harness/feature_list.json")
     return "stop"
 
 
 def _done() -> str:
-    print(
+    harness_log.info(
         f"[dev] all {len(feature_store.load())} features pass; done. "
-        "State in .harness/feature_list.json",
-        file=sys.stderr,
+        "State in .harness/feature_list.json"
     )
     return "stop"
 
 
-def _arg(envelope: Envelope | None) -> str:
-    return envelope.args[0] if envelope is not None and envelope.args else ""
+def _read_plan_file() -> str:
+    """Reads the driver-written feature array from PLAN_FILE_PATH. "" if
+    absent/unreadable — plan() treats that the same as an unparseable array (retry)."""
+    try:
+        return Path(state_keys.PLAN_FILE_PATH).read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 def _arg_at(envelope: Envelope | None, index: int, fallback: str) -> str:

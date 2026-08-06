@@ -15,3 +15,10 @@ FEATURE_STEPS = "feature_steps"
 # (.harness/brief.md). Lives here for the same reason as the keys above: tasks.py and
 # prompts.py need the same value, without creating a circular import between them.
 BRIEF_ARTIFACT_NAME = "brief"
+
+# Where the driver writes the raw (unescaped) feature-list JSON array with its file-write
+# tool. Requiring it inline in the envelope's args would force the driver to serialize and
+# escape a large JSON document as a single string value inside another single-line JSON
+# object — a format-compliance task large drivers have been observed to fail at, falling
+# back to echoing the placeholder token itself.
+PLAN_FILE_PATH = ".harness/plan.json"

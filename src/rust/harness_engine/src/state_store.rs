@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use crate::harness_log;
 use crate::harness_state::HarnessState;
 
 const DIR: &str = ".harness";
@@ -42,7 +43,7 @@ pub fn load_from(path: &str) -> HarnessState {
 
         match loaded {
             Ok(state) => return state,
-            Err(e) => eprintln!("[StateStore] failed to load: {e}"),
+            Err(e) => harness_log::error(&format!("[StateStore] failed to load: {e}")),
         }
     }
 
@@ -51,7 +52,7 @@ pub fn load_from(path: &str) -> HarnessState {
 
 pub fn save(state: &HarnessState) {
     if let Err(e) = std::fs::create_dir_all(DIR) {
-        eprintln!("[StateStore] failed to save: {e}");
+        harness_log::error(&format!("[StateStore] failed to save: {e}"));
         return;
     }
     match serde_json::to_string(state) {
@@ -59,10 +60,10 @@ pub fn save(state: &HarnessState) {
             if let Err(e) =
                 crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
             {
-                eprintln!("[StateStore] failed to save: {e}");
+                harness_log::error(&format!("[StateStore] failed to save: {e}"));
             }
         }
-        Err(e) => eprintln!("[StateStore] failed to save: {e}"),
+        Err(e) => harness_log::error(&format!("[StateStore] failed to save: {e}")),
     }
 }
 
@@ -74,11 +75,11 @@ pub fn reset() {
 pub fn snapshot(destination: &str) {
     if std::path::Path::new(FILE_PATH).exists() {
         if let Err(e) = std::fs::create_dir_all(DIR) {
-            eprintln!("[StateStore] failed to freeze: {e}");
+            harness_log::error(&format!("[StateStore] failed to freeze: {e}"));
             return;
         }
         if let Err(e) = std::fs::copy(FILE_PATH, destination) {
-            eprintln!("[StateStore] failed to freeze: {e}");
+            harness_log::error(&format!("[StateStore] failed to freeze: {e}"));
         }
     }
 }

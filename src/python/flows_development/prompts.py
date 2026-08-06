@@ -11,7 +11,6 @@ from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 
 # Output tokens (the driver stores the step's artifact in these and returns them as args).
-FEATURES = "$FEATURES"
 VERIFY_CMD = "$VERIFY_CMD"
 TARGET_DIR = "$TARGET_DIR"
 
@@ -54,14 +53,19 @@ def initializer_prompt(content: str, files: list[str]) -> str:
 {content}
 </brief>
 
-Store a JSON ARRAY in '{FEATURES}': {FEATURES_SHAPE}
+Write a JSON ARRAY to the file '{state_keys.PLAN_FILE_PATH}' (a real file, written with your
+file-write tool — NOT escaped or embedded inside the envelope you send back): {FEATURES_SHAPE}
 (just the array, no passes — every feature is born pending). Store the verify
-command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test`) and the target directory
+command in '{VERIFY_CMD}' (e.g. `dotnet test`, `npm test` — never a placeholder that always
+passes, like `echo`, `true`, or `exit 0`; it must run the project's real build/test
+pipeline, creating one first if none exists yet) and the target directory
 in '{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:
-`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0."""
+`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0.
+Plan one feature per distinct capability the brief describes — a single feature that
+scaffolds everything is not a valid plan for a multi-requirement goal."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "plan", (FEATURES, VERIFY_CMD, TARGET_DIR)),
+        Envelope(EnvelopeType.COMMAND, "plan", (VERIFY_CMD, TARGET_DIR)),
         prompt_formatter.skills("dev-initializer"),
     )
 
@@ -70,13 +74,17 @@ def initializer_interactive() -> str:
     input_text = f"""No brief was supplied. Ask the user for the goal, target directory, and
 established verification command, then follow the injected `dev-initializer` skill.
 
-Store a JSON ARRAY in '{FEATURES}' {FEATURES_SHAPE},
-the command in '{VERIFY_CMD}' and the directory in '{TARGET_DIR}'. The `verify-feature.sh`
-may run the full suite at the start: `./init.sh`, then `$VERIFY_CMD`, print
-`PASS: feature <id> ...` and exit 0."""
+Write a JSON ARRAY to the file '{state_keys.PLAN_FILE_PATH}' (a real file, written with your
+file-write tool — NOT escaped or embedded inside the envelope you send back) {FEATURES_SHAPE},
+the command in '{VERIFY_CMD}' (never a placeholder that always passes, like `echo`, `true`,
+or `exit 0`; it must run the project's real build/test pipeline) and the directory in
+'{TARGET_DIR}'. The `verify-feature.sh` may run the full suite at the start:
+`./init.sh`, then `$VERIFY_CMD`, print `PASS: feature <id> ...` and exit 0.
+Plan one feature per distinct capability the goal describes — a single feature that
+scaffolds everything is not a valid plan for a multi-requirement goal."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "plan", (FEATURES, VERIFY_CMD, TARGET_DIR)),
+        Envelope(EnvelopeType.COMMAND, "plan", (VERIFY_CMD, TARGET_DIR)),
         prompt_formatter.skills("dev-initializer"),
     )
 
@@ -89,12 +97,13 @@ def plan_retry_prompt() -> str:
     brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME).strip()
     brief_block = f"<brief>\n{brief}\n</brief>\n\n" if brief else ""
 
-    input_text = f"""{brief_block}Could not parse the feature list. Resend in '{FEATURES}' a valid JSON
-ARRAY, in exactly the format {FEATURES_SHAPE} — just the array, no surrounding text.
-Repeat the command `{VERIFY_CMD}` and `{TARGET_DIR}`."""
+    input_text = f"""{brief_block}Could not read a valid JSON array from '{state_keys.PLAN_FILE_PATH}'.
+Write the array itself to that exact path with your file-write tool — do not put it in the
+envelope's args and do not escape it as a string. Format: {FEATURES_SHAPE} — just the array in
+the file, no surrounding text. Repeat the command with `{VERIFY_CMD}` and `{TARGET_DIR}`."""
     return prompt_formatter.format(
         input_text,
-        Envelope(EnvelopeType.COMMAND, "plan", (FEATURES, VERIFY_CMD, TARGET_DIR)),
+        Envelope(EnvelopeType.COMMAND, "plan", (VERIFY_CMD, TARGET_DIR)),
     )
 
 

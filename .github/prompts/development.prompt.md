@@ -19,6 +19,11 @@ it emits; do not reproduce the state machine yourself.
   `HARNESS PROTOCOL ERROR: ...`, or an instruction containing `<input>` and `<response>`.
 - For an instruction, perform `<input>`, fill the exact JSON shape from `<response>`, write it
   to the inbox, and invoke the harness again. Do not add fields or prose.
+- When `<input>` separately asks you to write a file to a specific path (e.g.
+  `.harness/plan.json` for the feature-list array), write that file with `editFiles` too —
+  as its own real file, in raw form, never escaped as a string value inside the inbox
+  envelope. If you cannot produce that file's content, do not fabricate a placeholder or
+  send the literal token names back in `args`; retry the step instead.
 - On a protocol error, correct the envelope and retry. Diagnostics on `stderr` do not choose
   the next state.
 

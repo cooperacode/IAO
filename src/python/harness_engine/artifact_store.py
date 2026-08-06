@@ -11,9 +11,9 @@ evaluator's start must not erase the evidence it is itself about to read.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+from harness_engine import harness_log
 from harness_engine.atomic_io import write_text_atomic
 
 _DIR = ".harness"
@@ -27,7 +27,7 @@ def reset() -> None:
             Path(file).unlink(missing_ok=True)
         Path(MANIFEST_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[ArtifactStore] failed to clear: {ex}", file=sys.stderr)
+        harness_log.error(f"[ArtifactStore] failed to clear: {ex}")
 
 
 def write(name: str, content: str) -> str:
@@ -43,7 +43,7 @@ def write(name: str, content: str) -> str:
             current_files.append(path)
             _save_manifest(current_files)
     except Exception as ex:
-        print(f"[ArtifactStore] failed to write {name}: {ex}", file=sys.stderr)
+        harness_log.error(f"[ArtifactStore] failed to write {name}: {ex}")
 
     return path
 
@@ -56,7 +56,7 @@ def read(name: str) -> str:
         if path.exists():
             return path.read_text()
     except Exception as ex:
-        print(f"[ArtifactStore] failed to read {name}: {ex}", file=sys.stderr)
+        harness_log.error(f"[ArtifactStore] failed to read {name}: {ex}")
 
     return ""
 
@@ -71,7 +71,7 @@ def files() -> list[str]:
             if isinstance(result, list):
                 return [str(f) for f in result]
     except Exception as ex:
-        print(f"[ArtifactStore] failed to load manifest: {ex}", file=sys.stderr)
+        harness_log.error(f"[ArtifactStore] failed to load manifest: {ex}")
 
     return []
 
@@ -91,7 +91,7 @@ def read_all() -> str:
             if p.exists():
                 parts.append(p.read_text().rstrip() + "\n")
         except Exception as ex:
-            print(f"[ArtifactStore] failed to read {file}: {ex}", file=sys.stderr)
+            harness_log.error(f"[ArtifactStore] failed to read {file}: {ex}")
 
     return "".join(parts).rstrip()
 

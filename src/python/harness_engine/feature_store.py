@@ -10,11 +10,11 @@ run down.
 from __future__ import annotations
 
 import json
-import sys
 from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from harness_engine import harness_log
 from harness_engine.atomic_io import write_text_atomic
 
 _DIR = ".harness"
@@ -165,7 +165,7 @@ def write(features: list[Feature]) -> None:
         payload = {"items": [f.to_dict() for f in features]}
         write_text_atomic(_FILE_PATH, json.dumps(payload, indent=2))
     except Exception as ex:
-        print(f"[FeatureStore] failed to write: {ex}", file=sys.stderr)
+        harness_log.error(f"[FeatureStore] failed to write: {ex}")
 
 
 def parse(features_json: str) -> list[Feature]:
@@ -216,12 +216,12 @@ def parse(features_json: str) -> list[Feature]:
 
         error = _dependency_graph_error(reindexed)
         if error is not None:
-            print(f"[FeatureStore] invalid dependency graph: {error}", file=sys.stderr)
+            harness_log.error(f"[FeatureStore] invalid dependency graph: {error}")
             return []
 
         return reindexed
     except Exception as ex:
-        print(f"[FeatureStore] failed to parse features: {ex}", file=sys.stderr)
+        harness_log.error(f"[FeatureStore] failed to parse features: {ex}")
         return []
 
 
@@ -288,7 +288,7 @@ def load() -> list[Feature]:
             return []
         return [Feature.from_dict(item) for item in items]
     except Exception as ex:
-        print(f"[FeatureStore] failed to load: {ex}", file=sys.stderr)
+        harness_log.error(f"[FeatureStore] failed to load: {ex}")
         return []
 
 
@@ -335,4 +335,4 @@ def reset() -> None:
     try:
         Path(_FILE_PATH).unlink(missing_ok=True)
     except Exception as ex:
-        print(f"[FeatureStore] failed to clear: {ex}", file=sys.stderr)
+        harness_log.error(f"[FeatureStore] failed to clear: {ex}")

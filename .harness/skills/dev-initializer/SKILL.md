@@ -31,6 +31,12 @@ non-default branch when resuming; otherwise create
   may run the full suite when there is no per-feature convention.
 - Make the verifier print a concise `PASS: ...` or `FAIL: ...` verdict and use its process
   exit code as evidence. The harness captures detailed output separately.
+- `$VERIFY_CMD` and `verify-feature.sh` must actually exercise the code (run the real
+  build/test/lint pipeline — e.g. `dotnet test`, `npm test`, `pytest`). A placeholder that
+  always succeeds regardless of what was implemented (`echo ...`, `true`, `exit 0`, an
+  empty script) is never acceptable, even for the first feature of a greenfield target: if
+  no test suite exists yet, creating one that actually runs is part of that first feature's
+  scope, not something to defer by faking a pass.
 - In brownfield targets, reuse equivalent scripts or pipelines and make only the minimum
   adaptation needed. Do not overwrite working project setup.
 
@@ -50,4 +56,7 @@ each feature:
   constraints, target files, examples, and acceptance criteria into those arrays.
 
 Prefer several small features to a few broad ones. If a feature has no unambiguous
-verification path, split it further.
+verification path, split it further. A single "scaffold everything" feature covering the
+whole brief is not a valid plan for a multi-requirement goal — each distinct capability the
+brief describes (each endpoint, each user-facing operation, each explicitly named
+non-functional slice) becomes its own feature, even when that means ten-plus entries.

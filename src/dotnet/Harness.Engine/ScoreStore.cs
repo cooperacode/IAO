@@ -23,7 +23,7 @@ public static class ScoreStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ScoreStore] failed to write: {ex.Message}");
+            HarnessLog.Error($"[ScoreStore] failed to write: {ex.Message}");
         }
     }
 
@@ -42,7 +42,7 @@ public static class ScoreStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ScoreStore] failed to load: {ex.Message}");
+            HarnessLog.Error($"[ScoreStore] failed to load: {ex.Message}");
             return [];
         }
     }

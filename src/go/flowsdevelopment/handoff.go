@@ -26,11 +26,11 @@ func failedHandoff(failure string) handoffResult { return handoffResult{Failure:
 func completeVerifiedFeature(verifyResult string) string {
 	handoff := tryAutomatedHandoff(verifyResult)
 	if !handoff.Success {
-		fmt.Fprintf(os.Stderr, "[dev] automatic handoff failed: %s\n", handoff.Failure)
+		engine.LogError(fmt.Sprintf("[dev] automatic handoff failed: %s", handoff.Failure))
 		return HandoffPrompt(handoff.Failure)
 	}
 
-	fmt.Fprintf(os.Stderr, "[dev] automatic handoff completed: %s\n", handoff.Confirmation)
+	engine.LogInfo(fmt.Sprintf("[dev] automatic handoff completed: %s", handoff.Confirmation))
 	if id, err := strconv.Atoi(state(currentFeatureIdKey)); err == nil {
 		engine.MarkFeaturePassed(id)
 	}

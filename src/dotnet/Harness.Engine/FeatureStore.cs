@@ -41,7 +41,7 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] failed to write: {ex.Message}");
+            HarnessLog.Error($"[FeatureStore] failed to write: {ex.Message}");
         }
     }
 
@@ -64,7 +64,7 @@ public static class FeatureStore
 
             if (parsed.Any(f => string.IsNullOrWhiteSpace(f.Title) || f.Priority <= 0))
             {
-                Console.Error.WriteLine(
+                HarnessLog.Error(
                     "[FeatureStore] every feature must have a title and a positive priority.");
                 return [];
             }
@@ -72,7 +72,7 @@ public static class FeatureStore
             var explicitIds = parsed.Where(f => f.Id > 0).Select(f => f.Id).ToList();
             if (explicitIds.Count != explicitIds.Distinct().Count())
             {
-                Console.Error.WriteLine("[FeatureStore] duplicate explicit feature id.");
+                HarnessLog.Error("[FeatureStore] duplicate explicit feature id.");
                 return [];
             }
 
@@ -103,7 +103,7 @@ public static class FeatureStore
 
             if (DependencyGraphError(reindexed) is { } error)
             {
-                Console.Error.WriteLine($"[FeatureStore] invalid dependency graph: {error}");
+                HarnessLog.Error($"[FeatureStore] invalid dependency graph: {error}");
                 return [];
             }
 
@@ -111,7 +111,7 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] failed to parse features: {ex.Message}");
+            HarnessLog.Error($"[FeatureStore] failed to parse features: {ex.Message}");
             return [];
         }
     }
@@ -202,7 +202,7 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] failed to load: {ex.Message}");
+            HarnessLog.Error($"[FeatureStore] failed to load: {ex.Message}");
             return [];
         }
     }
@@ -258,7 +258,7 @@ public static class FeatureStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[FeatureStore] failed to clear: {ex.Message}");
+            HarnessLog.Error($"[FeatureStore] failed to clear: {ex.Message}");
         }
     }
 }

@@ -11,9 +11,9 @@ only uses measures the engine attests itself (steps and instruction chars — se
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import dataclass
 
+from harness_engine import harness_log
 from harness_engine.context_policy import ContextUsage
 
 
@@ -93,8 +93,11 @@ class Envelope:
             return Envelope(type_, envelope_value, args, context, context_usage)
         except Exception as ex:
             # Diagnostics go to stderr — stdout is the harness transport channel (the
-            # driver reads stdout as the next instruction) and must not be polluted.
-            print(ex, file=sys.stderr)
+            # driver reads stdout as the next instruction) and must not be polluted. The
+            # raw payload (truncated) is included because it's otherwise lost forever: the
+            # inbox file gets overwritten by the driver's next attempt before anyone can
+            # inspect what it actually sent.
+            harness_log.error(f"[Envelope] failed to parse: {ex}. Raw payload: {_truncate(value, 500)}")
             return None
 
     # Models frequently wrap the JSON in markdown fences (```json … ```) or add
@@ -120,3 +123,8 @@ class Envelope:
             v = v[start : end + 1]
 
         return v
+
+
+def _truncate(value: str | None, max_chars: int) -> str:
+    text = value or ""
+    return text if len(text) <= max_chars else text[:max_chars] + "...(truncated)"

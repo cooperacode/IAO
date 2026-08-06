@@ -26,7 +26,7 @@ public static class RunConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[RunConfigStore] failed to write: {ex.Message}");
+            HarnessLog.Error($"[RunConfigStore] failed to write: {ex.Message}");
         }
     }
 
@@ -45,7 +45,7 @@ public static class RunConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[RunConfigStore] failed to load: {ex.Message}");
+            HarnessLog.Error($"[RunConfigStore] failed to load: {ex.Message}");
         }
 
         return new RunConfig();
@@ -61,7 +61,7 @@ public static class RunConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[RunConfigStore] failed to clear: {ex.Message}");
+            HarnessLog.Error($"[RunConfigStore] failed to clear: {ex.Message}");
         }
     }
 }

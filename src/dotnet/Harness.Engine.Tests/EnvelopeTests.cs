@@ -73,6 +73,36 @@ public class EnvelopeTests
     }
 
     [Fact]
+    public void Parse_EntradaInvalida_GravaOPayloadCruNoHarnessLog()
+    {
+        // The raw driver payload is otherwise lost forever — the inbox file gets
+        // overwritten by the next attempt before anyone can inspect what actually failed.
+        const string logPath = ".harness/harness.log";
+        if (File.Exists(logPath))
+            File.Delete(logPath);
+
+        Envelope.Parse("this is not json");
+
+        var content = File.ReadAllText(logPath);
+        Assert.Contains("this is not json", content);
+    }
+
+    [Fact]
+    public void Parse_PayloadMaiorQueOTeto_TruncaNoHarnessLog()
+    {
+        const string logPath = ".harness/harness.log";
+        if (File.Exists(logPath))
+            File.Delete(logPath);
+
+        var oversized = new string('x', 600) + "not json";
+        Envelope.Parse(oversized);
+
+        var content = File.ReadAllText(logPath);
+        Assert.Contains("...(truncated)", content);
+        Assert.DoesNotContain(oversized, content);
+    }
+
+    [Fact]
     public void ToJson_FazRoundtrip()
     {
         var original = new Envelope(EnvelopeType.Command, "finalize", ["Epic"]);

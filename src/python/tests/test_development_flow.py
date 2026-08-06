@@ -7,7 +7,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from flows_development import tasks
+from flows_development import state_keys, tasks
 from harness_engine import artifact_store, feature_store, run_config_store, state_store, task_registry, trace
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
@@ -39,6 +39,19 @@ def _cmd(value: str, *args: str) -> Envelope:
     return Envelope(EnvelopeType.COMMAND, value, args)
 
 
+def _write_plan_file(features: str) -> None:
+    """Writes the driver-side feature array to state_keys.PLAN_FILE_PATH — tasks.plan()
+    reads features from that file, not from the envelope's args."""
+    path = Path(state_keys.PLAN_FILE_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(features, encoding="utf-8")
+
+
+def _plan_cmd(features: str, verify_cmd: str, target_dir: str) -> Envelope:
+    _write_plan_file(features)
+    return _cmd("plan", verify_cmd, target_dir)
+
+
 def _git(cwd: Path, *args: str) -> str:
     proc = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, check=False)
     assert proc.returncode == 0, f"git {' '.join(args)} failed: {proc.stderr}{proc.stdout}"
@@ -49,7 +62,7 @@ def _plan() -> str:
     target = Path("src/app")
     target.mkdir(parents=True, exist_ok=True)
     (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
-    result = tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", "src/app"))
+    result = tasks.plan(_plan_cmd(FEATURES_JSON, "dotnet test", "src/app"))
     return result
 
 
@@ -179,7 +192,7 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
     )
     Path("src/app").mkdir(parents=True, exist_ok=True)
     (Path("src/app") / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
-    tasks.plan(_cmd("plan", json_str, "dotnet test", "src/app"))  # escolhe "B"
+    tasks.plan(_plan_cmd(json_str, "dotnet test", "src/app"))  # escolhe "B"
     _write_verify_feature_script(Path("src/app"), "#!/usr/bin/env bash\nset -e\n")
     result = tasks.implement(_cmd("implement", "feito"))  # verifica B, entrega A
 
@@ -226,7 +239,7 @@ def test_dispatch_start_sem_feature_pendente_trunca_trace_e_step():
 def test_plan_persiste_features_e_roteia_para_bearings():
     Path("web").mkdir(parents=True, exist_ok=True)
     (Path("web") / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
-    result = tasks.plan(_cmd("plan", FEATURES_JSON, "npm test", "web"))
+    result = tasks.plan(_plan_cmd(FEATURES_JSON, "npm test", "web"))
 
     assert len(feature_store.load()) == 2
     assert run_config_store.load().verify_cmd == "npm test"
@@ -235,7 +248,7 @@ def test_plan_persiste_features_e_roteia_para_bearings():
 
 
 def test_plan_gera_um_run_id_novo_e_nao_vazio():
-    tasks.plan(_cmd("plan", FEATURES_JSON, "npm test", "web"))
+    tasks.plan(_plan_cmd(FEATURES_JSON, "npm test", "web"))
 
     run_id = run_config_store.load().run_id
 
@@ -244,7 +257,7 @@ def test_plan_gera_um_run_id_novo_e_nao_vazio():
 
 
 def test_plan_features_invalidas_reemite_o_plano():
-    result = tasks.plan(_cmd("plan", "não é json", "dotnet test", "."))
+    result = tasks.plan(_plan_cmd("não é json", "dotnet test", "."))
 
     assert feature_store.load() == []
     assert run_config_store.load() == RunConfig()  # nada persistido
@@ -376,7 +389,7 @@ def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
     (repo / "outside.txt").write_text("fora do target")
 
     (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
-    tasks.plan(_cmd("plan", FEATURES_JSON, "dotnet test", str(target)))
+    tasks.plan(_plan_cmd(FEATURES_JSON, "dotnet test", str(target)))
     _write_verify_feature_script(target, "#!/usr/bin/env bash\nset -e\n")
     result = tasks.implement(_cmd("implement", "feito no target"))
 
@@ -398,8 +411,7 @@ def test_guarda_por_feature_ao_exceder_o_teto_encerra():
 
 
 def test_plan_depends_on_ciclico_reemite_o_plano():
-    result = tasks.plan(_cmd(
-        "plan",
+    result = tasks.plan(_plan_cmd(
         '[{"id":1,"title":"A","priority":1,"dependsOn":[2]},{"id":2,"title":"B","priority":2,"dependsOn":[1]}]',
         "dotnet test", ".",
     ))
@@ -411,8 +423,8 @@ def test_plan_depends_on_ciclico_reemite_o_plano():
 
 
 def test_plan_depends_on_id_inexistente_reemite_o_plano():
-    result = tasks.plan(_cmd(
-        "plan", '[{"id":1,"title":"A","priority":1,"dependsOn":[99]}]', "dotnet test", ".",
+    result = tasks.plan(_plan_cmd(
+        '[{"id":1,"title":"A","priority":1,"dependsOn":[99]}]', "dotnet test", ".",
     ))
 
     assert feature_store.load() == []
@@ -433,7 +445,7 @@ def test_plan_corte_max_features_remove_dependencia_para_id_cortado():
         '{"id":2,"title":"cortada","priority":1000},' + extras + "]"
     )
 
-    tasks.plan(_cmd("plan", json_text, "dotnet test", "."))
+    tasks.plan(_plan_cmd(json_text, "dotnet test", "."))
 
     assert 2 not in [f.id for f in feature_store.load()]  # id 2 foi de fato cortado
     survivor = next(f for f in feature_store.load() if f.id == 1)
@@ -443,7 +455,7 @@ def test_plan_corte_max_features_remove_dependencia_para_id_cortado():
 def test_pick_respeita_dependencia_escolhe_dependencia_antes_da_dependente():
     # f1: prioridade pior, sem deps. f2: prioridade melhor, mas depende de f1.
     json_text = '[{"id":1,"title":"fundação","priority":2},{"id":2,"title":"depende","priority":1,"dependsOn":[1]}]'
-    tasks.plan(_cmd("plan", json_text, "dotnet test", "."))
+    tasks.plan(_plan_cmd(json_text, "dotnet test", "."))
     tasks.bearings(_cmd("bearings", "ok"))
     tasks.smoke(_cmd("smoke", "ok"))
 

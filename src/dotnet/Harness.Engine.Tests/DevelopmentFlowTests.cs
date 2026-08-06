@@ -37,6 +37,10 @@ public class DevelopmentFlowTests : IDisposable
             Directory.Delete(SpecsDir, recursive: true);
     }
 
+    // Mirrors DevelopmentTasks.PlanFilePath (private) — the file the driver writes the raw
+    // feature-list JSON array to, instead of embedding it in the envelope's args.
+    private const string PlanFilePath = ".harness/plan.json";
+
     private static void Clean()
     {
         StateStore.Reset();
@@ -44,6 +48,20 @@ public class DevelopmentFlowTests : IDisposable
         FeatureStore.Reset();
         RunConfigStore.Reset();
         ArtifactStore.Reset();
+        if (File.Exists(PlanFilePath))
+            File.Delete(PlanFilePath);
+    }
+
+    private static void WritePlanFile(string features)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(PlanFilePath)!);
+        File.WriteAllText(PlanFilePath, features);
+    }
+
+    private static Envelope PlanCmd(string features, string verifyCmd, string targetDir)
+    {
+        WritePlanFile(features);
+        return Cmd("plan", verifyCmd, targetDir);
     }
 
     private static void GivenDocsBrief(string content)
@@ -91,7 +109,7 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     private string Plan() =>
-        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", _targetDir));
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "dotnet test", _targetDir));
 
     /// <summary>Advances the flow until a feature is chosen and implemented (ready for verify).</summary>
     private void AdvanceToVerify()
@@ -183,7 +201,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Plan_PersisteFeaturesERoteiaDiretoParaImplementacao()
     {
-        var result = DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "npm test", _targetDir));
+        var result = DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "npm test", _targetDir));
 
         Assert.Equal(2, FeatureStore.Load().Count);
         Assert.Equal("npm test", RunConfigStore.Load().VerifyCmd);
@@ -194,7 +212,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Plan_GeraUmRunIdNovoENaoVazio()
     {
-        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "npm test", "web"));
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "npm test", "web"));
 
         var runId = RunConfigStore.Load().RunId;
 
@@ -295,7 +313,7 @@ public class DevelopmentFlowTests : IDisposable
             """[{"id":1,"title":"A","priority":2,"description":"faz X","references":["RF-003"],"implementationContext":{"requirements":["inline X"]}},{"id":2,"title":"B","priority":1}]""";
         WriteVerifyFeatureScript(_targetDir,
             "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
-        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
+        DevelopmentTasks.Plan(PlanCmd(json, "dotnet test", _targetDir));
         DevelopmentTasks.Bearings(Cmd("bearings", "ok")); // escolhe "B"
         var result = DevelopmentTasks.Implement(Cmd("implement", "feito")); // completes B, auto-advances to A
 
@@ -318,7 +336,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Plan_FeaturesInvalidas_ReemiteOPlano()
     {
-        var result = DevelopmentTasks.Plan(Cmd("plan", "not json", "dotnet test", "."));
+        var result = DevelopmentTasks.Plan(PlanCmd("not json", "dotnet test", "."));
 
         Assert.Empty(FeatureStore.Load());
         Assert.Equal(new RunConfig(), RunConfigStore.Load()); // nada persistido
@@ -433,7 +451,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Implement_SemScriptExecutaVerifyCmdDeterministicamente()
     {
-        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "true", _targetDir));
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true", _targetDir));
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
 
@@ -445,7 +463,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void VerifyCmd_ComOperadorDeShellNaoEhExecutado()
     {
-        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "true && false", _targetDir));
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true && false", _targetDir));
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
 
@@ -518,7 +536,7 @@ public class DevelopmentFlowTests : IDisposable
 
         File.WriteAllText(Path.Combine(repo, "outside.txt"), "fora do target");
 
-        DevelopmentTasks.Plan(Cmd("plan", FeaturesJson, "dotnet test", target));
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "dotnet test", target));
         WriteInitScript(target);
         WriteVerifyFeatureScript(target,
             "#!/usr/bin/env bash\nset -euo pipefail\necho \"PASS: feature $1 verificada\"\n");
@@ -547,7 +565,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Plan_DependsOnCiclico_ReemiteOPlano()
     {
-        var result = DevelopmentTasks.Plan(Cmd("plan",
+        var result = DevelopmentTasks.Plan(PlanCmd(
             """[{"id":1,"title":"A","priority":1,"dependsOn":[2]},{"id":2,"title":"B","priority":2,"dependsOn":[1]}]""",
             "dotnet test", "."));
 
@@ -560,7 +578,7 @@ public class DevelopmentFlowTests : IDisposable
     [Fact]
     public void Plan_DependsOnIdInexistente_ReemiteOPlano()
     {
-        var result = DevelopmentTasks.Plan(Cmd("plan",
+        var result = DevelopmentTasks.Plan(PlanCmd(
             """[{"id":1,"title":"A","priority":1,"dependsOn":[99]}]""",
             "dotnet test", "."));
 
@@ -580,7 +598,7 @@ public class DevelopmentFlowTests : IDisposable
         var json = """[{"id":1,"title":"sobrevivente","priority":1,"dependsOn":[2]},{"id":2,"title":"cortada","priority":1000},"""
             + extrasJson + "]";
 
-        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
+        DevelopmentTasks.Plan(PlanCmd(json, "dotnet test", _targetDir));
 
         Assert.DoesNotContain(2, FeatureStore.Load().Select(f => f.Id)); // id 2 foi de fato cortado
         var survivor = FeatureStore.Load().Single(f => f.Id == 1);
@@ -592,7 +610,7 @@ public class DevelopmentFlowTests : IDisposable
     {
         // f1: prioridade pior, sem deps. f2: prioridade melhor, mas depende de f1.
         var json = """[{"id":1,"title":"foundation","priority":2},{"id":2,"title":"depends","priority":1,"dependsOn":[1]}]""";
-        DevelopmentTasks.Plan(Cmd("plan", json, "dotnet test", _targetDir));
+        DevelopmentTasks.Plan(PlanCmd(json, "dotnet test", _targetDir));
         DevelopmentTasks.Bearings(Cmd("bearings", "ok"));
 
         Assert.Equal("1", StateStore.Get("current_feature_id"));

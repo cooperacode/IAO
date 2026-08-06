@@ -136,11 +136,17 @@ public record Envelope(
         catch (Exception ex)
         {
             // Diagnostics go to stderr — stdout is the harness's transport channel (the
-            // driver reads stdout as the next instruction) and must not be polluted.
-            Console.Error.WriteLine(ex);
+            // driver reads stdout as the next instruction) and must not be polluted. The
+            // raw payload (truncated) is included because it's otherwise lost forever: the
+            // inbox file gets overwritten by the driver's next attempt before anyone can
+            // inspect what it actually sent.
+            HarnessLog.Error($"[Envelope] failed to parse: {ex}. Raw payload: {Truncate(value, 500)}");
             return null;
         }
     }
+
+    private static string Truncate(string value, int maxChars) =>
+        value.Length <= maxChars ? value : value[..maxChars] + "...(truncated)";
 
     // Models frequently wrap the JSON in markdown fences (```json … ```) or add
     // surrounding text. Normalizes to the raw JSON object before parsing.

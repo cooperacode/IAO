@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use harness_engine::{feature_store, git_command, run_config_store, state_store};
+use harness_engine::{feature_store, git_command, harness_log, run_config_store, state_store};
 
 use crate::prompts;
 use crate::tasks::{CURRENT_FEATURE_ID_KEY, CURRENT_FEATURE_SUMMARY_KEY, CURRENT_FEATURE_TITLE_KEY};
@@ -16,7 +16,7 @@ fn state(key: &str) -> String {
 pub fn complete_verified_feature(verify_result: &str) -> String {
     match try_automated_handoff(verify_result) {
         Ok(confirmation) => {
-            eprintln!("[dev] automatic handoff completed: {confirmation}");
+            harness_log::info(&format!("[dev] automatic handoff completed: {confirmation}"));
             if let Ok(id) = state(CURRENT_FEATURE_ID_KEY).parse::<i32>() {
                 feature_store::mark_passed(id);
             }
@@ -30,7 +30,7 @@ pub fn complete_verified_feature(verify_result: &str) -> String {
             }
         }
         Err(failure) => {
-            eprintln!("[dev] automatic handoff failed: {failure}");
+            harness_log::error(&format!("[dev] automatic handoff failed: {failure}"));
             prompts::handoff_prompt(Some(&failure))
         }
     }

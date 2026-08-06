@@ -1,6 +1,8 @@
 """Hardening regressions: an error must NEVER turn into a silent "stop", and the step
 ceiling has to cut off an infinite loop (token guard)."""
 
+from pathlib import Path
+
 from harness_engine import prompt_formatter, state_store, task_registry, trace
 from harness_engine.envelope import Envelope, EnvelopeType
 
@@ -8,6 +10,16 @@ TASKS = {
     "start": lambda _e: "PROMPT_START",
     "classify": lambda e: f"PROMPT_CLASSIFY:{e.args[0] if e and e.args else ''}",
     "finalize": lambda _e: "stop",
+}
+
+
+def _boom(_e):
+    raise ValueError("a real bug, not a driver protocol error")
+
+
+FAULTY_TASKS = {
+    "start": lambda _e: "PROMPT_START",
+    "boom": _boom,
 }
 
 
@@ -128,3 +140,40 @@ def test_dispatch_ao_exceder_o_teto_forca_stop():
     result = task_registry.dispatch(['{"type":"tool","value":"classify","args":["x"]}'], TASKS)
 
     assert result == "stop"
+
+
+def test_dispatch_action_lanca_excecao_nao_tratada_retorna_stop_e_nao_deixa_vazar():
+    # The regression this guards: before the "fault" guard, any exception a task action
+    # raised (not just HarnessTimeoutError) propagated all the way out of dispatch,
+    # crashing the process instead of a graceful "stop" — see task_registry._resolve.
+    result = task_registry.dispatch(['{"type":"tool","value":"boom"}'], FAULTY_TASKS)
+
+    assert result == "stop"
+
+
+def test_dispatch_action_lanca_excecao_nao_tratada_grava_desfecho_fault_e_marca_terminal():
+    task_registry.dispatch(['{"type":"tool","value":"boom"}'], FAULTY_TASKS)
+
+    assert trace.load()[-1].outcome == trace.TraceOutcome.FAULT
+    assert state_store.terminal_reason() == "fault"
+
+
+def test_dispatch_action_lanca_excecao_nao_tratada_run_permanece_terminal_ate_um_start_explicito():
+    task_registry.dispatch(['{"type":"tool","value":"boom"}'], FAULTY_TASKS)
+
+    result = task_registry.dispatch(['{"type":"text","value":"start"}'], FAULTY_TASKS)
+
+    assert result == "PROMPT_START"
+    assert state_store.terminal_reason() is None
+
+
+def test_dispatch_loga_entrada_antes_da_action_rodar_e_saida_depois_de_concluir():
+    task_registry.dispatch(['{"type":"tool","value":"classify","args":["Login"]}'], TASKS)
+
+    content = Path(".harness", "harness.log").read_text()
+    enter_index = content.find("enter 'classify'")
+    exit_index = content.find("exit outcome=")
+
+    assert enter_index >= 0, "expected an 'enter' line in harness.log"
+    assert exit_index >= 0, "expected an 'exit' line in harness.log"
+    assert enter_index < exit_index, "entry must be logged before exit"
