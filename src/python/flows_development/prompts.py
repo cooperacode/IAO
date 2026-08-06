@@ -49,9 +49,7 @@ def initializer_prompt(content: str, files: list[str]) -> str:
     input_text = f"""Initialize the development run from this brief by following the injected
 `dev-initializer` skill:
 
-<brief sources="{', '.join(files)}">
-{content}
-</brief>
+<brief sources="{', '.join(files)}">{prompt_formatter.inline(content)}</brief>
 
 Write a JSON ARRAY to the file '{state_keys.PLAN_FILE_PATH}' (a real file, written with your
 file-write tool — NOT escaped or embedded inside the envelope you send back): {FEATURES_SHAPE}

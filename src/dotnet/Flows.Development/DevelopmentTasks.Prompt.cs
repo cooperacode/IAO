@@ -47,9 +47,7 @@ public static partial class DevelopmentTasks
             Initialize the development run from this brief by following the injected
             `dev-initializer` skill:
 
-            <brief sources="{string.Join(", ", files)}">
-            {content}
-            </brief>
+            <brief sources="{string.Join(", ", files)}">{PromptFormatter.Inline(content)}</brief>
 
             Write a JSON ARRAY to the file '{PlanFilePath}' (a real file, written with your
             file-write tool — NOT escaped or embedded inside the envelope you send back): {FeaturesShape}

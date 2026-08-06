@@ -62,13 +62,12 @@ fn current_feature_context_block() -> String {
 
 pub fn initializer_prompt(content: &str, files: &[String]) -> String {
     let sources = files.join(", ");
+    let content = prompt_formatter::inline(content);
     let input = format!(
         "Initialize the development run from this brief by following the injected\n\
 `dev-initializer` skill:\n\
 \n\
-<brief sources=\"{sources}\">\n\
-{content}\n\
-</brief>\n\
+<brief sources=\"{sources}\">{content}</brief>\n\
 \n\
 Write a JSON ARRAY to the file '{PLAN_FILE_PATH}' (a real file, written with your file-write\n\
 tool — NOT escaped or embedded inside the envelope you send back): {FEATURES_SHAPE}\n\

@@ -54,9 +54,7 @@ func InitializerPrompt(content string, files []string) string {
 	input := fmt.Sprintf(`Initialize the development run from this brief by following the injected
 `+"`dev-initializer`"+` skill:
 
-<brief sources="%s">
-%s
-</brief>
+<brief sources="%s">%s</brief>
 
 Write a JSON ARRAY to the file '%s' (a real file, written with your file-write tool —
 NOT escaped or embedded inside the envelope you send back): %s
@@ -68,7 +66,7 @@ in '%s'. `+"`verify-feature.sh`"+` may run the full suite at the start:
 `+"`./init.sh`"+`, then `+"`$VERIFY_CMD`"+`, print `+"`PASS: feature <id> ...`"+` and exit 0.
 Plan one feature per distinct capability the brief describes — a single feature that
 scaffolds everything is not a valid plan for a multi-requirement goal.`,
-		strings.Join(files, ", "), content, planFilePath, featuresShape, tokenVerifyCmd, tokenTargetDir)
+		strings.Join(files, ", "), engine.Inline(content), planFilePath, featuresShape, tokenVerifyCmd, tokenTargetDir)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "plan", []string{tokenVerifyCmd, tokenTargetDir}),

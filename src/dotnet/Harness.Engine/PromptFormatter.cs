@@ -60,10 +60,7 @@ public static class PromptFormatter
                 continue;
 
             var content = File.ReadAllText(path);
-            // Inline the content but preserve line breaks as literal "\n" markers
-            content = content.Replace("\r\n", "\\n").Replace("\n", "\\n");
-
-            sb.Append($"""<skill id="{skill.Key}">{content}</skill>""");
+            sb.Append($"""<skill id="{skill.Key}">{Inline(content)}</skill>""");
         }
 
         return sb.Length == 0
@@ -74,4 +71,13 @@ public static class PromptFormatter
             </skills>
             """;
     }
+
+    /// <summary>
+    /// Collapses <paramref name="content"/> onto a single line for embedding inside an
+    /// XML-ish tag, preserving line breaks as literal <c>\n</c> markers instead of real
+    /// newlines — so a multi-line artifact (a skill file, a brief) doesn't break the
+    /// tag's one-line shape in the emitted prompt.
+    /// </summary>
+    public static string Inline(string content) =>
+        content.Replace("\r\n", "\\n").Replace("\n", "\\n");
 }

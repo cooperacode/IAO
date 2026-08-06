@@ -76,10 +76,8 @@ fn read_skills(skills: Option<&HashMap<String, String>>) -> String {
             Ok(c) => c,
             Err(_) => continue,
         };
-        // Inline the content but preserve line breaks as literal "\n" markers
-        let content = content.replace("\r\n", "\\n").replace('\n', "\\n");
 
-        body.push_str(&format!("<skill id=\"{id}\">{content}</skill>"));
+        body.push_str(&format!("<skill id=\"{id}\">{}</skill>", inline(&content)));
     }
 
     if body.is_empty() {
@@ -87,6 +85,13 @@ fn read_skills(skills: Option<&HashMap<String, String>>) -> String {
     } else {
         format!("<skills>\n    {body}\n</skills>")
     }
+}
+
+/// Collapses `content` onto a single line for embedding inside an XML-ish tag, preserving
+/// line breaks as literal `\n` markers instead of real newlines — so a multi-line artifact
+/// (a skill file, a brief) doesn't break the tag's one-line shape in the emitted prompt.
+pub fn inline(content: &str) -> String {
+    content.replace("\r\n", "\\n").replace('\n', "\\n")
 }
 
 #[cfg(test)]

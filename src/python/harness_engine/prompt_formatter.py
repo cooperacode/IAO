@@ -56,14 +56,18 @@ def _read_skills(skills_map: dict[str, str] | None) -> str:
         if not path.exists():
             continue
 
-        content = path.read_text()
-        # Inline the content but preserve line breaks as literal "\n" markers
-        content = content.replace("\r\n", "\\n").replace("\n", "\\n")
-
-        parts.append(f'<skill id="{skill_id}">\n    {content}\n</skill>')
+        parts.append(f'<skill id="{skill_id}">\n    {inline(path.read_text())}\n</skill>')
 
     if not parts:
         return ""
 
     body = "".join(parts)
     return f"<skills>\n    {body}\n</skills>"
+
+
+def inline(content: str) -> str:
+    """Collapses content onto a single line for embedding inside an XML-ish tag,
+    preserving line breaks as literal "\\n" markers instead of real newlines — so a
+    multi-line artifact (a skill file, a brief) doesn't break the tag's one-line shape in
+    the emitted prompt."""
+    return content.replace("\r\n", "\\n").replace("\n", "\\n")

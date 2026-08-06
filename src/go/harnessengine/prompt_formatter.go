@@ -75,15 +75,21 @@ func readSkills(skills map[string]string) string {
 		if err != nil {
 			continue
 		}
-		// Inline the content but preserve line breaks as literal "\n" markers.
-		content := strings.ReplaceAll(string(data), "\r\n", "\\n")
-		content = strings.ReplaceAll(content, "\n", "\\n")
 
-		sb.WriteString(fmt.Sprintf(`<skill id="%s">%s</skill>`, id, content))
+		sb.WriteString(fmt.Sprintf(`<skill id="%s">%s</skill>`, id, Inline(string(data))))
 	}
 
 	if sb.Len() == 0 {
 		return ""
 	}
 	return fmt.Sprintf("<skills>\n    %s\n</skills>", sb.String())
+}
+
+// Inline collapses content onto a single line for embedding inside an XML-ish tag,
+// preserving line breaks as literal "\n" markers instead of real newlines — so a
+// multi-line artifact (a skill file, a brief) doesn't break the tag's one-line shape in
+// the emitted prompt.
+func Inline(content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\\n")
+	return strings.ReplaceAll(content, "\n", "\\n")
 }
