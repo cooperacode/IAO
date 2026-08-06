@@ -48,7 +48,10 @@ dev_step() {  # type value [args...] → writes the inbox (JSON) and runs one st
 
 FEATURES='[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":1}]'
 dev_step text start                                  >/dev/null
-dev_step command plan "$FEATURES" "true" "app"       >/dev/null
+# The driver writes the feature array as a real file (see planFilePath in tasks.go) —
+# `plan`'s envelope args are just verify_cmd/target_dir now.
+printf '%s' "$FEATURES" > "$SMOKE_DIR/.harness/plan.json"
+dev_step command plan "true" "app"                   >/dev/null
 mkdir -p "$SMOKE_DIR/app"
 cat > "$SMOKE_DIR/app/init.sh" <<'SH'
 #!/usr/bin/env bash
