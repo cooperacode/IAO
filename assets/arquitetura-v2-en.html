@@ -308,7 +308,7 @@
         <!-- ================= PERSISTENCE & TELEMETRY ================= -->
         <div class="section-label text-xs text-slate-500 font-semibold self-start ml-1">PERSISTENCE & TELEMETRY — state leaves the conversation</div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 w-full">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 w-full">
             <div class="glass-card s-novo rounded-xl p-5 cursor-pointer" onclick="openModal('stateStore')">
                 <div class="flex items-center gap-3 mb-2">
                     <i class="fas fa-database text-indigo-400 text-xl"></i>
@@ -348,6 +348,14 @@
                 </div>
                 <p class="text-xs text-slate-400 mb-2"><span class="mono">init.sh</span>, <span class="mono">progress.txt</span>, and <span class="mono">git log</span> reorient clean sessions.</p>
                 <span class="badge b-fase">operational memory</span>
+            </div>
+            <div class="glass-card s-adaptado rounded-xl p-5 cursor-pointer" onclick="openModal('harnessLog')">
+                <div class="flex items-center gap-3 mb-2">
+                    <i class="fas fa-file-lines text-rose-300 text-xl"></i>
+                    <h3 class="text-lg font-bold">HarnessLog</h3>
+                </div>
+                <p class="text-xs text-slate-400 mb-2">Append-only <span class="mono">.harness/harness.log</span>: step entry/exit before a turn completes, plus every diagnostic that used to be stderr-only.</p>
+                <span class="badge b-adaptado">liveness while a step runs</span>
             </div>
         </div>
 
@@ -479,6 +487,8 @@
                 <span class="bg-slate-800 text-slate-300 px-3 py-1 rounded">.harness/state.json</span>
                 <span class="bg-slate-800 text-slate-300 px-3 py-1 rounded">.harness/run_config.json</span>
                 <span class="bg-slate-800 text-slate-300 px-3 py-1 rounded">.harness/trace.jsonl</span>
+                <span class="bg-slate-800 text-slate-300 px-3 py-1 rounded">.harness/harness.log</span>
+                <span class="bg-amber-900/40 text-amber-200 px-3 py-1 rounded">.harness/plan.json</span>
                 <span class="bg-amber-900/40 text-amber-200 px-3 py-1 rounded">.harness/feature_list.json</span>
                 <span class="bg-amber-900/40 text-amber-200 px-3 py-1 rounded">.harness/artifacts.json + brief.md</span>
                 <span class="bg-slate-800 text-slate-300 px-3 py-1 rounded">.harness/logs/</span>
@@ -525,7 +535,7 @@
                     <div class="comp-box md:col-span-4 s-adaptado" onclick="openModal('dispatch')">
                         <div class="font-bold text-sm mb-1"><i class="fas fa-microchip text-indigo-300 mr-1"></i>TaskRegistry</div>
                         <div class="text-[11px] text-slate-400 mb-2">Parse → guards → contextual validation → routes <span class="mono">value → Func</span>. The harness decides the next state.</div>
-                        <div class="flex flex-wrap gap-1"><span class="dep-tag">→ Envelope.Parse</span><span class="dep-tag">→ HarnessConfig</span><span class="dep-tag">→ EnvelopeValidation</span><span class="dep-tag">→ StateStore</span><span class="dep-tag">→ Trace.Append</span></div>
+                        <div class="flex flex-wrap gap-1"><span class="dep-tag">→ Envelope.Parse</span><span class="dep-tag">→ HarnessConfig</span><span class="dep-tag">→ EnvelopeValidation</span><span class="dep-tag">→ StateStore</span><span class="dep-tag">→ Trace.Append</span><span class="dep-tag">→ HarnessLog</span></div>
                     </div>
                     <div class="comp-box md:col-span-2 s-adaptado" onclick="openModal('envelope')">
                         <div class="font-bold text-sm mb-1"><i class="fas fa-envelope-open-text text-cyan-400 mr-1"></i>Envelope</div>
@@ -579,7 +589,7 @@
             <!-- Layer: persistence -->
             <div class="layer-box w-full p-4">
                 <div class="text-[10px] section-label text-fuchsia-300/80 font-semibold mb-3"><i class="fas fa-hard-drive mr-1"></i>PERSISTENCE & TELEMETRY — memory across processes</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
                     <div class="comp-box s-novo" onclick="openModal('stateStore')">
                         <div class="font-bold text-sm mb-1"><i class="fas fa-database text-indigo-400 mr-1"></i>StateStore</div>
                         <div class="text-[11px] text-slate-400 mb-2">Step, cost, and flow data: context, current feature, and terminal latch.</div>
@@ -597,8 +607,13 @@
                     </div>
                     <div class="comp-box s-adaptado" onclick="openModal('trace')">
                         <div class="font-bold text-sm mb-1"><i class="fas fa-chart-line text-fuchsia-400 mr-1"></i>Trace</div>
-                        <div class="text-[11px] text-slate-400 mb-2">One line per turn: step, command, outcome, chars, and context telemetry.</div>
+                        <div class="text-[11px] text-slate-400 mb-2">One line per COMPLETED turn: step, command, outcome, chars, and context telemetry.</div>
                         <div class="flex flex-wrap gap-1"><span class="dep-tag">→ trace.jsonl</span><span class="dep-tag">→ last-development.trace.jsonl</span></div>
+                    </div>
+                    <div class="comp-box s-adaptado" onclick="openModal('harnessLog')">
+                        <div class="font-bold text-sm mb-1"><i class="fas fa-file-lines text-rose-300 mr-1"></i>HarnessLog</div>
+                        <div class="text-[11px] text-slate-400 mb-2">Step entry/exit around every action, plus former stderr-only diagnostics — visible before a slow step finishes.</div>
+                        <div class="flex flex-wrap gap-1"><span class="dep-tag">→ harness.log</span></div>
                     </div>
                 </div>
             </div>
@@ -665,7 +680,7 @@
                     <div class="comp-box s-novo" onclick="openModal('prompts')">
                         <div class="font-bold text-sm mb-1"><i class="fas fa-file-code text-cyan-300 mr-1"></i>DevelopmentTasks.Prompt.cs</div>
                         <div class="text-[11px] text-slate-400 mb-2">State prompts, tokens, and dev-* skills used by the agent.</div>
-                        <div class="flex flex-wrap gap-1"><span class="dep-tag">→ $FEATURES</span><span class="dep-tag">→ $VERIFY_CMD</span><span class="dep-tag">→ skills/dev-*</span></div>
+                        <div class="flex flex-wrap gap-1"><span class="dep-tag">→ plan.json</span><span class="dep-tag">→ $VERIFY_CMD</span><span class="dep-tag">→ skills/dev-*</span></div>
                     </div>
                     <div class="comp-box s-auto" onclick="openModal('autoVerify')">
                         <div class="font-bold text-sm mb-1"><i class="fas fa-robot text-violet-300 mr-1"></i>DevelopmentTasks.Verify.cs</div>
@@ -699,13 +714,13 @@
                                 <td class="py-2 pr-3 text-slate-500">—</td>
                                 <td class="py-2 pr-3">pending>0 → resume (bearings); otherwise FeatureStore.Reset + specs/interactive init</td>
                                 <td class="py-2 pr-3">dev-initializer</td>
-                                <td class="py-2 text-amber-200">$FEATURES · $VERIFY_CMD · $TARGET_DIR</td>
+                                <td class="py-2 text-amber-200">$VERIFY_CMD · $TARGET_DIR</td>
                                 <td class="py-2 text-slate-500">driver</td>
                             </tr>
                             <tr class="border-b border-slate-800 cursor-pointer hover:bg-slate-800/30" onclick="openModal('plan')">
                                 <td class="py-2 pr-3 font-bold text-indigo-300">plan</td>
-                                <td class="py-2 pr-3">feature JSON array</td>
-                                <td class="py-2 pr-3">NotEmpty; Parse validates array</td>
+                                <td class="py-2 pr-3">verify_cmd, target_dir (args) — feature array via <span class="mono">.harness/plan.json</span> file</td>
+                                <td class="py-2 pr-3">Parse reads plan.json; empty/invalid → retry</td>
                                 <td class="py-2 pr-3">feature_list.json (with dependsOn) · RunConfigStore</td>
                                 <td class="py-2 pr-3">dev-implement (normal) / dev-smoke (repair)</td>
                                 <td class="py-2 text-amber-200">implement (no args)</td>
@@ -923,14 +938,14 @@
                 title: "TaskRegistry.Dispatch", icon: "fa-microchip", badge: "ENGINE", badgeClass: "b-adaptado",
                 color: "bg-indigo-900 text-indigo-300 border-2 border-indigo-400",
                 desc: "Domain-agnostic dispatch: parses the envelope, applies guards, validates the response, and routes value to the function registered by the flow.",
-                list: ["The harness decides the next task", "Invalid commands return typed errors", "Step, cost, and timeout guards prevent runaway loops", "budget/timeout write a persistent terminal stop", "Trace records outcome, context, and instruction chars"],
+                list: ["The harness decides the next task", "Invalid commands return typed errors", "Step, cost, and timeout guards prevent runaway loops", "budget/timeout/fault write a persistent terminal stop — an unhandled exception in a task is caught and reported as fault, never a raw crash", "Trace records outcome, context, and instruction chars", "HarnessLog records step entry (before the action runs) and exit, so a slow or crashed step still leaves evidence"],
                 files: "src/dotnet/Harness.Engine/TaskRegistry.cs · src/dotnet/Harness.Engine/HarnessHost.cs"
             },
             promptFormatter: {
                 title: "PromptFormatter", icon: "fa-file-code", badge: "ENGINE", badgeClass: "b-adaptado",
                 color: "bg-cyan-900/50 text-cyan-400 border border-cyan-500/50",
                 desc: "Builds the instruction block delivered to the driver with input, response schema, and step-specific skills.",
-                list: ["Injects only the required skill", "Defines the JSON expected on the next turn", "Substitutes tokens such as $FEATURES, $VERIFY_CMD, $TARGET_DIR, and $COMMIT"],
+                list: ["Injects only the required skill", "Defines the JSON expected on the next turn", "Substitutes tokens such as $VERIFY_CMD and $TARGET_DIR", "Inline() collapses a multi-line artifact (a skill file, the initializer's brief) onto one line, escaping real newlines as literal \\n — keeps every <skill>/<brief> tag one-line in the emitted prompt"],
                 files: "src/dotnet/Harness.Engine/PromptFormatter.cs · src/dotnet/Flows.Development/DevelopmentTasks.Prompt.cs"
             },
             harnessConfig: {
@@ -978,9 +993,16 @@
             trace: {
                 title: "Trace", icon: "fa-chart-line", badge: "ENGINE", badgeClass: "b-adaptado",
                 color: "bg-fuchsia-900/50 text-fuchsia-400 border border-fuchsia-500/50",
-                desc: "Operational execution trail. It audits the path taken by the flow without depending on chat history.",
-                list: ["One line per turn in trace.jsonl", "Outcome: instruction, stop, error, budget, or timeout", "Records emitted chars, feature label, and context telemetry when available", "PrevHash chains lines so retroactive edits become detectable", "Final snapshot in last-development.trace.jsonl"],
+                desc: "Operational execution trail. It audits the path taken by the flow without depending on chat history. Records only COMPLETED turns — see HarnessLog for what happens while a step is still running.",
+                list: ["One line per turn in trace.jsonl", "Outcome: instruction, stop, error, budget, timeout, or fault", "fault = an unhandled exception inside a task action (a harness bug), distinct from error (a typed protocol error the driver can fix and resend)", "Records emitted chars, feature label, and context telemetry when available", "PrevHash chains lines so retroactive edits become detectable", "Final snapshot in last-development.trace.jsonl"],
                 files: "src/dotnet/Harness.Engine/Trace.cs · .harness/trace.jsonl"
+            },
+            harnessLog: {
+                title: "HarnessLog", icon: "fa-file-lines", badge: "ENGINE", badgeClass: "b-adaptado",
+                color: "bg-rose-900/50 text-rose-300 border border-rose-500/50",
+                desc: "Append-only, human-readable engine log — the persisted counterpart to what used to reach only ephemeral stderr, plus the step entry/exit markers that make an in-flight step observable before it completes. Deliberately separate from Trace: trace.jsonl keeps its hash-chained, one-line-per-completed-turn contract for evaluators and cost tooling; harness.log is free-form and carries no such contract.",
+                list: ["Logs '[step N] enter <command>' BEFORE the action runs, and 'exit outcome=... bytes=...' after — so a hung or crashed step still leaves evidence it was picked up", "Replaces ~30+ scattered stderr-only diagnostics (guard cutoffs, store I/O failures) across the engine — same messages, now also persisted", "Info level: liveness events (entry/exit), file only", "Error level: real failures — written to stderr too, so existing visible behavior is unchanged", "Reset alongside Trace/StateStore on a genuine start"],
+                files: "src/dotnet/Harness.Engine/HarnessLog.cs · .harness/harness.log"
             },
             docsReader: {
                 title: "DocsReader", icon: "fa-book-open", badge: "ENGINE", badgeClass: "b-adaptado",
@@ -1028,7 +1050,7 @@
                 title: "Plan", icon: "fa-map", badge: "FLOW", badgeClass: "b-novo",
                 color: "bg-indigo-900/50 text-indigo-400 border border-indigo-500/50",
                 desc: "First run phase: discover the target, verification command, and executable feature list (with dependencies).",
-                list: ["start resets execution ONLY when there is no pending feature to resume", "plan persists the backlog with dependsOn, validating the graph (no cycles, no missing ids)", "The plan is capped at 10 features (dependencies on removed ids are cleaned up)", "verify_cmd and target_dir go into RunConfigStore, not StateStore"],
+                list: ["start resets execution ONLY when there is no pending feature to resume", "The driver writes the feature array to .harness/plan.json (a real file) — plan's envelope args carry only verify_cmd/target_dir", "plan persists the backlog with dependsOn, validating the graph (no cycles, no missing ids)", "The plan is capped at 10 features (dependencies on removed ids are cleaned up)", "verify_cmd and target_dir go into RunConfigStore, not StateStore"],
                 files: "src/dotnet/Flows.Development/DevelopmentTasks.cs"
             },
             cycleSession: {
@@ -1070,7 +1092,7 @@
                 title: "DevelopmentTasks.Prompt.cs", icon: "fa-file-code", badge: "FLOW", badgeClass: "b-novo",
                 color: "bg-cyan-900/50 text-cyan-400 border border-cyan-500/50",
                 desc: "Development-specific prompts and tokens.",
-                list: ["Tokens: $FEATURES, $VERIFY_CMD, $TARGET_DIR, $SUMMARY, $RESULT, $COMMIT", "Actual skills: dev-initializer, dev-implement, dev-smoke, dev-verify, dev-handoff", "Normal bearings, smoke, and pick are internal work and receive no driver skill", "Each driver prompt requests only the next action"],
+                list: ["Tokens: $VERIFY_CMD, $TARGET_DIR — the feature array is written to .harness/plan.json as a real file instead, not carried as a token", "Actual skills: dev-initializer, dev-implement, dev-smoke, dev-verify, dev-handoff", "Normal bearings, smoke, and pick are internal work and receive no driver skill", "Each driver prompt requests only the next action", "The <brief> block (initializer prompt) is inlined onto a single line — same escaping PromptFormatter already applies to injected skills"],
                 files: "src/dotnet/Flows.Development/DevelopmentTasks.Prompt.cs"
             },
             start: {
@@ -1083,9 +1105,9 @@
             plan: {
                 title: "plan", icon: "fa-map", badge: "STATE", badgeClass: "b-novo",
                 color: "bg-indigo-900/50 text-indigo-400 border border-indigo-500/50",
-                desc: "Transforms the initial response into an executable backlog.",
-                list: ["Receives a JSON array", "Caps at MaxFeatures = 10 and cleans dependencies on removed items", "Writes feature_list.json after validating ids and dependsOn cycles", "Persists verify_cmd and target_dir in RunConfigStore", "Continues automatically to bearings → smoke → pick"],
-                files: ".harness/feature_list.json"
+                desc: "Transforms the initial response into an executable backlog. The feature array itself is not an envelope token: the driver writes it as a real file with its file-write tool — escaping a large JSON document as a single-line string value inside another JSON object proved to be a format-compliance task some drivers fail at.",
+                list: ["Reads the feature array from .harness/plan.json (a real file, not an envelope arg); empty/unparseable → re-request the same file", "Caps at MaxFeatures = 10 and cleans dependencies on removed items", "Writes feature_list.json after validating ids and dependsOn cycles", "Persists verify_cmd and target_dir (envelope args, index 0/1) in RunConfigStore", "Continues automatically to bearings → smoke → pick"],
+                files: ".harness/plan.json · .harness/feature_list.json"
             },
             bearings: {
                 title: "bearings", icon: "fa-compass", badge: "STATE", badgeClass: "b-novo",
