@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -106,6 +107,23 @@ func verifyLogPath(featureId int) string {
 	return filepath.Join(".harness", "logs", fmt.Sprintf("verify-feature-%d.log", featureId))
 }
 
+// verifyLogPathIndexed mirrors verifyLogPath but for one entry of a parallel VerifyCmds run
+// (1-based n) — see writeVerifyLogIndexed.
+func verifyLogPathIndexed(featureId, n int) string {
+	return filepath.Join(".harness", "logs", fmt.Sprintf("verify-feature-%d-%d.log", featureId, n))
+}
+
+// withVerifyCmds layers VerifyCmds onto whatever RunConfig planWith/Plan already persisted,
+// preserving TargetDir/VerifyCmd/RunId — Plan's envelope protocol only carries a single
+// verify command, so tests reach past it to set the list directly, the same way production
+// code would once `plan` grows support for it.
+func withVerifyCmds(t *testing.T, cmds []string) {
+	t.Helper()
+	config := engine.LoadRunConfig()
+	config.VerifyCmds = cmds
+	engine.WriteRunConfig(config)
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -140,7 +158,7 @@ func TestStart_NoPendingFeature_ResetsFeatureListAndRunConfig(t *testing.T) {
 	if len(engine.LoadFeatures()) != 0 {
 		t.Fatal("expected empty feature list")
 	}
-	if got := engine.LoadRunConfig(); got != engine.DefaultRunConfig() {
+	if got := engine.LoadRunConfig(); !reflect.DeepEqual(got, engine.DefaultRunConfig()) {
 		t.Fatalf("unexpected run config: %+v", got)
 	}
 }
@@ -353,7 +371,7 @@ func TestPlan_InvalidFeatures_ReemitsThePlan(t *testing.T) {
 	if len(engine.LoadFeatures()) != 0 {
 		t.Fatal("expected no features")
 	}
-	if got := engine.LoadRunConfig(); got != engine.DefaultRunConfig() {
+	if got := engine.LoadRunConfig(); !reflect.DeepEqual(got, engine.DefaultRunConfig()) {
 		t.Fatalf("expected nothing persisted, got %+v", got)
 	}
 	if !strings.Contains(result, `"value":"plan"`) || strings.Contains(result, "NEW SESSION") {
@@ -583,7 +601,7 @@ func TestPlan_CyclicDependsOn_ReemitsThePlan(t *testing.T) {
 	if len(engine.LoadFeatures()) != 0 {
 		t.Fatal("expected empty features")
 	}
-	if got := engine.LoadRunConfig(); got != engine.DefaultRunConfig() {
+	if got := engine.LoadRunConfig(); !reflect.DeepEqual(got, engine.DefaultRunConfig()) {
 		t.Fatalf("unexpected run config: %+v", got)
 	}
 	if !strings.Contains(result, `"value":"plan"`) || strings.Contains(result, "NEW SESSION") {
@@ -673,5 +691,96 @@ func TestPick_NoReadyFeatureButPending_StopsWithoutReportingDone(t *testing.T) {
 	}
 	if engine.PendingFeatureCount() != 2 {
 		t.Fatalf("expected nothing marked passed, pending=%d", engine.PendingFeatureCount())
+	}
+}
+
+func TestImplement_ParallelVerifyCmds_AllPass_AggregatesAndLogsEachIndex(t *testing.T) {
+	targetDir, _ := isolate(t)
+	planWith(targetDir) // picks id 2 (priority 1)
+	withVerifyCmds(t, []string{"true", "true"})
+
+	result := Implement(cmd("implement", "implemented"))
+
+	if !strings.Contains(result, `"value":"implement"`) { // id 1 still pending
+		t.Fatalf("unexpected result: %s", result)
+	}
+	if engine.PendingFeatureCount() != 1 {
+		t.Fatalf("unexpected pending count: %d", engine.PendingFeatureCount())
+	}
+	if !strings.Contains(state(currentFeatureVerifyKey), "PASS: all 2 verify commands passed") {
+		t.Fatalf("unexpected verify result: %s", state(currentFeatureVerifyKey))
+	}
+	for _, n := range []int{1, 2} {
+		if _, err := os.Stat(verifyLogPathIndexed(2, n)); err != nil {
+			t.Fatalf("expected log #%d to exist: %v", n, err)
+		}
+	}
+}
+
+func TestImplement_ParallelVerifyCmds_OneFails_AggregateFailIdentifiesCommandAndFeatureStaysPending(t *testing.T) {
+	targetDir, _ := isolate(t)
+	planWith(targetDir)
+	withVerifyCmds(t, []string{"true", "false", "true"})
+
+	result := Implement(cmd("implement", "implemented"))
+
+	if !strings.Contains(result, "FAILED") || !strings.Contains(result, `"value":"implement"`) {
+		t.Fatalf("unexpected result: %s", result)
+	}
+	if !strings.Contains(result, "FAIL: 1 of 3 verify commands did not pass") || !strings.Contains(result, "#2 FAIL") {
+		t.Fatalf("expected aggregate failure to identify command #2: %s", result)
+	}
+	if engine.PendingFeatureCount() != 2 {
+		t.Fatalf("expected feature to remain pending, got %d", engine.PendingFeatureCount())
+	}
+	for _, n := range []int{1, 2, 3} {
+		if _, err := os.Stat(verifyLogPathIndexed(2, n)); err != nil {
+			t.Fatalf("expected log #%d to exist: %v", n, err)
+		}
+	}
+}
+
+func TestImplement_ParallelVerifyCmds_DisallowedOperator_RejectedWithoutRunningAnyCommand(t *testing.T) {
+	targetDir, _ := isolate(t)
+	planWith(targetDir)
+	withVerifyCmds(t, []string{"true", "true && false"})
+
+	result := Implement(cmd("implement", "implemented"))
+
+	if !strings.Contains(result, "FAILED") {
+		t.Fatalf("unexpected result: %s", result)
+	}
+	if !strings.Contains(result, "verify command #2 is empty or uses disallowed shell operators") {
+		t.Fatalf("expected rejection message: %s", result)
+	}
+	if engine.PendingFeatureCount() != 2 {
+		t.Fatalf("expected feature to remain pending, got %d", engine.PendingFeatureCount())
+	}
+	if _, err := os.Stat(verifyLogPathIndexed(2, 2)); err == nil {
+		t.Fatal("expected no log file written for the rejected command")
+	}
+}
+
+func TestImplement_EmptyVerifyCmds_FallsBackToLegacySingleVerifyCmdPath(t *testing.T) {
+	targetDir, _ := isolate(t)
+	planWith(targetDir)
+	config := engine.LoadRunConfig()
+	config.VerifyCmd = "true"
+	config.VerifyCmds = []string{} // explicit empty, not nil — still falls back
+	engine.WriteRunConfig(config)
+
+	result := Implement(cmd("implement", "implemented"))
+
+	if !strings.Contains(result, `"value":"implement"`) {
+		t.Fatalf("unexpected result: %s", result)
+	}
+	if engine.PendingFeatureCount() != 1 {
+		t.Fatalf("unexpected pending count: %d", engine.PendingFeatureCount())
+	}
+	if _, err := os.Stat(verifyLogPath(2)); err != nil {
+		t.Fatalf("expected legacy single log path to exist: %v", err)
+	}
+	if _, err := os.Stat(verifyLogPathIndexed(2, 1)); err == nil {
+		t.Fatal("expected no indexed log when falling back to the legacy single-command path")
 	}
 }

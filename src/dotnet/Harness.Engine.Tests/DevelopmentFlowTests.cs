@@ -135,6 +135,9 @@ public class DevelopmentFlowTests : IDisposable
     private static string VerifyLogPath(int featureId) =>
         Path.Combine(".harness", "logs", $"verify-feature-{featureId}.log");
 
+    private static string VerifyLogPath(int featureId, int checkIndex) =>
+        Path.Combine(".harness", "logs", $"verify-feature-{featureId}-{checkIndex}.log");
+
     [Fact]
     public void Start_SemFeaturePendente_ResetaFeatureListERunConfig()
     {
@@ -470,6 +473,62 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Contains("no deterministic verify command", result);
         Assert.Contains("\"value\":\"implement\"", result);
         Assert.Equal(2, FeatureStore.PendingCount());
+    }
+
+    [Fact]
+    public void VerifyCmds_TodosPassam_AgregaComoPassEGeraUmLogPorIndice()
+    {
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true", _targetDir));
+        RunConfigStore.Write(RunConfigStore.Load() with { VerifyCmds = ["true", "true"] });
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
+
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal(1, FeatureStore.PendingCount());
+        Assert.Contains("command: true", File.ReadAllText(VerifyLogPath(2, 1)));
+        Assert.Contains("command: true", File.ReadAllText(VerifyLogPath(2, 2)));
+    }
+
+    [Fact]
+    public void VerifyCmds_UmComandoFalha_AgregaComoFailEIdentificaOIndice()
+    {
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true", _targetDir));
+        RunConfigStore.Write(RunConfigStore.Load() with { VerifyCmds = ["true", "false", "true"] });
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
+
+        Assert.Contains("FAIL: 1 of 3 verify commands did not pass", result);
+        Assert.Contains("#2 FAIL", result);
+        Assert.Equal(2, FeatureStore.PendingCount());
+        Assert.Contains("command: false", File.ReadAllText(VerifyLogPath(2, 2)));
+        Assert.Contains("command: true", File.ReadAllText(VerifyLogPath(2, 3)));
+    }
+
+    [Fact]
+    public void VerifyCmds_ComOperadorDeShellEmUmaEntrada_NaoDisparaProcessos()
+    {
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true", _targetDir));
+        RunConfigStore.Write(RunConfigStore.Load() with { VerifyCmds = ["true", "true && false"] });
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
+
+        Assert.Contains("verify command #2", result);
+        Assert.Contains("disallowed shell operators", result);
+        Assert.Equal(2, FeatureStore.PendingCount());
+        Assert.False(File.Exists(VerifyLogPath(2, 1)));
+    }
+
+    [Fact]
+    public void VerifyCmds_ListaVaziaCaiNoCaminhoLegadoDeVerifyCmd()
+    {
+        DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true", _targetDir));
+        RunConfigStore.Write(RunConfigStore.Load() with { VerifyCmds = [] });
+
+        var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
+
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal(1, FeatureStore.PendingCount());
+        Assert.Contains("command: true", File.ReadAllText(VerifyLogPath(2)));
     }
 
     [Fact]

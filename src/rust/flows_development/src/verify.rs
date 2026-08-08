@@ -1,6 +1,8 @@
 //! Automatic verification: runs `verify-feature.sh <id>` in the target directory, with a
 //! time ceiling (derived from `harness_config.timeout_ms`) and a full log in
-//! `.harness/logs/`.
+//! `.harness/logs/`. When `RunConfig.verify_cmds` holds a non-empty list instead, every
+//! command in it runs CONCURRENTLY (one log each), with an AND verdict — see
+//! `try_parallel_configured_verify`.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -49,10 +51,16 @@ struct VerifyScriptResult {
     timed_out: bool,
 }
 
-pub fn try_automated_verify(feature_id: i32, target_dir: &Path, verify_cmd: &str) -> AutomatedVerifyResult {
+pub fn try_automated_verify(feature_id: i32, target_dir: &Path, verify_cmd: &str, verify_cmds: &[String]) -> AutomatedVerifyResult {
     let script = target_dir.join("verify-feature.sh");
     let (command, label, is_script) = if script.is_file() {
         (vec!["bash".to_string(), script.to_string_lossy().to_string(), feature_id.to_string()], format!("bash ./verify-feature.sh {feature_id}"), true)
+    } else if !verify_cmds.is_empty() {
+        // Configured as a list (RunConfig.verify_cmds): run every command concurrently,
+        // AND verdict, instead of the single-command path below. Takes precedence over
+        // `verify_cmd` but not over `verify-feature.sh`, same ordering as the single
+        // command had relative to the script.
+        return try_parallel_configured_verify(target_dir, verify_cmds, feature_id);
     } else {
         let args = configured_verify_argv(verify_cmd);
         if args.is_empty() { return AutomatedVerifyResult::missing(); }
@@ -60,7 +68,7 @@ pub fn try_automated_verify(feature_id: i32, target_dir: &Path, verify_cmd: &str
     };
 
     let result = run_verify_script(target_dir, &command);
-    let log_path = write_verify_log(target_dir, &label, feature_id, &result);
+    let log_path = write_verify_log(target_dir, &label, feature_id, &result, None);
 
     if result.timed_out {
         return AutomatedVerifyResult::failed(format!(
@@ -79,6 +87,89 @@ pub fn try_automated_verify(feature_id: i32, target_dir: &Path, verify_cmd: &str
         result.exit_code,
         verify_output_suffix(&result, &log_path)
     ))
+}
+
+/// Runs every entry in `commands` CONCURRENTLY (one `std::thread::spawn` each — no
+/// tokio/rayon in this workspace, mirroring the reader-thread pattern in
+/// `run_verify_script` and the abandon-on-timeout thread in
+/// `task_registry::run_with_timeout`), and ANDs the verdicts: passes only if every command
+/// exits 0. Each command gets its own log (`verify-feature-{id}-{n}.log`, 1-based `n`), and
+/// the aggregate message lists every command's outcome, not just the first failure.
+fn try_parallel_configured_verify(target_dir: &Path, commands: &[String], feature_id: i32) -> AutomatedVerifyResult {
+    // Tokenize everything up front, before launching any subprocess: a single disallowed
+    // command fails the whole check immediately, without side-launching the others.
+    let mut argvs: Vec<Vec<String>> = Vec::with_capacity(commands.len());
+    for (i, raw) in commands.iter().enumerate() {
+        let args = configured_verify_argv(raw);
+        if args.is_empty() {
+            return AutomatedVerifyResult::failed(format!(
+                "FAIL: verify command #{} is empty or uses disallowed shell operators: {raw}",
+                i + 1
+            ));
+        }
+        argvs.push(args);
+    }
+
+    let target_dir_owned = target_dir.to_path_buf();
+    let handles: Vec<_> = argvs
+        .into_iter()
+        .map(|args| {
+            let target_dir = target_dir_owned.clone();
+            thread::spawn(move || {
+                let label = args.join(" ");
+                let result = run_verify_script(&target_dir, &args);
+                (label, result)
+            })
+        })
+        .collect();
+
+    let total = handles.len();
+    let mut failures = 0usize;
+    let mut lines: Vec<String> = Vec::with_capacity(total);
+    for (i, handle) in handles.into_iter().enumerate() {
+        let n = i + 1;
+        match handle.join() {
+            Ok((label, result)) => {
+                let log_path = write_verify_log(target_dir, &label, feature_id, &result, Some(n));
+                if result.timed_out {
+                    failures += 1;
+                    lines.push(format!(
+                        "#{n} TIMEOUT ({}): {label}{}",
+                        verify_timeout_description(),
+                        log_suffix(&log_path)
+                    ));
+                } else if result.exit_code == 0 {
+                    lines.push(format!("#{n} PASS: {label}{}", log_suffix(&log_path)));
+                } else {
+                    failures += 1;
+                    lines.push(format!(
+                        "#{n} FAIL (exit {}): {label}{}",
+                        result.exit_code,
+                        verify_output_suffix(&result, &log_path)
+                    ));
+                }
+            }
+            // A worker thread panicking (a bug, not a check failure) must not take down the
+            // whole verify step — treated as a failed check for this one command, the
+            // others' results are unaffected since each thread is independent.
+            Err(_) => {
+                failures += 1;
+                lines.push(format!(
+                    "#{n} FAIL: verify command panicked before completing: {}",
+                    commands[i]
+                ));
+            }
+        }
+    }
+
+    let joined = lines.join(" | ");
+    if failures == 0 {
+        AutomatedVerifyResult::passed(format!("PASS: all {total} verify commands passed. {joined}"))
+    } else {
+        AutomatedVerifyResult::failed(format!(
+            "FAIL: {failures} of {total} verify commands did not pass. {joined}"
+        ))
+    }
 }
 
 fn run_verify_script(target_dir: &Path, command: &[String]) -> VerifyScriptResult {
@@ -170,16 +261,22 @@ fn verify_timeout_description() -> String {
     }
 }
 
+// `check_index` distinguishes one of several concurrent verify commands (1-based, from
+// `try_parallel_configured_verify`) from the single-command path: `Some(n)` names the log
+// `verify-feature-{id}-{n}.log`, `None` keeps the original `verify-feature-{id}.log`.
 fn write_verify_log(
     target_dir: &Path,
     command: &str,
     feature_id: i32,
     result: &VerifyScriptResult,
+    check_index: Option<usize>,
 ) -> String {
     let relative_dir = ".harness/logs";
-    let relative_path: PathBuf = [relative_dir, &format!("verify-feature-{feature_id}.log")]
-        .iter()
-        .collect();
+    let file_name = match check_index {
+        Some(n) => format!("verify-feature-{feature_id}-{n}.log"),
+        None => format!("verify-feature-{feature_id}.log"),
+    };
+    let relative_path: PathBuf = [relative_dir, &file_name].iter().collect();
     let display_path = relative_path.to_string_lossy().replace('\\', "/");
 
     let full_path = relative_path.clone();

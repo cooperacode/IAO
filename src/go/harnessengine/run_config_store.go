@@ -21,6 +21,15 @@ type RunConfig struct {
 	VerifyCmd string `json:"verifyCmd"`
 	TargetDir string `json:"targetDir"`
 	RunId     string `json:"runId"`
+	// VerifyCmds optionally holds a list of independent verify commands that run
+	// CONCURRENTLY (AND logic: the feature passes only if every one of them exits 0).
+	// nil means "not configured" — a run_config.json written before this field existed
+	// simply lacks the key, and encoding/json leaves the field at its zero value (nil) on
+	// unmarshal, which is indistinguishable from an explicitly empty list; either way, the
+	// single-command VerifyCmd path is used. Deliberately not normalized to []string{}
+	// after load (unlike Feature.DependsOn) — nothing downstream needs to tell "absent"
+	// from "explicitly empty" apart, both simply mean "fall back to VerifyCmd".
+	VerifyCmds []string `json:"verifyCmds"`
 }
 
 // DefaultRunConfig returns the zero-value run config (target dir ".").

@@ -19,6 +19,14 @@ const FILE_PATH: &str = ".harness/run_config.json";
 pub struct RunConfig {
     #[serde(rename = "verifyCmd", default)]
     pub verify_cmd: String,
+    /// Independent verify commands run CONCURRENTLY instead of the single `verify_cmd`,
+    /// with an AND verdict (passes only if every one exits 0). An empty `Vec` — the
+    /// default, and what an old `run_config.json` written before this field existed
+    /// deserializes to — means "not configured", so callers fall back to `verify_cmd`
+    /// unchanged. Plain `Vec` with `#[serde(default)]` (not `Option`), same convention as
+    /// `Feature::depends_on` in `feature_store.rs`.
+    #[serde(rename = "verifyCmds", default)]
+    pub verify_cmds: Vec<String>,
     #[serde(rename = "targetDir", default = "default_target_dir")]
     pub target_dir: String,
     #[serde(rename = "runId", default)]
@@ -33,6 +41,7 @@ impl Default for RunConfig {
     fn default() -> Self {
         Self {
             verify_cmd: String::new(),
+            verify_cmds: Vec::new(),
             target_dir: default_target_dir(),
             run_id: String::new(),
         }
@@ -119,6 +128,7 @@ mod tests {
 
         write(&RunConfig {
             verify_cmd: "npm test".to_string(),
+            verify_cmds: Vec::new(),
             target_dir: "app".to_string(),
             run_id: String::new(),
         });
@@ -136,6 +146,7 @@ mod tests {
 
         write(&RunConfig {
             verify_cmd: "npm test".to_string(),
+            verify_cmds: Vec::new(),
             target_dir: "app".to_string(),
             run_id: "019b1ed0-6bea-7bc1-a790-0bdb42bb8ab6".to_string(),
         });
@@ -163,6 +174,7 @@ mod tests {
 
         write(&RunConfig {
             verify_cmd: "npm test".to_string(),
+            verify_cmds: Vec::new(),
             target_dir: "app".to_string(),
             run_id: String::new(),
         });
@@ -178,5 +190,46 @@ mod tests {
         let _iso = Isolated::new();
 
         reset();
+    }
+
+    #[test]
+    fn write_e_load_fazem_roundtrip_de_verify_cmds() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        write(&RunConfig {
+            verify_cmd: "npm test".to_string(),
+            verify_cmds: vec!["npm run lint".to_string(), "npm run typecheck".to_string()],
+            target_dir: "app".to_string(),
+            run_id: String::new(),
+        });
+
+        let loaded = load();
+
+        assert_eq!(
+            loaded.verify_cmds,
+            vec!["npm run lint".to_string(), "npm run typecheck".to_string()]
+        );
+    }
+
+    #[test]
+    fn load_run_config_legado_sem_verify_cmds_nao_lanca() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        // Simulates a run_config.json written by an earlier version of the harness,
+        // without the "verifyCmds" key — proves backward compatibility: it's treated as
+        // "not configured" (empty Vec), and the legacy verify_cmd is unaffected.
+        std::fs::create_dir_all(".harness").unwrap();
+        std::fs::write(
+            ".harness/run_config.json",
+            r#"{"verifyCmd":"npm test","targetDir":"app","runId":"abc"}"#,
+        )
+        .unwrap();
+
+        let loaded = load();
+
+        assert!(loaded.verify_cmds.is_empty());
+        assert_eq!(loaded.verify_cmd, "npm test");
     }
 }

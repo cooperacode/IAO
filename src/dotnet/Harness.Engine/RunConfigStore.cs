@@ -75,4 +75,12 @@ public static class RunConfigStore
 /// positional parameter defaults to <c>""</c> so it doesn't break the
 /// <c>new RunConfig(verifyCmd, targetDir)</c> calls already spread across the tests.
 /// </summary>
-public record RunConfig(string VerifyCmd = "", string TargetDir = ".", string RunId = "");
+/// <remarks>
+/// <see cref="VerifyCmds"/> is NULLABLE on purpose, same reasoning as
+/// <see cref="Feature.DependsOn"/>: <c>null</c> means "absent from an older
+/// <c>run_config.json</c>" — the single-command <see cref="VerifyCmd"/> path is used. A
+/// non-empty array switches <c>Flows.Development</c> to running every entry concurrently
+/// and requiring all to pass (see <c>DevelopmentTasks.TryParallelConfiguredVerify</c>).
+/// </remarks>
+public record RunConfig(
+    string VerifyCmd = "", string TargetDir = ".", string RunId = "", string[]? VerifyCmds = null);

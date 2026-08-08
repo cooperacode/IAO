@@ -187,7 +187,13 @@ viable.
   Deliberately *outside* `state.json`: `TaskRegistry` resets `state.json`
   unconditionally on every `start`, but a resumed run (see Figure 6) still
   needs these two values for `smoke`/`verify` to work — so they live in a
-  store with their own life cycle and **survive the `start` reset**.
+  store with their own life cycle and **survive the `start` reset**. It also
+  accepts an optional `verify_cmds` array (nullable, absent by default): when
+  set, `implement`'s auto-verify runs every entry concurrently — an
+  independent gate each (lint, typecheck, tests, build, ...), none needing
+  another's output — and requires all of them to pass, one log per entry
+  under `.harness/logs/`. This is the harness's one fan-out/converge
+  ("Diamond") execution path; every other step is strictly sequential.
   (`src/dotnet/Harness.Engine/RunConfigStore.cs` → `.harness/run_config.json`)
 - **`FeatureStore`** — the executable backlog: `id`, `title`, `priority`,
   `dependsOn`, `passes`. Validates the dependency graph on `plan` (rejects
@@ -278,7 +284,7 @@ and the deterministic fallback remains active.
 | `smoke` | Internal compatibility command: runs `./init.sh` with timeout and exit-code classification before selecting a feature |
 | `pick` | **Harness decision, no driver input.** Selects the highest-priority feature among the ones whose dependencies already passed |
 | `implement` | Edits code and tests for the selected feature, then **tries to close it automatically** |
-| *auto-verify* | The harness runs `verify-feature.sh`, or the configured `verify_cmd` when the script is absent, with timeout and logs — no driver turn spent |
+| *auto-verify* | The harness runs `verify-feature.sh`, or the configured `verify_cmd`/`verify_cmds` when the script is absent, with timeout and logs — no driver turn spent |
 | *auto-handoff* | On a pass, the harness updates `progress.txt`, commits via `GitCommand`, and marks the feature — again, no driver turn |
 | `stop` | When every feature passes, or no pending feature is ready (blocked by an unmet dependency) |
 

@@ -74,7 +74,11 @@ public static partial class DevelopmentTasks
             return AutomatedVerifyResult.Failed($"FAIL: invalid target directory: {ex.Message}");
         }
 
-        var command = RunConfigStore.Load().VerifyCmd.Trim();
+        var config = RunConfigStore.Load();
+        if (config.VerifyCmds is { Length: > 0 } cmds)
+            return TryParallelConfiguredVerify(targetDir, cmds);
+
+        var command = config.VerifyCmd.Trim();
         var tokens = TokenizeCommand(command);
         if (tokens.Count == 0)
             return AutomatedVerifyResult.Failed("FAIL: no deterministic verify command is configured");
@@ -100,6 +104,66 @@ public static partial class DevelopmentTasks
         return AutomatedVerifyResult.Failed(
             $"FAIL: verify command failed (exit {result.ExitCode})"
             + VerifyOutputSuffix(result, logPath));
+    }
+
+    /// <summary>
+    /// Diamond pattern applied to verification: every entry in
+    /// <see cref="RunConfig.VerifyCmds"/> is an independent gate (lint, typecheck, tests,
+    /// build, ...) — none needs another's output, so they fan out concurrently and converge
+    /// into a single AND'd verdict, same "all criteria must clear" semantics as the rest of
+    /// the harness. Each command goes through the same <see cref="TokenizeCommand"/> as the
+    /// single-command path (identical shell-operator rejection, no new trust boundary) and
+    /// gets its own log file so a failure in command #2 doesn't bury the evidence from #1
+    /// and #3.
+    /// </summary>
+    private static AutomatedVerifyResult TryParallelConfiguredVerify(string targetDir, IReadOnlyList<string> commands)
+    {
+        var checks = commands
+            .Select((cmd, i) => (Index: i + 1, Command: cmd.Trim(), Tokens: TokenizeCommand(cmd.Trim())))
+            .ToList();
+
+        var invalid = checks.FirstOrDefault(c => c.Tokens.Count == 0);
+        if (invalid.Command is not null)
+            return AutomatedVerifyResult.Failed(
+                $"FAIL: verify command #{invalid.Index} is empty or uses disallowed shell operators: {invalid.Command}");
+
+        // Each RunCommand call is a pure function over (targetDir, tokens) with no shared
+        // mutable state and no unhandled-exception surface (Process.Start failures are
+        // already caught inside RunProcess and returned as a result, not thrown) — safe to
+        // fan out with no locking.
+        var tasks = checks.Select(c => Task.Run(() => RunCommand(targetDir, c.Tokens))).ToArray();
+        Task.WaitAll(tasks);
+
+        var featureId = int.TryParse(State(CurrentFeatureIdKey), out var id) ? id : 0;
+        var lines = new List<string>();
+        var failures = 0;
+
+        for (var i = 0; i < checks.Count; i++)
+        {
+            var (index, command, _) = checks[i];
+            var result = tasks[i].Result;
+            var logPath = WriteVerifyLog(targetDir, command, featureId, result, command, checkIndex: index);
+
+            if (result.TimedOut)
+            {
+                failures++;
+                lines.Add($"#{index} TIMEOUT ({VerifyTimeoutDescription()}): {command}{LogSuffix(logPath)}");
+            }
+            else if (result.ExitCode != 0)
+            {
+                failures++;
+                lines.Add($"#{index} FAIL (exit {result.ExitCode}): {command}{VerifyOutputSuffix(result, logPath)}");
+            }
+            else
+            {
+                lines.Add($"#{index} PASS: {command}{LogSuffix(logPath)}");
+            }
+        }
+
+        var summary = string.Join(" | ", lines);
+        return failures == 0
+            ? AutomatedVerifyResult.Passed($"PASS: all {checks.Count} verify commands passed. {summary}")
+            : AutomatedVerifyResult.Failed($"FAIL: {failures} of {checks.Count} verify commands did not pass. {summary}");
     }
 
     private static AutomatedSmokeResult TryAutomatedSmoke()
@@ -291,10 +355,14 @@ public static partial class DevelopmentTasks
         string script,
         int featureId,
         VerifyScriptResult result,
-        string? command = null)
+        string? command = null,
+        int? checkIndex = null)
     {
         const string relativeDir = ".harness/logs";
-        var relativePath = Path.Combine(relativeDir, $"verify-feature-{featureId}.log");
+        var fileName = checkIndex is { } n
+            ? $"verify-feature-{featureId}-{n}.log"
+            : $"verify-feature-{featureId}.log";
+        var relativePath = Path.Combine(relativeDir, fileName);
         var displayPath = relativePath.Replace('\\', '/');
 
         try

@@ -23,21 +23,40 @@ class RunConfig:
     """Verify command, target directory, and run identity (RFC §6.4), all captured once by
     `plan`. `run_id` is generated only on a genuinely new run — the same moment `write()`
     is called after `reset()` — and survives every resume because this file isn't touched
-    when `start` decides there's pending work (see the module docstring)."""
+    when `start` decides there's pending work (see the module docstring).
+
+    `verify_cmds` is NULLABLE on purpose, same reasoning as `Feature.depends_on`: `None`
+    means "absent from an older run_config.json" — the single-command `verify_cmd` path is
+    used. A non-empty tuple switches flows_development to running every entry concurrently
+    and requiring all to pass (see `tasks._try_parallel_configured_verify`).
+    """
 
     verify_cmd: str = ""
     target_dir: str = "."
     run_id: str = ""
+    verify_cmds: tuple[str, ...] | None = None
+
+    @property
+    def verify_cmds_list(self) -> tuple[str, ...]:
+        return self.verify_cmds if self.verify_cmds is not None else ()
 
     def to_dict(self) -> dict[str, object]:
-        return {"verifyCmd": self.verify_cmd, "targetDir": self.target_dir, "runId": self.run_id}
+        return {
+            "verifyCmd": self.verify_cmd,
+            "targetDir": self.target_dir,
+            "runId": self.run_id,
+            "verifyCmds": list(self.verify_cmds) if self.verify_cmds is not None else None,
+        }
 
     @staticmethod
     def from_dict(payload: dict[str, object]) -> "RunConfig":
+        verify_cmds_raw = payload.get("verifyCmds")
+        verify_cmds = tuple(str(x) for x in verify_cmds_raw) if isinstance(verify_cmds_raw, list) else None
         return RunConfig(
             verify_cmd=str(payload.get("verifyCmd") or ""),
             target_dir=str(payload.get("targetDir") or "."),
             run_id=str(payload.get("runId") or ""),
+            verify_cmds=verify_cmds,
         )
 
 

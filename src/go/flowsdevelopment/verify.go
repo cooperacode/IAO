@@ -43,9 +43,19 @@ func tryAutomatedVerify() automatedVerifyResult {
 	}
 
 	script := filepath.Join(targetDir, "verify-feature.sh")
+	isScript := fileExistsLocal(script)
+
+	// verify-feature.sh still wins over everything else (unchanged precedent). Below that,
+	// a configured list of commands (VerifyCmds) takes priority over the single configured
+	// VerifyCmd — a non-empty list is a strictly more specific choice by whoever ran `plan`.
+	if !isScript {
+		if commands := engine.LoadRunConfig().VerifyCmds; len(commands) > 0 {
+			return tryParallelConfiguredVerify(targetDir, commands, featureId)
+		}
+	}
+
 	command := []string{"bash", script, strconv.Itoa(featureId)}
 	label := fmt.Sprintf("bash ./verify-feature.sh %d", featureId)
-	isScript := fileExistsLocal(script)
 	if !isScript {
 		command = configuredVerifyArgv(engine.LoadRunConfig().VerifyCmd)
 		if len(command) == 0 {
@@ -115,6 +125,96 @@ func runVerifyScript(targetDir string, command []string) verifyScriptResult {
 	}
 }
 
+// parallelVerifyOutcome is one command's contribution to the aggregate verdict computed by
+// tryParallelConfiguredVerify — carried back over a channel, keyed by its original 0-based
+// position so results can be reassembled in the order the commands were configured in,
+// regardless of which goroutine finishes first.
+type parallelVerifyOutcome struct {
+	index  int
+	passed bool
+	line   string
+}
+
+// tryParallelConfiguredVerify runs every entry of RunConfig.VerifyCmds CONCURRENTLY and
+// combines them with AND logic: the feature only passes if every command exits 0. Each
+// command gets its own log file (verify-feature-{featureId}-{n}.log, 1-based) so concurrent
+// runs never race on the same file — see writeVerifyLogIndexed.
+//
+// Tokenization (configuredVerifyArgv, the same allowlist the single-VerifyCmd path already
+// uses) happens for ALL commands up front, before any subprocess is launched: since the
+// verdict is AND, a single disallowed command already dooms the whole check, so there is no
+// reason to pay for concurrent subprocesses whose result cannot change the outcome.
+func tryParallelConfiguredVerify(targetDir string, commands []string, featureId int) automatedVerifyResult {
+	argvs := make([][]string, len(commands))
+	for i, raw := range commands {
+		argv := configuredVerifyArgv(raw)
+		if len(argv) == 0 {
+			return failedVerify(fmt.Sprintf(
+				"FAIL: verify command #%d is empty or uses disallowed shell operators: %s", i+1, raw))
+		}
+		argvs[i] = argv
+	}
+
+	// One goroutine per command, same idiom as runVerifyScript's own timeout race and
+	// TaskRegistry.runWithTimeout: goroutine + buffered channel, no third-party library.
+	// The channel is sized to the command count so no goroutine blocks trying to send.
+	outcomes := make(chan parallelVerifyOutcome, len(commands))
+	for i, argv := range argvs {
+		go func(index int, argv []string, raw string) {
+			outcomes <- runOneConfiguredVerify(targetDir, argv, raw, featureId, index)
+		}(i, argv, commands[i])
+	}
+
+	ordered := make([]parallelVerifyOutcome, len(commands))
+	for range argvs {
+		o := <-outcomes
+		ordered[o.index] = o
+	}
+
+	lines := make([]string, len(ordered))
+	failures := 0
+	for i, o := range ordered {
+		lines[i] = o.line
+		if !o.passed {
+			failures++
+		}
+	}
+	joined := strings.Join(lines, " | ")
+
+	if failures == 0 {
+		return passedVerify(fmt.Sprintf("PASS: all %d verify commands passed. %s", len(commands), joined))
+	}
+	return failedVerify(fmt.Sprintf("FAIL: %d of %d verify commands did not pass. %s", failures, len(commands), joined))
+}
+
+// runOneConfiguredVerify runs a single already-tokenized verify command (index is 0-based;
+// display uses the 1-based n) and formats its line for the aggregate message, reusing the
+// same suffix helpers (logSuffix, verifyOutputSuffix, firstMeaningfulLine/snippet) the
+// single-command path already relies on.
+func runOneConfiguredVerify(targetDir string, argv []string, raw string, featureId, index int) parallelVerifyOutcome {
+	n := index + 1
+	result := runVerifyScript(targetDir, argv)
+	logPath := writeVerifyLogIndexed(targetDir, raw, featureId, n, result)
+
+	if result.TimedOut {
+		return parallelVerifyOutcome{
+			index: index,
+			line:  fmt.Sprintf("#%d TIMEOUT (%s): %s%s", n, verifyTimeoutDescription(), raw, logSuffix(logPath)),
+		}
+	}
+	if result.ExitCode == 0 {
+		return parallelVerifyOutcome{
+			index:  index,
+			passed: true,
+			line:   fmt.Sprintf("#%d PASS: %s%s", n, raw, logSuffix(logPath)),
+		}
+	}
+	return parallelVerifyOutcome{
+		index: index,
+		line:  fmt.Sprintf("#%d FAIL (exit %d): %s%s", n, result.ExitCode, raw, verifyOutputSuffix(result, logPath)),
+	}
+}
+
 func exitCodeOf(err error) int {
 	if err == nil {
 		return 0
@@ -142,8 +242,24 @@ func verifyTimeoutDescription() string {
 	return fmt.Sprintf("%dms", timeoutMs)
 }
 
+// writeVerifyLog writes the single-command verify log — unchanged behavior, now a thin
+// wrapper over writeVerifyLogIndexed with no check index (Go has no default parameters).
 func writeVerifyLog(targetDir, command string, featureId int, result verifyScriptResult) string {
-	relativePath := filepath.Join(".harness", "logs", fmt.Sprintf("verify-feature-%d.log", featureId))
+	return writeVerifyLogIndexed(targetDir, command, featureId, 0, result)
+}
+
+// writeVerifyLogIndexed writes one command's verify log. checkIndex is 1-based; 0 means
+// "the only command" and keeps the original, un-suffixed path
+// (.harness/logs/verify-feature-{featureId}.log) so single-VerifyCmd behavior and any
+// external tooling that reads that path are untouched. A positive checkIndex (one of several
+// concurrently run VerifyCmds) gets its own file, .harness/logs/verify-feature-{featureId}-{n}.log,
+// so concurrent commands never race on the same log.
+func writeVerifyLogIndexed(targetDir, command string, featureId, checkIndex int, result verifyScriptResult) string {
+	fileName := fmt.Sprintf("verify-feature-%d.log", featureId)
+	if checkIndex > 0 {
+		fileName = fmt.Sprintf("verify-feature-%d-%d.log", featureId, checkIndex)
+	}
+	relativePath := filepath.Join(".harness", "logs", fileName)
 	displayPath := strings.ReplaceAll(relativePath, "\\", "/")
 
 	fullPath := relativePath

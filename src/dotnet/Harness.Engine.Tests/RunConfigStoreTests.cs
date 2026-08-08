@@ -57,4 +57,30 @@ public class RunConfigStoreTests : IDisposable
     {
         RunConfigStore.Reset(); // no-op, must not throw
     }
+
+    [Fact]
+    public void WriteELoad_FazemRoundtripComVerifyCmds()
+    {
+        RunConfigStore.Write(new RunConfig("npm test", "app", VerifyCmds: ["npm run lint", "npm run typecheck"]));
+
+        var loaded = RunConfigStore.Load();
+
+        Assert.NotNull(loaded.VerifyCmds);
+        Assert.Equal(["npm run lint", "npm run typecheck"], loaded.VerifyCmds);
+    }
+
+    [Fact]
+    public void Load_RunConfigLegadoSemVerifyCmds_CarregaComNull()
+    {
+        // Simulates a run_config.json written by an earlier harness version, without the
+        // "verifyCmds" key — proves the single-command path stays the default.
+        Directory.CreateDirectory(".harness");
+        File.WriteAllText(".harness/run_config.json",
+            """{"verifyCmd":"npm test","targetDir":"app","runId":""}""");
+
+        var loaded = RunConfigStore.Load();
+
+        Assert.Equal("npm test", loaded.VerifyCmd);
+        Assert.Null(loaded.VerifyCmds);
+    }
 }

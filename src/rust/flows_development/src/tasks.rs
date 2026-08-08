@@ -132,6 +132,11 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     // concern, not part of the contract).
     run_config_store::write(&RunConfig {
         verify_cmd: std::env::var("HARNESS_VERIFY_CMD").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 0, "dotnet test")),
+        // Not sourced from the envelope (plan's two args stay verify_cmd/target_dir) — a
+        // list of independent commands isn't something the driver's plan turn hands over
+        // today. Left empty here (the "not configured" signal); tests set it directly via
+        // run_config_store after plan() to exercise the parallel path.
+        verify_cmds: Vec::new(),
         target_dir: std::env::var("HARNESS_TARGET_DIR").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 1, ".")),
         run_id: uuid::Uuid::new_v4().to_string(),
     });
@@ -207,7 +212,7 @@ pub fn implement(_envelope: Option<&Envelope>) -> String {
         // verification not attempted" path as a target_dir with no verify-feature.sh.
         if let Ok(target_dir) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
             let config = run_config_store::load();
-            let auto = verify::try_automated_verify(feature_id, &target_dir, &config.verify_cmd);
+            let auto = verify::try_automated_verify(feature_id, &target_dir, &config.verify_cmd, &config.verify_cmds);
             if auto.attempted {
                 state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
                 return if auto.success {
@@ -230,7 +235,7 @@ pub fn verify(_envelope: Option<&Envelope>) -> String {
     let config = run_config_store::load();
     let id = match state(CURRENT_FEATURE_ID_KEY).parse::<i32>() { Ok(v) => v, Err(_) => return prompts::verify_retry_prompt() };
     let target = match handoff::resolve_target_dir(&config.target_dir) { Ok(v) => v, Err(_) => return prompts::verify_retry_prompt() };
-    let auto = verify::try_automated_verify(id, &target, &config.verify_cmd);
+    let auto = verify::try_automated_verify(id, &target, &config.verify_cmd, &config.verify_cmds);
     if !auto.attempted { return prompts::verify_retry_prompt(); }
     state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
     if auto.success { handoff::complete_verified_feature(&auto.result) } else { prompts::fix_prompt(Some(&auto.result)) }
@@ -398,6 +403,16 @@ mod tests {
     fn advance_to_verify() {
         plan_default();
         implement(Some(&cmd("implement", vec!["implementei"])));
+    }
+
+    /// Overwrites the persisted `RunConfig.verify_cmds` after `plan_default()` already
+    /// wrote the run config — `plan()` itself doesn't take a list of commands from the
+    /// envelope (see the comment at its `verify_cmds: Vec::new()` write), so tests reach
+    /// into the store directly, same as `run_config_store`'s own tests do.
+    fn set_verify_cmds(cmds: Vec<&str>) {
+        let mut config = run_config_store::load();
+        config.verify_cmds = cmds.into_iter().map(|s| s.to_string()).collect();
+        run_config_store::write(&config);
     }
 
     fn write_verify_feature_script(target_dir: &std::path::Path, body: &str) {
@@ -815,6 +830,92 @@ mod tests {
         assert!(result.contains(r#""value":"implement"#));
         assert_eq!(feature_store::pending_count(), 2);
         assert!(!std::path::Path::new("src/app/progress.txt").exists());
+    }
+
+    #[test]
+    fn implement_com_verify_cmds_todos_passando_agrega_pass_e_grava_log_por_indice() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan_default();
+        set_verify_cmds(vec!["true", "true"]);
+
+        let result = implement(Some(&cmd("implement", vec!["implementei"])));
+
+        assert!(result.contains(r#""value":"implement"#));
+        assert!(!result.contains(r#""value":"verify"#));
+        assert_eq!(feature_store::pending_count(), 1);
+        let progress = std::fs::read_to_string("src/app/progress.txt").unwrap();
+        assert!(progress.contains("PASS: all 2 verify commands passed"));
+        assert!(progress.contains("#1 PASS: true"));
+        assert!(progress.contains("#2 PASS: true"));
+
+        let log1 = std::fs::read_to_string(".harness/logs/verify-feature-2-1.log").unwrap();
+        let log2 = std::fs::read_to_string(".harness/logs/verify-feature-2-2.log").unwrap();
+        assert!(log1.contains("command: true"));
+        assert!(log1.contains("exitCode: 0"));
+        assert!(log2.contains("command: true"));
+        assert!(log2.contains("exitCode: 0"));
+    }
+
+    #[test]
+    fn implement_com_verify_cmds_um_falhando_agrega_fail_identifica_indice_e_mantem_pendente() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan_default();
+        set_verify_cmds(vec!["true", "false", "true"]);
+
+        let result = implement(Some(&cmd("implement", vec!["implementei"])));
+
+        assert!(result.contains("FAILED"));
+        assert!(result.contains("1 of 3 verify commands did not pass"));
+        assert!(result.contains("#2 FAIL (exit 1)"));
+        assert!(result.contains(r#""value":"implement"#));
+        assert_eq!(feature_store::pending_count(), 2);
+        assert!(!std::path::Path::new("src/app/progress.txt").exists());
+        assert!(std::path::Path::new(".harness/logs/verify-feature-2-1.log").exists());
+        assert!(std::path::Path::new(".harness/logs/verify-feature-2-2.log").exists());
+        assert!(std::path::Path::new(".harness/logs/verify-feature-2-3.log").exists());
+    }
+
+    #[test]
+    fn implement_com_verify_cmds_operador_de_shell_e_rejeitado_antes_de_qualquer_processo() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan_default();
+        set_verify_cmds(vec!["true", "true && false"]);
+
+        let result = implement(Some(&cmd("implement", vec!["implementei"])));
+
+        assert!(result.contains("FAIL: verify command #2 is empty or uses disallowed shell operators"));
+        assert!(result.contains(r#""value":"implement"#));
+        assert_eq!(feature_store::pending_count(), 2);
+        assert!(!std::path::Path::new("src/app/progress.txt").exists());
+        // Fail-fast: tokenization rejects command #2 before ANY thread is spawned, so not
+        // even command #1 ("true", which would have passed) leaves a log behind.
+        assert!(!std::path::Path::new(".harness/logs/verify-feature-2-1.log").exists());
+        assert!(!std::path::Path::new(".harness/logs/verify-feature-2-2.log").exists());
+    }
+
+    #[test]
+    fn implement_com_verify_cmds_vazio_cai_para_verify_cmd_legado() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan_default();
+        set_verify_cmds(vec![]); // explicit: proves the empty-Vec fallback, not just the default
+
+        let result = implement(Some(&cmd("implement", vec!["implementei"])));
+
+        // plan_default()'s verify_cmd is "dotnet test" — no verify-feature.sh, no
+        // verify_cmds: falls back to the single configured-command path exactly as before
+        // this feature existed (single log, no "#1"/"of N" aggregate framing).
+        assert!(result.contains("FAILED"));
+        assert!(!result.contains("verify commands did not pass"));
+        assert!(!std::path::Path::new(".harness/logs/verify-feature-2-1.log").exists());
+        assert!(std::path::Path::new(".harness/logs/verify-feature-2.log").exists());
     }
 
     #[test]

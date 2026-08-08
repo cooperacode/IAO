@@ -109,6 +109,36 @@ per-task timeout can likewise be overridden by the parent process with
 `HARNESS_TIMEOUT_MS`. Do not put credentials or provider-specific token data in
 `harness.json`.
 
+### Multiple independent verify commands
+
+`run_config.json` also accepts an optional `verifyCmds` array. When present
+and non-empty, it replaces the single `verifyCmd` for that run: every entry
+is an independent gate (lint, typecheck, tests, build, ...) run
+**concurrently**, each with its own log under `.harness/logs/`, and the
+feature only passes when all of them do.
+
+```json
+{
+  "verifyCmd": "dotnet test",
+  "targetDir": "src/app",
+  "runId": "generated-by-the-harness",
+  "verifyCmds": ["npm run lint", "npm run typecheck", "npm test"]
+}
+```
+
+Each entry goes through the same tokenizer as `verifyCmd` — no shell
+operators (`;`, `&`, `|`, `&&`, ...), one argv vector per command. Because
+the commands run at the same time against the same `targetDir`, they must
+be read-only/non-mutating on any path they share (two checks writing the
+same coverage file, for instance, can race); this isn't enforced by the
+harness, it's a contract the configured commands need to hold.
+
+There is no `HARNESS_VERIFY_CMDS` environment override yet, and `plan` does
+not currently populate this field on its own — set it by writing/patching
+`.harness/run_config.json` after `plan` runs and before the first
+`implement`/`verify` step (e.g. from the same wrapper script that invokes
+the harness), not through the driver-facing envelope.
+
 ## 4. Start development
 
 Development is always driven by the IDE agent, not by hand on the command line. Open `your-project/` in the IDE you packaged for and follow `.harness/START-HERE.md`:

@@ -3,6 +3,8 @@ unconditional reset task_registry.dispatch does to state.json on every "start", 
 resumed run (pending feature) still works in smoke/verify without needing a new
 "plan"."""
 
+from pathlib import Path
+
 from harness_engine import run_config_store
 from harness_engine.run_config_store import RunConfig
 
@@ -41,3 +43,26 @@ def test_reset_apaga_o_arquivo():
 
 def test_reset_sem_arquivo_nao_lanca():
     run_config_store.reset()  # no-op, must not throw
+
+
+def test_write_e_load_fazem_roundtrip_com_verify_cmds():
+    run_config_store.write(RunConfig("npm test", "app", verify_cmds=("npm run lint", "npm run typecheck")))
+
+    loaded = run_config_store.load()
+
+    assert loaded.verify_cmds is not None
+    assert loaded.verify_cmds == ("npm run lint", "npm run typecheck")
+
+
+def test_load_run_config_legado_sem_verify_cmds_carrega_com_none():
+    # Simulates a run_config.json written by an earlier harness version, without the
+    # "verifyCmds" key — proves the single-command path stays the default.
+    Path(".harness").mkdir(exist_ok=True)
+    Path(".harness/run_config.json").write_text(
+        '{"verifyCmd":"npm test","targetDir":"app","runId":""}'
+    )
+
+    loaded = run_config_store.load()
+
+    assert loaded.verify_cmd == "npm test"
+    assert loaded.verify_cmds is None

@@ -15,6 +15,7 @@ Prompts in `prompts.py`.
 from __future__ import annotations
 
 import subprocess
+import threading
 import uuid
 import os
 import shlex
@@ -296,7 +297,12 @@ def _try_automated_verify() -> tuple[bool, bool, str]:
         command = ["bash", str(script), str(feature_id)]
         label = f"bash ./verify-feature.sh {feature_id}"
     else:
-        command = _configured_verify_argv(run_config_store.load().verify_cmd)
+        config = run_config_store.load()
+        # A non-empty verify_cmds switches to the AND-of-many gate; empty/absent (the
+        # legacy, single-command shape) falls through to the unchanged path below.
+        if config.verify_cmds_list:
+            return _try_parallel_configured_verify(target_dir, config.verify_cmds_list, feature_id)
+        command = _configured_verify_argv(config.verify_cmd)
         if not command:
             return False, False, ""
         label = " ".join(shlex.quote(item) for item in command)
@@ -333,6 +339,85 @@ def _try_automated_verify() -> tuple[bool, bool, str]:
         f"FAIL: verification failed (exit {proc.returncode})"
         + _verify_output_suffix(proc.stdout, proc.stderr, log_path),
     )
+
+
+def _try_parallel_configured_verify(
+    target_dir: Path, commands: tuple[str, ...], feature_id: int
+) -> tuple[bool, bool, str]:
+    """Diamond pattern applied to verification: every entry in RunConfig.verify_cmds is an
+    independent gate (lint, typecheck, tests, build, ...) — none needs another's output, so
+    they fan out concurrently and converge into a single AND'd verdict, the same "all
+    criteria must clear" semantics as the rest of the harness. Each command goes through
+    the same _configured_verify_argv as the single-command path (identical shell-operator
+    rejection, no new trust boundary) and gets its own log file (_write_verify_log's
+    check_index) so a failure in command #2 doesn't bury the evidence from #1 and #3.
+
+    threading.Thread(daemon=True), not concurrent.futures.ThreadPoolExecutor — same
+    reasoning as task_registry._run_with_timeout: the executor's workers are joined in an
+    atexit handler, which would hang process exit on a stuck one; a daemon thread is truly
+    abandoned when the process exits. Each thread only ever writes its own slot in
+    `results`, so no locking is needed.
+    """
+    checks = [(i + 1, cmd.strip(), _configured_verify_argv(cmd)) for i, cmd in enumerate(commands)]
+
+    invalid = next(((index, command) for index, command, argv in checks if not argv), None)
+    if invalid is not None:
+        index, command = invalid
+        return (
+            True,
+            False,
+            f"FAIL: verify command #{index} is empty or uses disallowed shell operators: {command}",
+        )
+
+    results: list[tuple[bool, str]] = [(False, "")] * len(checks)
+
+    def run_one(slot: int, index: int, command: str, argv: list[str]) -> None:
+        exit_code, output, error, timed_out = _run_verify_process(argv, target_dir)
+        log_path = _write_verify_log(target_dir, command, feature_id, exit_code, timed_out, output, error, index)
+        if timed_out:
+            results[slot] = False, f"#{index} TIMEOUT ({_verify_timeout_description()}): {command}{_log_suffix(log_path)}"
+        elif exit_code != 0:
+            results[slot] = (
+                False,
+                f"#{index} FAIL (exit {exit_code}): {command}{_verify_output_suffix(output, error, log_path)}",
+            )
+        else:
+            results[slot] = True, f"#{index} PASS: {command}{_log_suffix(log_path)}"
+
+    threads = [
+        threading.Thread(target=run_one, args=(slot, index, command, argv), daemon=True)
+        for slot, (index, command, argv) in enumerate(checks)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    lines = [line for _, line in results]
+    failures = sum(1 for ok, _ in results if not ok)
+    summary = " | ".join(lines)
+    total = len(checks)
+    if failures == 0:
+        return True, True, f"PASS: all {total} verify commands passed. {summary}"
+    return True, False, f"FAIL: {failures} of {total} verify commands did not pass. {summary}"
+
+
+def _run_verify_process(command: list[str], target_dir: Path) -> tuple[int, str, str, bool]:
+    """Runs one verify command to completion. Same subprocess.run call and the same
+    distinct-timeout branch as the inline runner in _try_automated_verify, factored out so
+    _try_parallel_configured_verify can launch it once per thread. Returns
+    (exit_code, output, error, timed_out); a process that fails to start (not a timeout) is
+    reported as exit_code -1 with the exception message in `error` — it flows into the
+    ordinary "FAIL (exit -1)" case instead of a separate one.
+    """
+    try:
+        proc = subprocess.run(command, cwd=target_dir, text=True, capture_output=True,
+                              check=False, timeout=_verify_timeout_seconds())
+        return proc.returncode, proc.stdout, proc.stderr, False
+    except subprocess.TimeoutExpired as ex:
+        return -1, _coerce_output(ex.stdout), _coerce_output(ex.stderr), True
+    except Exception as ex:
+        return -1, "", str(ex), False
 
 
 def _resolve_target_dir(target_dir: str) -> Path:
@@ -479,8 +564,13 @@ def _write_verify_log(
     timed_out: bool,
     output: str,
     error: str,
+    check_index: int | None = None,
 ) -> str:
-    relative_path = Path(".harness/logs") / f"verify-feature-{feature_id}.log"
+    # check_index splits the single per-feature log into one per parallel command
+    # (verify-feature-{id}-{n}.log) so a failure in command #2 doesn't bury the evidence
+    # from #1 and #3; None (the single-command path, unchanged) keeps the plain name.
+    file_name = f"verify-feature-{feature_id}-{check_index}.log" if check_index is not None else f"verify-feature-{feature_id}.log"
+    relative_path = Path(".harness/logs") / file_name
     try:
         log_path = relative_path
         log_path.parent.mkdir(parents=True, exist_ok=True)

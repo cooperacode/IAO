@@ -5,6 +5,7 @@ PASS→handoff automático, fallback handoff legado — e a guarda por feature."
 import shutil
 import subprocess
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 from flows_development import state_keys, tasks
@@ -79,6 +80,22 @@ def _write_verify_feature_script(target_dir: Path, body: str) -> None:
 
 def _verify_log_path(feature_id: int) -> Path:
     return Path(".harness/logs") / f"verify-feature-{feature_id}.log"
+
+
+def _verify_log_path_indexed(feature_id: int, index: int) -> Path:
+    return Path(".harness/logs") / f"verify-feature-{feature_id}-{index}.log"
+
+
+def _set_verify_cmds(commands: tuple[str, ...], verify_cmd: str | None = None) -> None:
+    """Overrides run_config_store's verify_cmds (and optionally verify_cmd) after a plan —
+    plan()'s envelope has no slot for a command LIST, same as the .NET tests, which set it
+    via `RunConfigStore.Write(RunConfigStore.Load() with { VerifyCmds = [...] })`."""
+    current = run_config_store.load()
+    run_config_store.write(replace(
+        current,
+        verify_cmds=commands,
+        verify_cmd=verify_cmd if verify_cmd is not None else current.verify_cmd,
+    ))
 
 
 def _given_docs_brief(content: str) -> None:
@@ -478,3 +495,53 @@ def test_pick_sem_feature_pronta_mas_com_pendencia_encerra_sem_reportar_concluid
 
     assert result == "stop"
     assert feature_store.pending_count() == 2  # nada foi marcado como passando
+
+
+def test_verify_cmds_todos_passam_agrega_como_pass_e_gera_um_log_por_indice():
+    _plan()
+    _set_verify_cmds(("true", "true"))
+
+    result = tasks.implement(_cmd("implement", "implementei"))
+
+    assert '"value":"implement"' in result
+    assert feature_store.pending_count() == 1
+    assert "command: true" in _verify_log_path_indexed(2, 1).read_text()
+    assert "command: true" in _verify_log_path_indexed(2, 2).read_text()
+
+
+def test_verify_cmds_um_comando_falha_agrega_como_fail_e_identifica_o_indice():
+    _plan()
+    _set_verify_cmds(("true", "false", "true"))
+
+    result = tasks.implement(_cmd("implement", "implementei"))
+
+    assert "FAILED" in result
+    assert "FAIL: 1 of 3 verify commands did not pass" in result
+    assert "#2 FAIL" in result
+    assert feature_store.pending_count() == 2  # feature continua pendente
+
+
+def test_verify_cmds_com_operador_de_shell_em_uma_entrada_nao_dispara_processos():
+    _plan()
+    _set_verify_cmds(("true", "true && false"))
+
+    result = tasks.implement(_cmd("implement", "implementei"))
+
+    assert "verify command #2" in result
+    assert "disallowed shell operators" in result
+    assert feature_store.pending_count() == 2
+    # Nenhum processo foi disparado para a entrada inválida nem para as demais.
+    assert not _verify_log_path_indexed(2, 1).exists()
+    assert not _verify_log_path_indexed(2, 2).exists()
+
+
+def test_verify_cmds_lista_vazia_cai_no_caminho_legado_de_verify_cmd():
+    _plan()
+    _set_verify_cmds((), verify_cmd="true")
+
+    result = tasks.implement(_cmd("implement", "implementei"))
+
+    assert '"value":"implement"' in result
+    assert feature_store.pending_count() == 1
+    assert _verify_log_path(2).exists()
+    assert not _verify_log_path_indexed(2, 1).exists()

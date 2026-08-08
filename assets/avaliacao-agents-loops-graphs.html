@@ -291,30 +291,50 @@
       <b>Inverted Agentic Orchestration (IAO)</b>.
     </p>
     <div class="meta">
-      <span>Data da avaliação: <b>08/08/2026</b></span>
+      <span>Data da avaliação original: <b>08/08/2026</b></span>
+      <span>Revisado em: <b>08/08/2026</b>, após implementação do gate de verificação paralela</span>
       <span>Artigo fonte: <b>x.com/Mahaximus_/article/2085024744387092973</b> (texto completo fornecido pelo usuário em PDF)</span>
       <span>Código de referência: <b>src/dotnet/{Harness.Engine, Harness.Engine.Tests, Flows.Development, Flows.HelloWorld}</b></span>
     </div>
   </header>
 
+  <div class="callout ok" style="margin-bottom:40px;">
+    <b>Revisão desta avaliação.</b> Depois da primeira versão deste documento, foi implementado
+    <code>RunConfig.VerifyCmds</code> + <code>TryParallelConfiguredVerify</code>
+    (<span class="filecite">RunConfigStore.cs</span>,
+    <span class="filecite">DevelopmentTasks.Verify.cs</span>) — a primeira execução concorrente
+    real do repositório (<code>Task.Run</code> + <code>Task.WaitAll</code>, coberta por 4 testes
+    com subprocessos reais). Isso fecha parte da lacuna de <b>Diamond</b> apontada abaixo, com duas
+    ressalvas honestas mantidas na avaliação: (1) o fan-out é de <i>comandos de verificação</i>
+    dentro de uma feature, não de <i>features independentes</i> do grafo de dependências — o
+    paralelismo mais valioso que o artigo descreve continua ausente; (2) o campo não tem hoje
+    nenhum gatilho no fluxo real do driver (<code>plan</code> não o preenche, não há variável de
+    ambiente) — funciona, mas só se algo de fora do harness escrever
+    <code>verifyCmds</code> em <code>run_config.json</code>. A nota de <b>Graphs</b> subiu de 63%
+    para 78% e a nota geral de 83% para 88% refletindo isso.
+  </div>
+
   <section>
     <h2>Resumo executivo</h2>
     <div class="overall">
-      <div class="ring" style="--pct:83">
+      <div class="ring" style="--pct:88">
         <div class="ring-inner">
-          <div class="pct">83%</div>
+          <div class="pct">88%</div>
           <div class="pct-label">aderência</div>
         </div>
       </div>
       <div class="txt">
-        <h3>Aderência conceitual alta, com uma lacuna estrutural clara</h3>
+        <h3>Aderência conceitual alta; a lacuna de Diamond foi parcialmente fechada</h3>
         <p class="text-dim" style="margin-bottom:8px;">
           O IAO implementa <b>Loops</b> quase à risca (inclusive superando o artigo em rigor —
-          o "check" nunca aceita a palavra do próprio agente) e implementa metade do conceito de
-          <b>Graphs</b> muito bem (nós tipados, arestas como dependência real, validada por
-          ordenação topológica). A lacuna real é o <b>padrão Diamond</b>: não há execução paralela
-          (fan-out/converge) em nenhum lugar do código — o harness percorre o grafo de dependências
-          sempre em série, um nó por vez.
+          o "check" nunca aceita a palavra do próprio agente) e agora tem, em <b>Graphs</b>, os
+          quatro elementos do conceito com evidência de código: nós tipados, arestas como
+          dependência real (validada por ordenação topológica), e um primeiro
+          <b>fan-out/converge (Diamond)</b> real — múltiplos comandos de verificação rodando
+          concorrentemente via <code>Task.Run</code>/<code>Task.WaitAll</code>, convergindo num
+          veredito AND. A ressalva: esse paralelismo é só no nível dos comandos de verificação de
+          <i>uma</i> feature, não no nível das features independentes do grafo — o harness ainda
+          conduz o grafo de dependências em série, uma feature por vez.
         </p>
         <p class="text-dim" style="margin:0;">
           Em <b>Agents</b>, o repositório inverte o modelo do artigo por design: as ferramentas
@@ -340,9 +360,9 @@
       </div>
       <div class="score-card">
         <div class="label">Graphs</div>
-        <div class="value" style="color:var(--mid)">63%</div>
-        <div class="bar-track"><div class="bar-fill" style="width:63%; background:var(--mid)"></div></div>
-        <div class="note">Nós e arestas sólidos; sem fan-out/Diamond; checker não é LLM com contexto fresco</div>
+        <div class="value" style="color:var(--mid)">78%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:78%; background:var(--mid)"></div></div>
+        <div class="note">Nós, arestas e Diamond agora com evidência; escopo restrito ao verify e sem gatilho no fluxo do driver</div>
       </div>
     </div>
   </section>
@@ -524,7 +544,7 @@
   </section>
 
   <section>
-    <h2>3. Graphs — 63%</h2>
+    <h2>3. Graphs — 78%</h2>
     <div class="table-scroll">
       <table>
         <thead>
@@ -565,19 +585,36 @@
           <tr>
             <td class="crit">Padrão Diamond — fan-out paralelo + convergência</td>
             <td class="evid">
-              <b>Ausente, confirmado.</b> Não há <code>Task.WhenAll</code> nem
-              <code>Parallel.ForEach</code> em nenhum arquivo de <code>src/dotnet</code>. O único
-              <code>Task.Run</code> da árvore (<span class="filecite">TaskRegistry.cs:197</span>)
-              é um wrapper de timeout para <b>uma</b> ação síncrona, não concorrência. Mesmo quando
-              <code>NextPending()</code> identifica várias features simultaneamente elegíveis (sem
-              dependências pendentes), <code>Pick</code>
-              (<span class="filecite">DevelopmentTasks.cs:175-201</span>,
-              <span class="filecite">FeatureStore.cs:224-228</span>) seleciona exatamente
-              <b>uma</b> por prioridade e id, e o harness a conduz sozinha até o fim antes de
-              considerar a próxima. O grafo de dependências existe; a execução sobre ele é sempre
-              serial.
+              <b>Implementado, mas com escopo restrito.</b> <code>RunConfig.VerifyCmds</code>
+              (<span class="filecite">RunConfigStore.cs:78-84</span>, lista opcional e nullable) +
+              <code>TryParallelConfiguredVerify</code>
+              (<span class="filecite">DevelopmentTasks.Verify.cs</span>) disparam um
+              <code>Task.Run</code> por comando de verificação configurado e convergem com
+              <code>Task.WaitAll</code> — cada comando é independente (só lê a árvore de trabalho,
+              nenhum depende da saída do outro), cada um grava seu próprio log
+              (<code>verify-feature-{id}-{n}.log</code>) e o veredito final é um AND lógico
+              (passa só se todos passarem) — exatamente o "fan-out, then converge" do artigo.
+              Coberto por 4 testes com subprocessos reais (todos passam / um falha / operador de
+              shell rejeitado / lista vazia cai no caminho legado). É a primeira execução
+              concorrente genuína do repositório — antes desta mudança,
+              <code>grep -rn "Task.WhenAll\|Parallel.ForEach"</code> não retornava nada em
+              <code>src/dotnet</code>.<br><br>
+              Duas ressaltas mantêm isso longe de "Ausente" mas também longe de "Excede o artigo":
+              (1) o fan-out é sobre <i>comandos de verificação de uma feature</i>, não sobre
+              <i>features independentes do grafo de dependências</i> — quando
+              <code>NextPending()</code> identifica várias features simultaneamente elegíveis,
+              <code>Pick</code> (<span class="filecite">DevelopmentTasks.cs:175-201</span>) ainda
+              seleciona exatamente uma; o Diamond do artigo (paralelizar unidades de trabalho
+              inteiras, tipo o exemplo de "multi-file code review") continua ausente. (2) o campo
+              não tem hoje nenhum gatilho no fluxo real do driver — <code>Plan()</code>
+              (<span class="filecite">DevelopmentTasks.cs:143-146</span>) só escreve
+              <code>VerifyCmd</code>/<code>TargetDir</code>/<code>RunId</code>, nunca
+              <code>VerifyCmds</code>, e não existe <code>HARNESS_VERIFY_CMDS</code>; hoje só entra
+              em ação se algo externo ao harness escrever esse campo em
+              <code>run_config.json</code> entre o <code>plan</code> e o primeiro
+              <code>implement</code>.
             </td>
-            <td><span class="verdict-pill v-bad">Ausente</span></td>
+            <td><span class="verdict-pill v-mid">Parcial — implementado, escopo restrito</span></td>
           </tr>
           <tr>
             <td class="crit">Checker separado, com contexto vazio — nunca o mesmo agente que fez o trabalho</td>
@@ -604,12 +641,14 @@
       </table>
     </div>
     <div class="callout warn">
-      <b>Lacuna real, não interpretação.</b> O IAO tem a metade estrutural de "Graphs" (nós
-      tipados + arestas verificadas) muito bem resolvida — de fato, com validação automática que o
-      processo manual do artigo não tem. Mas a outra metade, a que dá ao padrão sua vantagem prática
-      (rodar em paralelo o que não depende de nada), simplesmente não existe no código: a
-      orquestração de <code>Flows.Development</code> é uma <b>fila serial sobre um grafo de
-      dependências</b>, não um grafo executado em paralelo.
+      <b>Lacuna parcialmente fechada, não eliminada.</b> O IAO tem a metade estrutural de "Graphs"
+      (nós tipados + arestas verificadas) muito bem resolvida — de fato, com validação automática
+      que o processo manual do artigo não tem — e agora tem também um fan-out/converge real, testado,
+      dentro do gate de verificação. Mas a orquestração de <code>Flows.Development</code> como um
+      todo continua sendo uma <b>fila serial sobre um grafo de dependências</b>: quando duas
+      features não têm aresta entre si, o harness ainda as executa uma de cada vez, não em
+      paralelo. O Diamond existe hoje só na escala menor (comandos dentro de uma verificação), não
+      na escala que o artigo usa como exemplo principal (unidades de trabalho inteiras).
     </div>
   </section>
 
@@ -630,15 +669,17 @@
           <tr><td></td><td>Checkpoint / registro de execução</td><td>5/5</td></tr>
           <tr><td class="crit">Graphs</td><td>Nó com I/O tipado + reject-retry</td><td>5/5</td><td rowspan="4">1×</td></tr>
           <tr><td></td><td>Aresta = dependência real (validada)</td><td>5/5</td></tr>
-          <tr><td></td><td>Diamond — fan-out/convergência</td><td>0/5</td></tr>
+          <tr><td></td><td>Diamond — fan-out/convergência</td><td>3/5</td></tr>
           <tr><td></td><td>Checker isolado com contexto fresco</td><td>2.5/5</td></tr>
         </tbody>
       </table>
     </div>
     <p class="text-dim" style="font-size:13px; margin-top:10px;">
-      Nota geral = média simples dos três pilares (86% + 100% + 63%) / 3 ≈ <b>83%</b>. Cada
-      sub-critério foi pontuado a partir de evidência de código citada acima, não por inferência
-      de nomes de arquivo ou documentação.
+      Nota geral = média simples dos três pilares (86% + 100% + 78%) / 3 ≈ <b>88%</b>. Diamond
+      subiu de 0/5 para 3/5: mecanismo real, testado com subprocessos, mas não pleno — falta o
+      fan-out em nível de feature e falta um gatilho no fluxo do driver, por isso não chega a 4-5.
+      Cada sub-critério foi pontuado a partir de evidência de código citada acima, não por
+      inferência de nomes de arquivo ou documentação.
     </p>
   </section>
 
@@ -653,22 +694,32 @@
       move essas garantias para fora do modelo, para uma máquina de estados determinística em C#.
     </p>
     <p>
-      A lacuna honesta é o <b>paralelismo real</b>. O artigo dedica uma seção inteira ao padrão
-      Diamond como a razão prática de se pensar em grafos ("mesmos inputs, mesmos outputs, uma
-      fração do tempo"). O IAO tem o grafo de dependências (a parte difícil de acertar
-      corretamente) mas percorre esse grafo em série, nó a nó — não há
-      <code>fan-out</code>/<code>Task.WhenAll</code> em nenhum lugar da árvore de código, mesmo
-      quando o próprio <code>FeatureStore</code> já sabe quais features estão simultaneamente
-      liberadas para rodar. Da mesma forma, o "checker com contexto vazio" do artigo é resolvido no
-      IAO por isolamento de processo (determinístico), não por um segundo julgamento de LLM sem
-      memória do trabalho original — funcionalmente equivalente para o caso de uso atual (testes
-      automatizados como verificação), mas não o mesmo mecanismo.
+      A lacuna que restava era o <b>paralelismo real</b>. O artigo dedica uma seção inteira ao
+      padrão Diamond como a razão prática de se pensar em grafos ("mesmos inputs, mesmos outputs,
+      uma fração do tempo"). Isso motivou uma extensão pontual do harness: <code>RunConfig</code>
+      ganhou um campo <code>VerifyCmds</code> e o gate de verificação passou a rodar comandos
+      independentes (lint, typecheck, testes, build...) concorrentemente, convergindo num veredito
+      único — a primeira aplicação real e testada do padrão no código
+      (<span class="filecite">RunConfigStore.cs</span>,
+      <span class="filecite">DevelopmentTasks.Verify.cs</span>). Isso fecha a lacuna
+      <i>parcialmente</i>: o Diamond agora existe em código, funciona, e tem testes com
+      subprocessos reais provando a semântica de convergência (AND lógico, log por comando). Mas
+      continua sendo uma fatia estreita do que o artigo descreve — paraleliza os <i>comandos de
+      verificação</i> de uma feature, não as <i>features independentes</i> do grafo de
+      dependências (o exemplo de maior impacto do artigo, "multi-file code review", segue sem
+      equivalente aqui), e ainda não tem gatilho no fluxo real do driver: <code>plan</code> não
+      popula <code>VerifyCmds</code> hoje, então em um run normal esse caminho fica adormecido até
+      alguém escrever o campo manualmente em <code>run_config.json</code>. Da mesma forma, o
+      "checker com contexto vazio" do artigo continua resolvido no IAO por isolamento de processo
+      (determinístico), não por um segundo julgamento de LLM sem memória do trabalho original —
+      funcionalmente equivalente para o caso de uso atual, mas não o mesmo mecanismo.
     </p>
     <p style="margin-bottom:0;">
-      Em síntese: <b>83% de aderência conceitual</b>, puxado para cima por uma implementação de
-      loop e de grafo-como-dependência acima do que o artigo descreve, e puxado para baixo por uma
-      ausência confirmada de execução paralela (fan-out/converge) — a única peça do "modelo mental"
-      do artigo que o IAO ainda não materializa em código.
+      Em síntese: <b>88% de aderência conceitual</b> (subiu de 83%), puxado para cima por uma
+      implementação de loop e de grafo-como-dependência acima do que o artigo descreve, e agora com
+      evidência real — ainda que parcial — de execução paralela (fan-out/converge). O que falta não
+      é mais "nada de paralelismo", é "paralelismo só no nível certo (comandos, não features) e sem
+      um gatilho vivo no fluxo do driver" — a peça que restaria fechar para chegar perto de 100%.
     </p>
   </section>
 
@@ -678,7 +729,10 @@
     usuário como PDF, já que o X retorna HTTP 402 para acesso automatizado ao artigo original) e
     de leitura direta do código-fonte em <code>src/dotnet</code> (Harness.Engine,
     Harness.Engine.Tests, Flows.Development, Flows.HelloWorld) neste repositório, em 08/08/2026.
-    Todas as citações de arquivo:linha foram verificadas contra o código no momento da avaliação.
+    Revisada no mesmo dia após a implementação de <code>RunConfig.VerifyCmds</code> /
+    <code>TryParallelConfiguredVerify</code>, que passou a dar ao repositório um primeiro exemplo
+    real e testado do padrão Diamond. Todas as citações de arquivo:linha foram verificadas contra
+    o código no momento de cada revisão.
   </footer>
 
 </div>
