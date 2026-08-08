@@ -14,12 +14,18 @@ public static class HelloWorldTasks
     public static string Start() =>
         PromptFormatter.Format(
             "Reply with exactly the word \"ping\" — no reasoning needed, just echo it back.",
-            new Envelope(EnvelopeType.Text, "ping", []));
+            new Envelope(EnvelopeType.Text, "ping", ["ping"]));
 
     public static string Ping(Envelope? envelope) =>
         PromptFormatter.Format(
             $"You said '{envelope?.Value}'. Now reply with exactly the word \"pong\".",
-            new Envelope(EnvelopeType.Text, "pong", []));
+            new Envelope(EnvelopeType.Text, "pong", ["pong"]));
 
     public static string Pong(Envelope? envelope) => "stop";
+
+
+    public static string ArgAt(Envelope? envelope, int index, string fallback) =>
+        envelope?.Args is { } args && args.Length > index && !string.IsNullOrWhiteSpace(args[index])
+            ? args[index]
+            : fallback;
 }

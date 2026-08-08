@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avaliação — "Agents, Loops, Graphs" vs. IAO</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --bg-elev: #ffffff;
+    --text: #1c1b19;
+    --text-dim: #55524c;
+    --border: #e2ded4;
+    --accent: #8a5a2b;
+    --accent-soft: #f1e4d2;
+    --good: #2f6b4f;
+    --good-bg: #e6f2ea;
+    --mid: #97621a;
+    --mid-bg: #faf0dd;
+    --bad: #a13d3d;
+    --bad-bg: #fbe9e7;
+    --mono-bg: #efece4;
+    --shadow: 0 1px 2px rgba(28,27,25,0.06), 0 6px 20px rgba(28,27,25,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171614;
+      --bg-elev: #201f1c;
+      --text: #ece8e0;
+      --text-dim: #aba59a;
+      --border: #34322c;
+      --accent: #d99b5f;
+      --accent-soft: #3a2c1d;
+      --good: #6fbf94;
+      --good-bg: #1c2f26;
+      --mid: #e0ac54;
+      --mid-bg: #332a17;
+      --bad: #e08585;
+      --bad-bg: #34201f;
+      --mono-bg: #26241f;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171614;
+    --bg-elev: #201f1c;
+    --text: #ece8e0;
+    --text-dim: #aba59a;
+    --border: #34322c;
+    --accent: #d99b5f;
+    --accent-soft: #3a2c1d;
+    --good: #6fbf94;
+    --good-bg: #1c2f26;
+    --mid: #e0ac54;
+    --mid-bg: #332a17;
+    --bad: #e08585;
+    --bad-bg: #34201f;
+    --mono-bg: #26241f;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  header.hero {
+    margin-bottom: 40px;
+  }
+  .kicker {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: 32px;
+    line-height: 1.25;
+    margin: 0 0 14px;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 16px;
+    max-width: 68ch;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-top: 20px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .meta span b { color: var(--text); }
+
+  section { margin: 48px 0; }
+  h2 {
+    font-size: 22px;
+    margin: 0 0 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 17px; margin: 28px 0 10px; }
+  p { margin: 0 0 14px; }
+  .text-dim { color: var(--text-dim); }
+
+  .score-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin: 20px 0 8px;
+  }
+  .score-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow);
+  }
+  .score-card .label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .score-card .value {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .score-card .note { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+  .bar-track {
+    height: 6px;
+    border-radius: 4px;
+    background: var(--border);
+    margin-top: 10px;
+    overflow: hidden;
+  }
+  .bar-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+
+  .overall {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+  .overall .ring {
+    flex: 0 0 auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--border) 0);
+  }
+  .overall .ring-inner {
+    width: 94px;
+    height: 94px;
+    border-radius: 50%;
+    background: var(--bg-elev);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .overall .ring-inner .pct { font-size: 24px; font-weight: 700; }
+  .overall .ring-inner .pct-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+  .overall .txt { flex: 1 1 320px; }
+  .overall .txt h3 { margin: 0 0 6px; font-size: 18px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 14px 0 6px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  caption { text-align: left; caption-side: top; }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  thead th {
+    background: var(--accent-soft);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.crit { font-weight: 600; width: 22%; }
+  td.evid code, p code, li code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--mono-bg); padding: 1px 5px; border-radius: 5px; }
+
+  .verdict-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .v-good { background: var(--good-bg); color: var(--good); }
+  .v-mid  { background: var(--mid-bg); color: var(--mid); }
+  .v-bad  { background: var(--bad-bg); color: var(--bad); }
+
+  .callout {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    background: var(--bg-elev);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 14.5px;
+  }
+  .callout.warn { border-left-color: var(--bad); }
+  .callout.ok { border-left-color: var(--good); }
+
+  .filecite {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--accent);
+  }
+
+  pre {
+    background: var(--mono-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.55;
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  ul { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 720px) {
+    .grid-3 { grid-template-columns: 1fr; }
+    .overall { flex-direction: column; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">Avaliação de aderência conceitual</div>
+    <h1>"Agents, Loops, Graphs" vs. o repositório IAO</h1>
+    <p class="subtitle">
+      Confronto entre os três conceitos descritos no artigo de
+      <b>Mahax (@Mahaximus_)</b>, publicado em 5 de agosto de 2026 no X, e a
+      implementação real em <code>src/dotnet</code> do padrão
+      <b>Inverted Agentic Orchestration (IAO)</b>.
+    </p>
+    <div class="meta">
+      <span>Data da avaliação: <b>08/08/2026</b></span>
+      <span>Artigo fonte: <b>x.com/Mahaximus_/article/2085024744387092973</b> (texto completo fornecido pelo usuário em PDF)</span>
+      <span>Código de referência: <b>src/dotnet/{Harness.Engine, Harness.Engine.Tests, Flows.Development, Flows.HelloWorld}</b></span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Resumo executivo</h2>
+    <div class="overall">
+      <div class="ring" style="--pct:83">
+        <div class="ring-inner">
+          <div class="pct">83%</div>
+          <div class="pct-label">aderência</div>
+        </div>
+      </div>
+      <div class="txt">
+        <h3>Aderência conceitual alta, com uma lacuna estrutural clara</h3>
+        <p class="text-dim" style="margin-bottom:8px;">
+          O IAO implementa <b>Loops</b> quase à risca (inclusive superando o artigo em rigor —
+          o "check" nunca aceita a palavra do próprio agente) e implementa metade do conceito de
+          <b>Graphs</b> muito bem (nós tipados, arestas como dependência real, validada por
+          ordenação topológica). A lacuna real é o <b>padrão Diamond</b>: não há execução paralela
+          (fan-out/converge) em nenhum lugar do código — o harness percorre o grafo de dependências
+          sempre em série, um nó por vez.
+        </p>
+        <p class="text-dim" style="margin:0;">
+          Em <b>Agents</b>, o repositório inverte o modelo do artigo por design: as ferramentas
+          (busca, edição, execução) pertencem ao driver externo (Claude Code/Codex), não ao
+          harness — o harness fornece exatamente a memória entre sessões e o loop até a conclusão
+          que o artigo descreve como o que diferencia um agente de um chat.
+        </p>
+      </div>
+    </div>
+
+    <div class="score-grid">
+      <div class="score-card">
+        <div class="label">Agents</div>
+        <div class="value" style="color:var(--good)">86%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:86%; background:var(--good)"></div></div>
+        <div class="note">Memória + loop fortes; tool-use dividido harness/driver</div>
+      </div>
+      <div class="score-card">
+        <div class="label">Loops</div>
+        <div class="value" style="color:var(--good)">100%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--good)"></div></div>
+        <div class="note">Check duro por exit code; 4 mecanismos de parada redundantes</div>
+      </div>
+      <div class="score-card">
+        <div class="label">Graphs</div>
+        <div class="value" style="color:var(--mid)">63%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:63%; background:var(--mid)"></div></div>
+        <div class="note">Nós e arestas sólidos; sem fan-out/Diamond; checker não é LLM com contexto fresco</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>O que o artigo define</h2>
+    <p>
+      O artigo de Mahax organiza o assunto em três camadas que "se constroem uma sobre a outra":
+    </p>
+    <div class="grid-3">
+      <div class="callout">
+        <b>Agent</b> — diferença estrutural em relação a um chat: (1) ferramentas que ele mesmo
+        aciona, (2) memória que atravessa sessões, (3) um loop que só para quando a tarefa termina,
+        não quando gera uma resposta.
+      </div>
+      <div class="callout">
+        <b>Loop</b> — ciclo <code>PLAN → EXECUTE → CHECK → ITERATE → STOP</code>. O <i>check</i>
+        precisa poder falhar de verdade (teste, score com limiar, rubrica dura — "um check
+        flexível não é check"). O <i>stop</i> precisa de duas saídas: tarefa concluída OU um teto
+        rígido de tentativas.
+      </div>
+      <div class="callout">
+        <b>Graph</b> — mapa de dependências reais (não sequência). <i>Nó</i> = unidade de trabalho
+        com entrada/saída de formato fixo. <i>Aresta</i> = dependência genuína. Padrão
+        <b>Diamond</b>: jobs independentes rodam em paralelo (fan-out) e convergem num passo de
+        síntese. O <i>checker</i> deve ser um nó separado, com contexto vazio — nunca o mesmo
+        agente que fez o trabalho.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>1. Agents — 86%</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Critério do artigo</th><th>Evidência no código</th><th>Veredito</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="crit">Ferramentas acionadas pelo próprio agente</td>
+            <td class="evid">
+              O harness executa ferramentas determinísticas por conta própria — Git
+              (<span class="filecite">GitCommand.cs:22-58</span>, add/commit/status com hooks e
+              pager neutralizados) e processos de verificação
+              (<span class="filecite">DevelopmentTasks.Verify.cs:138-190</span>, spawn de
+              <code>bash</code>/comando configurado com timeout e kill de árvore de processos).
+              As ferramentas de edição de código, busca e execução propriamente ditas pertencem ao
+              <b>driver externo</b> (Claude Code/Codex) e nunca passam pelo harness — este só lê o
+              envelope JSON de volta. É uma inversão deliberada (daí o nome do padrão), não uma
+              lacuna: o harness não precisa reimplementar tool-use, ele governa o agente que já o tem.
+            </td>
+            <td><span class="verdict-pill v-mid">Parcial — por design</span></td>
+          </tr>
+          <tr>
+            <td class="crit">Memória entre sessões (não só na conversa)</td>
+            <td class="evid">
+              <code>StateStore</code> persiste passo e dados em
+              <span class="filecite">.harness/state.json</span> entre reinícios de processo
+              (<span class="filecite">StateStore.cs:36-153</span>) — confirmado em runtime:
+              <code>{"step":3,"data":{},"costChars":2429,...}</code> sobrevive ao encerramento do
+              processo. <code>FeatureStore</code> mantém o backlog de features com status
+              pass/fail em <span class="filecite">.harness/feature_list.json</span>
+              (<span class="filecite">FeatureStore.cs:219-229</span>), permitindo que
+              <code>NextPending()</code> saiba o que já foi feito mesmo após um reset total de
+              contexto do driver. <code>progress.txt</code> no repositório-alvo
+              (<span class="filecite">DevelopmentTasks.Handoff.cs:157-181</span>) estende essa
+              memória para o próprio repositório sendo modificado.
+            </td>
+            <td><span class="verdict-pill v-good">Forte</span></td>
+          </tr>
+          <tr>
+            <td class="crit">Loop até a tarefa terminar, não até gerar uma resposta</td>
+            <td class="evid">
+              <span class="filecite">Flows.Development/Program.cs:6</span> declara a máquina de
+              estados explicitamente: <code>start → plan → [implement → verify(auto-handoff)]*</code> —
+              o <code>*</code> é literalmente o loop que continua até
+              <code>FeatureStore.AllPassing()</code>
+              (<span class="filecite">DevelopmentTasks.cs:260</span>) ou um limite rígido ser
+              atingido. Cada turno do driver é resumido a partir do estado persistido, não reiniciado.
+            </td>
+            <td><span class="verdict-pill v-good">Forte</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      Nota de leitura: o artigo assume um único processo que "chama ferramentas sozinho". O IAO
+      separa essa responsabilidade em duas camadas — o <b>driver</b> tem as ferramentas ricas
+      (edição, busca, execução de código), o <b>harness</b> tem memória e controle de loop. Isso
+      não invalida o critério do artigo: o resultado observável (um agente que age sem
+      supervisão passo a passo) é o mesmo — só a divisão interna de responsabilidade é diferente,
+      e é exatamente essa divisão que dá nome ao padrão "Inverted Agentic Orchestration".
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Loops — 100%</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Etapa do ciclo</th><th>Evidência no código</th><th>Veredito</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="crit">PLAN</td>
+            <td class="evid"><span class="filecite">DevelopmentTasks.cs:118-151</span> — <code>Plan</code> converte a lista de features produzida pelo driver em registros estruturados no <code>FeatureStore</code>.</td>
+            <td><span class="verdict-pill v-good">Presente</span></td>
+          </tr>
+          <tr>
+            <td class="crit">EXECUTE</td>
+            <td class="evid"><span class="filecite">DevelopmentTasks.cs:203-222</span> — <code>Implement</code>; o resumo da implementação é derivado do <code>git diff</code> real (<span class="filecite">DevelopmentTasks.cs:363-381</span>), não da prosa do driver.</td>
+            <td><span class="verdict-pill v-good">Presente</span></td>
+          </tr>
+          <tr>
+            <td class="crit">CHECK — precisa poder falhar de verdade</td>
+            <td class="evid">
+              <span class="filecite">DevelopmentTasks.Verify.cs:18-103</span> executa
+              <code>verify-feature.sh</code> ou o comando de teste configurado como
+              <b>subprocesso real</b> e decide pelo <code>ExitCode</code>
+              (linhas 57/96) — nunca por um "PASS" textual do agente. O próprio código documenta a
+              intenção: <i>"the harness reruns the configured verification command and decides
+              from its process result, never from a textual PASS/FAIL asserted by the driver"</i>
+              (<span class="filecite">DevelopmentTasks.cs:229-231</span>). Isto é mais rígido do
+              que a maioria das implementações de "loop com LLM-juiz" — não há chance de o agente
+              se autoavaliar como aprovado.
+            </td>
+            <td><span class="verdict-pill v-good">Excede o artigo</span></td>
+          </tr>
+          <tr>
+            <td class="crit">ITERATE</td>
+            <td class="evid">
+              Falha de verificação → <code>FixPrompt</code>
+              (<span class="filecite">DevelopmentTasks.cs:218</span>,
+              <span class="filecite">Prompt.cs:155-179</span>) reabre exatamente a feature que
+              falhou, com o erro de verificação anexado ao prompt — corresponde ao
+              "fix the weakest gap first" do artigo.
+            </td>
+            <td><span class="verdict-pill v-good">Presente</span></td>
+          </tr>
+          <tr>
+            <td class="crit">STOP — duas saídas (concluído OU teto rígido)</td>
+            <td class="evid">
+              Concluído: <code>FeatureStore.AllPassing() → Done()</code>
+              (<span class="filecite">DevelopmentTasks.cs:260, 288-294</span>). Teto rígido, <b>quatro
+              camadas independentes</b>: limite global de passos
+              (<span class="filecite">TaskRegistry.cs:118-124</span>), teto de caracteres/custo
+              (<span class="filecite">TaskRegistry.cs:130-136</span>), orçamento de passos por
+              feature — <code>StepsPerFeature=8</code>
+              (<span class="filecite">DevelopmentTasks.cs:272-280</span>) — e timeout de parede por
+              passo (<code>HarnessTimeoutException</code>,
+              <span class="filecite">TaskRegistry.cs:161-171</span>). O motivo de parada
+              (<code>TerminalReason</code>) é gravado em disco e sobrevive a reinícios
+              (<span class="filecite">StateStore.cs:138-153</span>), impedindo que um run já
+              interrompido por orçamento seja silenciosamente retomado.
+            </td>
+            <td><span class="verdict-pill v-good">Excede o artigo</span></td>
+          </tr>
+          <tr>
+            <td class="crit">Checkpoint / registro do que já rodou</td>
+            <td class="evid">
+              <code>Trace.Append</code> (<span class="filecite">Trace.cs:49-73</span>) grava um
+              <code>trace.jsonl</code> encadeado por hash SHA-256
+              (<span class="filecite">Trace.cs:82-90</span>) — um checkpoint por passo, auditável e
+              à prova de edição retroativa. É o mesmo problema que o artigo resolve com um prompt
+              de "escreva um checkpoint", só que aqui é automático e criptograficamente verificável.
+            </td>
+            <td><span class="verdict-pill v-good">Excede o artigo</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout ok">
+      Esta é a seção de maior aderência do repositório. Todos os cinco elementos do ciclo
+      <code>PLAN → EXECUTE → CHECK → ITERATE → STOP</code> estão implementados, e em três pontos
+      (check duro, redundância de parada, checkpoint com hash chain) o código é mais rigoroso do
+      que o mínimo descrito no artigo.
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Graphs — 63%</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Critério do artigo</th><th>Evidência no código</th><th>Veredito</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="crit">Nó com entrada/saída de formato fixo; rejeita e tenta de novo se o formato não bate</td>
+            <td class="evid">
+              <code>Feature</code> é um record estruturado —
+              <code>Id, Title, Priority, Passes, DependsOn, Description, References,
+              ImplementationContext</code> (<span class="filecite">FeatureStore.cs:281-294</span>),
+              não texto livre. <code>FeatureStore.Parse</code>
+              (<span class="filecite">FeatureStore.cs:57-117</span>) rejeita entrada malformada —
+              título/prioridade ausentes (linhas 65-70) ou ids duplicados (linhas 72-77) — e o
+              chamador reenvia via <code>PlanRetryPrompt()</code>
+              (<span class="filecite">DevelopmentTasks.cs:120-122</span>): reject-and-retry real.
+              O mesmo contrato existe em <code>Envelope</code>/<code>EnvelopeValidation</code>
+              (<span class="filecite">EnvelopeValidation.cs:24-64</span>) para toda resposta do driver.
+            </td>
+            <td><span class="verdict-pill v-good">Forte</span></td>
+          </tr>
+          <tr>
+            <td class="crit">Aresta = dependência genuína (não apenas sequência)</td>
+            <td class="evid">
+              <code>Feature.DependsOn</code> alimenta
+              <code>FeatureStore.DependencyGraphError</code>
+              (<span class="filecite">FeatureStore.cs:161-190</span>), que implementa
+              <b>ordenação topológica (Kahn) com detecção de ciclo</b> e checagem de referências
+              soltas. <code>NextPending()</code>
+              (<span class="filecite">FeatureStore.cs:219-229</span>) calcula o conjunto "pronto
+              para rodar" (dependências satisfeitas) a cada chamada. Isso é estritamente mais forte
+              do que o "teste de aresta falsa" manual do artigo — aqui a validação é automática e
+              bloqueia o planejamento se houver ciclo.
+            </td>
+            <td><span class="verdict-pill v-good">Excede o artigo</span></td>
+          </tr>
+          <tr>
+            <td class="crit">Padrão Diamond — fan-out paralelo + convergência</td>
+            <td class="evid">
+              <b>Ausente, confirmado.</b> Não há <code>Task.WhenAll</code> nem
+              <code>Parallel.ForEach</code> em nenhum arquivo de <code>src/dotnet</code>. O único
+              <code>Task.Run</code> da árvore (<span class="filecite">TaskRegistry.cs:197</span>)
+              é um wrapper de timeout para <b>uma</b> ação síncrona, não concorrência. Mesmo quando
+              <code>NextPending()</code> identifica várias features simultaneamente elegíveis (sem
+              dependências pendentes), <code>Pick</code>
+              (<span class="filecite">DevelopmentTasks.cs:175-201</span>,
+              <span class="filecite">FeatureStore.cs:224-228</span>) seleciona exatamente
+              <b>uma</b> por prioridade e id, e o harness a conduz sozinha até o fim antes de
+              considerar a próxima. O grafo de dependências existe; a execução sobre ele é sempre
+              serial.
+            </td>
+            <td><span class="verdict-pill v-bad">Ausente</span></td>
+          </tr>
+          <tr>
+            <td class="crit">Checker separado, com contexto vazio — nunca o mesmo agente que fez o trabalho</td>
+            <td class="evid">
+              Parcialmente presente, mas por outro mecanismo. A verificação
+              (<span class="filecite">DevelopmentTasks.Verify.cs:18-63</span>) roda como
+              <b>processo do SO isolado</b>, lendo apenas os arquivos do repositório — nunca a
+              conversa do driver que implementou a feature — e o handoff
+              (<span class="filecite">DevelopmentTasks.Handoff.cs:14-95</span>) reinspeciona o
+              estado do Git de forma independente, em vez de confiar na alegação do driver. Isso
+              satisfaz o espírito do critério ("quem fez o trabalho não pode ser quem o aprova").
+              Porém não é o mecanismo específico do artigo — um <b>segundo agente LLM com contexto
+              vazio</b> julgando o resultado. <code>ScoreStore</code> tem campos
+              <code>JudgeScore</code>/<code>JudgeRationale</code>
+              (<span class="filecite">ScoreStore.cs:55-60</span>), mas nenhum código na árvore
+              chama um LLM para preenchê-los — só os <code>Evaluators</code> determinísticos
+              existem. <code>ContextPolicy.NewFeaturePrefix</code>
+              (<span class="filecite">ContextPolicy.cs:31-47</span>) força contexto limpo por
+              feature para a <i>próxima sessão de trabalho</i>, não para um checker dedicado.
+            </td>
+            <td><span class="verdict-pill v-mid">Parcial — mecanismo diferente</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warn">
+      <b>Lacuna real, não interpretação.</b> O IAO tem a metade estrutural de "Graphs" (nós
+      tipados + arestas verificadas) muito bem resolvida — de fato, com validação automática que o
+      processo manual do artigo não tem. Mas a outra metade, a que dá ao padrão sua vantagem prática
+      (rodar em paralelo o que não depende de nada), simplesmente não existe no código: a
+      orquestração de <code>Flows.Development</code> é uma <b>fila serial sobre um grafo de
+      dependências</b>, não um grafo executado em paralelo.
+    </div>
+  </section>
+
+  <section>
+    <h2>Tabela consolidada</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Pilar</th><th>Sub-critério</th><th>Nota</th><th>Peso</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="crit">Agents</td><td>Ferramentas acionadas pelo agente</td><td>3/5</td><td rowspan="3">1×</td></tr>
+          <tr><td></td><td>Memória entre sessões</td><td>5/5</td></tr>
+          <tr><td></td><td>Loop até concluir a tarefa</td><td>5/5</td></tr>
+          <tr><td class="crit">Loops</td><td>Plan / Execute / Iterate</td><td>5/5</td><td rowspan="4">1×</td></tr>
+          <tr><td></td><td>Check duro (falha de verdade)</td><td>5/5</td></tr>
+          <tr><td></td><td>Stop com teto rígido</td><td>5/5</td></tr>
+          <tr><td></td><td>Checkpoint / registro de execução</td><td>5/5</td></tr>
+          <tr><td class="crit">Graphs</td><td>Nó com I/O tipado + reject-retry</td><td>5/5</td><td rowspan="4">1×</td></tr>
+          <tr><td></td><td>Aresta = dependência real (validada)</td><td>5/5</td></tr>
+          <tr><td></td><td>Diamond — fan-out/convergência</td><td>0/5</td></tr>
+          <tr><td></td><td>Checker isolado com contexto fresco</td><td>2.5/5</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-dim" style="font-size:13px; margin-top:10px;">
+      Nota geral = média simples dos três pilares (86% + 100% + 63%) / 3 ≈ <b>83%</b>. Cada
+      sub-critério foi pontuado a partir de evidência de código citada acima, não por inferência
+      de nomes de arquivo ou documentação.
+    </p>
+  </section>
+
+  <section>
+    <h2>Conclusão</h2>
+    <p>
+      O repositório <b>IAO</b> não foi construído a partir deste artigo — ele antecede e formaliza
+      independentemente boa parte do mesmo vocabulário, sob o nome "Inverted Agentic
+      Orchestration". A comparação é reveladora justamente por isso: onde os dois convergem
+      (loop com stop condition rígido, grafo de dependências validado), o código do IAO é mais
+      disciplinado do que a versão de prompt único que o artigo ensina a montar — porque o IAO
+      move essas garantias para fora do modelo, para uma máquina de estados determinística em C#.
+    </p>
+    <p>
+      A lacuna honesta é o <b>paralelismo real</b>. O artigo dedica uma seção inteira ao padrão
+      Diamond como a razão prática de se pensar em grafos ("mesmos inputs, mesmos outputs, uma
+      fração do tempo"). O IAO tem o grafo de dependências (a parte difícil de acertar
+      corretamente) mas percorre esse grafo em série, nó a nó — não há
+      <code>fan-out</code>/<code>Task.WhenAll</code> em nenhum lugar da árvore de código, mesmo
+      quando o próprio <code>FeatureStore</code> já sabe quais features estão simultaneamente
+      liberadas para rodar. Da mesma forma, o "checker com contexto vazio" do artigo é resolvido no
+      IAO por isolamento de processo (determinístico), não por um segundo julgamento de LLM sem
+      memória do trabalho original — funcionalmente equivalente para o caso de uso atual (testes
+      automatizados como verificação), mas não o mesmo mecanismo.
+    </p>
+    <p style="margin-bottom:0;">
+      Em síntese: <b>83% de aderência conceitual</b>, puxado para cima por uma implementação de
+      loop e de grafo-como-dependência acima do que o artigo descreve, e puxado para baixo por uma
+      ausência confirmada de execução paralela (fan-out/converge) — a única peça do "modelo mental"
+      do artigo que o IAO ainda não materializa em código.
+    </p>
+  </section>
+
+  <footer>
+    Avaliação gerada por Claude a partir do texto integral do artigo "Agents, Loops, Graphs.
+    Everything You Need to Know in One Place" (Mahax, @Mahaximus_, 5 ago 2026 — fornecido pelo
+    usuário como PDF, já que o X retorna HTTP 402 para acesso automatizado ao artigo original) e
+    de leitura direta do código-fonte em <code>src/dotnet</code> (Harness.Engine,
+    Harness.Engine.Tests, Flows.Development, Flows.HelloWorld) neste repositório, em 08/08/2026.
+    Todas as citações de arquivo:linha foram verificadas contra o código no momento da avaliação.
+  </footer>
+
+</div>
+</body>
+</html>
