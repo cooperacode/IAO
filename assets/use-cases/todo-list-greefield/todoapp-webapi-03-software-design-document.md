@@ -79,30 +79,31 @@ without documenting the reason.
 Recommended solution layout:
 
 ```text
-TodoApp.sln
-Directory.Build.props
-global.json
-src/
-  TodoApp.Api/
-    Program.cs
-    Features/
-      AddTask/
-      ListTasks/
-      CompleteTask/
-      EditTask/
-      RemoveTask/
-    Infrastructure/
-      Database/
-      Errors/
-    Domain/
-tests/
-  TodoApp.UnitTests/
-    Features/
-  TodoApp.IntegrationTests/
-    Fixtures/
-docker-compose.yml
-init.sh
-verify-feature.sh
+app/
+  TodoApp.sln
+  Directory.Build.props
+  global.json
+  docker-compose.yml
+  init.sh
+  verify-feature.sh  
+  src/
+    TodoApp.Api/
+      Program.cs
+      Features/
+        AddTask/
+        ListTasks/
+        CompleteTask/
+        EditTask/
+        RemoveTask/
+      Infrastructure/
+        Database/
+        Errors/
+      Domain/
+  tests/
+    TodoApp.UnitTests/
+      Features/
+    TodoApp.IntegrationTests/
+      Fixtures/
 ```
 
 The exact project names may vary, but the vertical-slice boundary must remain

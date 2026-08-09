@@ -29,6 +29,7 @@ fn main() {
     tasks.insert("implement".to_string(), Arc::new(tasks::implement));
     tasks.insert("verify".to_string(), Arc::new(tasks::verify));
     tasks.insert("handoff".to_string(), Arc::new(tasks::handoff_task));
+    tasks.insert("replan".to_string(), Arc::new(tasks::replan));
 
     // Contextual expectation per command; a rejection becomes a corrective error (the
     // driver fixes and resends). `pick` has no validator — it doesn't carry a driver

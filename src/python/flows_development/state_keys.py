@@ -11,6 +11,11 @@ CURRENT_FEATURE_VERIFY = "current_feature_verify"
 CURRENT_BEARINGS = "current_bearings"
 FEATURE_STEPS = "feature_steps"
 
+# Counts consecutive deterministic verify failures on the CURRENT feature. Reset to "0" on
+# every fresh pick() (new feature) and on every applied replan; escalates to a global
+# replan proposal on its 3rd consecutive failure (see tasks._handle_verify_failure).
+VERIFY_FAILURES = "verify_failures"
+
 # Not a state_store key — it's the brief artifact's name in artifact_store
 # (.harness/brief.md). Lives here for the same reason as the keys above: tasks.py and
 # prompts.py need the same value, without creating a circular import between them.

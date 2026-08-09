@@ -106,6 +106,49 @@ public static partial class DevelopmentTasks
             output: new Envelope(EnvelopeType.Command, "plan", [VERIFY_CMD, TARGET_DIR]));
     }
 
+    private static string ReplanPrompt(string observation)
+    {
+        string currentPlan;
+        try
+        {
+            currentPlan = File.Exists(".harness/feature_list.json")
+                ? File.ReadAllText(".harness/feature_list.json")
+                : "(current plan unavailable)";
+        }
+        catch (Exception ex)
+        {
+            currentPlan = $"(current plan unavailable: {ex.Message})";
+        }
+
+        var brief = ArtifactStore.Read(BriefArtifactName).Trim();
+        var briefBlock = brief.Length == 0 ? "" : $"<brief>{brief}</brief>";
+        var observations = string.Join("\n", PlanObservationStore.Load().Select(o =>
+            $"{o.Id} [{o.Kind}] feature={o.FeatureId?.ToString() ?? "n/a"}: {o.Summary}; evidence={string.Join(" | ", o.Evidence)}"));
+        var revisionShape =
+            $$"""{"reason":"why the global plan must change","alternativesConsidered":["alternative A","alternative B; selected because ..."],"basedOnObservationIds":["OBS-001"],"revisedFeatures":{{FeaturesShape}}}""";
+        return PromptFormatter.Format(
+            input: $"""
+            The global development plan may no longer fit the observed repository state.
+
+            <observation>{observation}</observation>
+            <persisted-observations>{observations}</persisted-observations>
+            {briefBlock}
+            <current-plan>{currentPlan}</current-plan>
+
+            Explore at least two materially different responses to the observation and choose
+            one. Write a JSON OBJECT to '{PlanRevisionStore.ProposalPath}' with this shape:
+            {revisionShape}
+
+            The revisedFeatures array is the complete replacement plan. Retain every passed
+            feature unchanged (same id, definition and dependencies). Pending features may be
+            reprioritized, changed, removed, split or added. IDs must be positive and unique;
+            dependencies must exist and remain acyclic. Do not change the verify command,
+            target directory or run identity. Return `replan` without arguments after writing
+            the proposal; the harness will validate and apply it.
+            """,
+            output: new Envelope(EnvelopeType.Command, "replan", []));
+    }
+
     // --- per-feature loop (one fresh-context session) ------------------
 
     private static string ImplementPrompt(Feature feature) =>

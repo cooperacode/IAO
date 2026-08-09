@@ -462,11 +462,140 @@ func AllFeaturesPassing() bool {
 }
 
 // ResetFeatures clears the previous run's list — the PRODUCER flow resets it on its `start`.
+// Also resets the plan revision history and observation log: they're evidence scoped to the
+// SAME run as the feature list, so a genuinely new run must not inherit them either.
 func ResetFeatures() {
-	if !fileExists(featureListFilePath) {
-		return
+	if fileExists(featureListFilePath) {
+		if err := os.Remove(featureListFilePath); err != nil {
+			LogError(fmt.Sprintf("[FeatureStore] failed to clear: %s", err))
+		}
 	}
-	if err := os.Remove(featureListFilePath); err != nil {
-		LogError(fmt.Sprintf("[FeatureStore] failed to clear: %s", err))
+	ResetPlanRevisions()
+	ResetPlanObservations()
+}
+
+// PlanRevision is a driver-proposed complete replacement of the active plan, written to
+// ReplanProposalPath. The wire shape (field names) is reason/alternativesConsidered/
+// revisedFeatures/basedOnObservationIds; Go's nil-slice-is-empty semantics mean the fields
+// can be used directly wherever the .NET reference reads Alternatives/Features/ObservationIds.
+type PlanRevision struct {
+	Reason         string    `json:"reason"`
+	Alternatives   []string  `json:"alternativesConsidered"`
+	Features       []Feature `json:"revisedFeatures"`
+	ObservationIds []string  `json:"basedOnObservationIds"`
+}
+
+// PlanRevisionResult is the outcome of ApplyRevision.
+type PlanRevisionResult struct {
+	Success  bool
+	Error    string
+	Features []Feature
+}
+
+// ApplyRevision applies a complete replacement proposed during a running development flow.
+// Passed features are immutable evidence: a revision must retain them byte-for-byte at the
+// domain level and they remain passed. Pending features may be reprioritized, split, added
+// or removed, provided the resulting dependency graph is valid.
+func ApplyRevision(revision PlanRevision, maxFeatures int) PlanRevisionResult {
+	if strings.TrimSpace(revision.Reason) == "" {
+		return PlanRevisionResult{Error: "a revision reason is required"}
 	}
+	if len(revision.Alternatives) < 2 {
+		return PlanRevisionResult{Error: "at least two considered alternatives are required"}
+	}
+	if len(revision.Features) == 0 {
+		return PlanRevisionResult{Error: "the revised plan must contain features"}
+	}
+	if len(revision.Features) > maxFeatures {
+		return PlanRevisionResult{Error: fmt.Sprintf("the revised plan exceeds the %d-feature limit", maxFeatures)}
+	}
+
+	proposed := normalizeRevisionFeatures(revision.Features)
+	if proposed == nil {
+		return PlanRevisionResult{Error: "features must have unique positive ids, titles and positive priorities"}
+	}
+
+	current := LoadFeatures()
+	proposedById := make(map[int]Feature, len(proposed))
+	for _, f := range proposed {
+		proposedById[f.Id] = f
+	}
+	for _, passed := range current {
+		if !passed.Passes {
+			continue
+		}
+		retained, ok := proposedById[passed.Id]
+		if !ok {
+			return PlanRevisionResult{Error: fmt.Sprintf("passed feature #%d cannot be removed", passed.Id)}
+		}
+		if !sameFeatureDefinition(passed, retained) {
+			return PlanRevisionResult{Error: fmt.Sprintf("passed feature #%d cannot be modified", passed.Id)}
+		}
+	}
+
+	passedIds := make(map[int]bool, len(current))
+	for _, f := range current {
+		if f.Passes {
+			passedIds[f.Id] = true
+		}
+	}
+	merged := make([]Feature, len(proposed))
+	for i, f := range proposed {
+		f.Passes = passedIds[f.Id]
+		merged[i] = f
+	}
+	if graphError := dependencyGraphError(merged); graphError != "" {
+		return PlanRevisionResult{Error: graphError}
+	}
+
+	WriteFeatures(merged)
+	return PlanRevisionResult{Success: true, Features: merged}
+}
+
+// normalizeRevisionFeatures applies the same per-feature normalization Parse uses
+// (description/context truncation, dependsOn/references dedupe, Passes forced false) but
+// WITHOUT reindexing missing ids — revision features must already carry explicit positive
+// ids. nil if any id<=0, blank title, non-positive priority, or duplicate id.
+func normalizeRevisionFeatures(features []Feature) []Feature {
+	seen := make(map[int]bool, len(features))
+	for _, f := range features {
+		if f.Id <= 0 || strings.TrimSpace(f.Title) == "" || f.Priority <= 0 {
+			return nil
+		}
+		if seen[f.Id] {
+			return nil
+		}
+		seen[f.Id] = true
+	}
+
+	result := make([]Feature, len(features))
+	for i, f := range features {
+		result[i] = Feature{
+			Id:                    f.Id,
+			Title:                 f.Title,
+			Priority:              f.Priority,
+			Passes:                false,
+			DependsOn:             uniqueInts(f.DependsOn),
+			Description:           truncateDescription(f.Description),
+			References:            uniqueStrings(f.References),
+			ImplementationContext: truncateImplementationContext(f.ImplementationContext),
+		}
+	}
+	return result
+}
+
+// sameFeatureDefinition is ApplyRevision's equality check for "did a passed feature survive
+// unchanged" — includes Priority (unlike the evaluator's own split check, which needs
+// priority-only changes to be distinguishable from other edits for diff purposes).
+func sameFeatureDefinition(left, right Feature) bool {
+	return left.Id == right.Id &&
+		left.Title == right.Title &&
+		left.Priority == right.Priority &&
+		left.Description == right.Description &&
+		intsEqualSeq(left.DependsOn, right.DependsOn) &&
+		stringsEqualSeq(left.References, right.References) &&
+		stringsEqualSeq(left.ImplementationContext.Requirements, right.ImplementationContext.Requirements) &&
+		stringsEqualSeq(left.ImplementationContext.Constraints, right.ImplementationContext.Constraints) &&
+		stringsEqualSeq(left.ImplementationContext.Files, right.ImplementationContext.Files) &&
+		stringsEqualSeq(left.ImplementationContext.Acceptance, right.ImplementationContext.Acceptance)
 }

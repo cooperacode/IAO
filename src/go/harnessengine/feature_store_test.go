@@ -265,3 +265,96 @@ func TestFeatures_Reset_ClearsList(t *testing.T) {
 		t.Fatal("expected empty after reset")
 	}
 }
+
+func TestFeatures_Reset_AlsoClearsPlanRevisionsAndObservations(t *testing.T) {
+	isolate(t)
+
+	WriteFeatures([]Feature{feature(1, "A", 1, true)})
+	AppendPlanObservation("verification_failure", nil, "note", "evidence")
+	RecordPlanRevision(
+		PlanRevision{Reason: "r", Alternatives: []string{"a", "b"}, Features: []Feature{feature(1, "A", 1, false)}},
+		[]Feature{feature(1, "A", 1, false)}, PlanRevisionEvaluation{Verdict: PlanRevisionApprove})
+
+	ResetFeatures()
+
+	if len(LoadPlanObservations()) != 0 {
+		t.Fatal("expected observations cleared")
+	}
+	if PlanRevisionCount() != 0 {
+		t.Fatal("expected revision count reset")
+	}
+}
+
+func TestApplyRevision_PreservesPassedAndAllowsRepriorityAndAdd(t *testing.T) {
+	isolate(t)
+	WriteFeatures([]Feature{
+		feature(1, "foundation", 1, true),
+		featureDep(2, "api", 3, false, []int{1}),
+	})
+	revision := PlanRevision{
+		Reason:       "verification exposed a missing authentication layer",
+		Alternatives: []string{"keep a temporary stub", "add authentication first; selected because it is a real dependency"},
+		Features: []Feature{
+			feature(1, "foundation", 1, false),
+			featureDep(2, "api", 3, false, []int{1, 3}),
+			featureDep(3, "authentication", 2, false, []int{1}),
+		},
+	}
+
+	result := ApplyRevision(revision, 10)
+
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	loaded := LoadFeatures()
+	found := false
+	for _, f := range loaded {
+		if f.Id == 1 {
+			found = true
+			if !f.Passes {
+				t.Fatal("expected feature 1 to remain passed")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected feature 1 present")
+	}
+	if next := NextPendingFeature(); next == nil || next.Id != 3 {
+		t.Fatalf("unexpected next pending: %+v", next)
+	}
+}
+
+func TestApplyRevision_RejectsRemovalOrModificationOfPassedFeature(t *testing.T) {
+	isolate(t)
+	WriteFeatures([]Feature{feature(1, "foundation", 1, true)})
+	revision := PlanRevision{Reason: "change", Alternatives: []string{"A", "B"}, Features: []Feature{feature(1, "renamed", 1, false)}}
+
+	result := ApplyRevision(revision, 10)
+
+	if result.Success {
+		t.Fatal("expected rejection")
+	}
+	if !strings.Contains(result.Error, "cannot be modified") {
+		t.Fatalf("unexpected error: %s", result.Error)
+	}
+	if LoadFeatures()[0].Title != "foundation" {
+		t.Fatal("expected original feature untouched")
+	}
+}
+
+func TestApplyRevision_RejectsCycleAndRequiresAlternatives(t *testing.T) {
+	isolate(t)
+	WriteFeatures([]Feature{feature(1, "A", 1, false), feature(2, "B", 2, false)})
+	noAlternatives := PlanRevision{Reason: "change", Alternatives: []string{"only one"}, Features: []Feature{feature(1, "A", 1, false)}}
+	cyclic := PlanRevision{
+		Reason: "change", Alternatives: []string{"A", "B"},
+		Features: []Feature{featureDep(1, "A", 1, false, []int{2}), featureDep(2, "B", 2, false, []int{1})},
+	}
+
+	if got := ApplyRevision(noAlternatives, 10); !strings.Contains(got.Error, "two considered alternatives") {
+		t.Fatalf("unexpected error: %s", got.Error)
+	}
+	if got := ApplyRevision(cyclic, 10); !strings.Contains(got.Error, "cyclic dependency") {
+		t.Fatalf("unexpected error: %s", got.Error)
+	}
+}

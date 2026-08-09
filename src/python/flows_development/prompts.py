@@ -5,8 +5,19 @@ same name the driver fills in and returns as the next envelope's arg.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from flows_development import state_keys
-from harness_engine import artifact_store, context_policy, feature_store, prompt_formatter, run_config_store, state_store
+from harness_engine import (
+    artifact_store,
+    context_policy,
+    feature_store,
+    plan_observation_store,
+    plan_revision_store,
+    prompt_formatter,
+    run_config_store,
+    state_store,
+)
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 
@@ -173,6 +184,53 @@ feature. Return `implement` without arguments; the harness derives the new summa
         input_text,
         Envelope(EnvelopeType.COMMAND, "implement", ()),
         prompt_formatter.skills("dev-implement"),
+    )
+
+
+def replan_prompt(observation: str) -> str:
+    """Issued by `tasks.replan` when there's no readable proposal yet, and by
+    `tasks._handle_verify_failure` when a feature's deterministic verification has failed
+    three times in a row — `observation` is the concrete trigger in each case (a rejection
+    reason from the evaluator/apply_revision, or a cited PlanObservation.id + summary)."""
+    try:
+        plan_path = Path(".harness/feature_list.json")
+        current_plan = plan_path.read_text(encoding="utf-8") if plan_path.exists() else "(current plan unavailable)"
+    except OSError as ex:
+        current_plan = f"(current plan unavailable: {ex})"
+
+    brief = artifact_store.read(state_keys.BRIEF_ARTIFACT_NAME).strip()
+    brief_block = f"<brief>{brief}</brief>" if brief else ""
+    observations = "\n".join(
+        f"{o.id} [{o.kind}] feature={o.feature_id if o.feature_id is not None else 'n/a'}: "
+        f"{o.summary}; evidence={' | '.join(o.evidence)}"
+        for o in plan_observation_store.load()
+    )
+    revision_shape = (
+        '{"reason":"why the global plan must change",'
+        '"alternativesConsidered":["alternative A","alternative B; selected because ..."],'
+        '"basedOnObservationIds":["OBS-001"],'
+        f'"revisedFeatures":{FEATURES_SHAPE}}}'
+    )
+    input_text = f"""The global development plan may no longer fit the observed repository state.
+
+<observation>{observation}</observation>
+<persisted-observations>{observations}</persisted-observations>
+{brief_block}
+<current-plan>{current_plan}</current-plan>
+
+Explore at least two materially different responses to the observation and choose
+one. Write a JSON OBJECT to '{plan_revision_store.PROPOSAL_PATH}' with this shape:
+{revision_shape}
+
+The revisedFeatures array is the complete replacement plan. Retain every passed
+feature unchanged (same id, definition and dependencies). Pending features may be
+reprioritized, changed, removed, split or added. IDs must be positive and unique;
+dependencies must exist and remain acyclic. Do not change the verify command,
+target directory or run identity. Return `replan` without arguments after writing
+the proposal; the harness will validate and apply it."""
+    return prompt_formatter.format(
+        input_text,
+        Envelope(EnvelopeType.COMMAND, "replan", ()),
     )
 
 

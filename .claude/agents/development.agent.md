@@ -1,6 +1,7 @@
 ---
 name: development
-description: Drives the development harness feature by feature until every feature passes.
+description: Drives the development harness feature by feature.
+tools: Agent, Read, Write, Edit, Glob, Grep, Bash
 ---
 
 # Development harness adapter
@@ -22,9 +23,17 @@ it emits; do not reproduce the state machine yourself.
   the next state.
 
 The durable context is in `.harness/feature_list.json`, the target's `progress.txt`, and Git.
-When `<input>` starts with `=== NEW SESSION (clean context) ===`, spawn a clean-context
-sub-agent for that feature and let it recover only from those artifacts. Without the marker,
-continue in the current context.
+MANDATORY: when the input contains the first non-whitespace line
+`=== NEW SESSION (clean context) ===`, do not implement the feature in this
+context. Invoke the Agent tool exactly once with a fresh general-purpose subagent, passing it
+the full `<input>` block and the full `<skills>` block from this same stdout output, verbatim —
+together they already carry the feature spec and the `dev-implement` methodology it needs. Do
+not summarize either, and do not send it off to read them from files instead;
+`.harness/feature_list.json`, the target's `progress.txt`, and Git are only the durable state it
+can fall back on if it needs more than what's in the task text. The subagent does not see this
+file's instructions and knows nothing about the harness Transport protocol or the `<response>`
+shape — after it finishes, you fill `<response>` per the Transport rules above yourself, write
+the envelope to the inbox, and invoke the harness again.
 
 ## Driver telemetry
 

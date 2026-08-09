@@ -1,4 +1,5 @@
 {
+  "agent": "development",
   "permissions": {
     "defaultMode": "bypassPermissions"
   }

@@ -2,6 +2,7 @@
 (padrão do gate de avaliação). Cobre as ramificações — verify FAIL↺implement, verify
 PASS→handoff automático, fallback handoff legado — e a guarda por feature."""
 
+import json
 import shutil
 import subprocess
 import uuid
@@ -9,7 +10,16 @@ from dataclasses import replace
 from pathlib import Path
 
 from flows_development import state_keys, tasks
-from harness_engine import artifact_store, feature_store, run_config_store, state_store, task_registry, trace
+from harness_engine import (
+    artifact_store,
+    feature_store,
+    plan_observation_store,
+    plan_revision_store,
+    run_config_store,
+    state_store,
+    task_registry,
+    trace,
+)
 from harness_engine.envelope import Envelope, EnvelopeType
 from harness_engine.feature_store import Feature
 from harness_engine.run_config_store import RunConfig
@@ -545,3 +555,45 @@ def test_verify_cmds_lista_vazia_cai_no_caminho_legado_de_verify_cmd():
     assert feature_store.pending_count() == 1
     assert _verify_log_path(2).exists()
     assert not _verify_log_path_indexed(2, 1).exists()
+
+
+# --- replan -------------------------------------------------------------------------
+
+
+def test_replan_aplica_revisao_versionada_sem_trocar_run_id():
+    _plan()
+    run_id = run_config_store.load().run_id
+    observation = plan_observation_store.append(
+        "missing_dependency", 2, "Feature B needs a foundation.", "compiler failure"
+    )
+    proposal = Path(plan_revision_store.PROPOSAL_PATH)
+    proposal.parent.mkdir(parents=True, exist_ok=True)
+    proposal.write_text(json.dumps({
+        "reason": "missing dependency",
+        "alternativesConsidered": ["keep stub", "add dependency; selected"],
+        "basedOnObservationIds": [observation.id],
+        "revisedFeatures": [
+            {"id": 1, "title": "A", "priority": 2},
+            {"id": 2, "title": "B", "priority": 3},
+            {"id": 3, "title": "Foundation", "priority": 1},
+        ],
+    }))
+
+    result = tasks.replan(_cmd("replan"))
+
+    assert "Foundation" in result  # the harness re-picked: the new, highest-priority feature
+    assert len(feature_store.load()) == 3
+    assert run_config_store.load().run_id == run_id  # replan is not a new run
+    assert plan_revision_store.revision_count() == 1
+    assert Path(".harness/plans/plan-v1.json").exists()
+
+
+def test_terceira_falha_deterministica_solicita_replanejamento_global():
+    _advance_to_verify()  # 1st deterministic failure happens inside implement()
+    tasks.verify(_cmd("verify"))  # 2nd: normal local correction (fix_prompt)
+
+    result = tasks.verify(_cmd("verify"))  # 3rd: escalates to a global replan proposal
+
+    assert "global development plan" in result
+    assert "alternativesConsidered" in result
+    assert '"value":"replan"' in result

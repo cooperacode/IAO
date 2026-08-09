@@ -32,6 +32,9 @@ from harness_engine import (
     git_command,
     harness_config,
     harness_log,
+    plan_observation_store,
+    plan_revision_evaluator,
+    plan_revision_store,
     run_config_store,
     state_store,
 )
@@ -42,6 +45,11 @@ from harness_engine.run_config_store import RunConfig
 # Few features + a PER-FEATURE step ceiling: bars an implement<->verify loop that never closes.
 MAX_FEATURES = 10
 STEPS_PER_FEATURE = 8
+
+# Ceiling on how many times the harness will accept a global plan revision within one run
+# (see `replan`/`_handle_verify_failure`) — a driver stuck oscillating between plans must
+# still terminate rather than loop forever.
+MAX_REPLANS = 2
 
 # Effective step ceiling passed to harness_host (override of the global one): slack for
 # the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus start/plan
@@ -130,6 +138,37 @@ def plan(envelope: Envelope | None) -> str:
     return bearings(None)
 
 
+def replan(envelope: Envelope | None) -> str:
+    """Validates and atomically applies a driver-proposed revision of the active plan
+    (written to `plan_revision_store.PROPOSAL_PATH`, not the envelope — same convention as
+    `plan`/`state_keys.PLAN_FILE_PATH`). Two independent gates must both clear: the
+    deterministic evidence/invariant evaluator, then feature_store's hard domain
+    invariants (passed features immutable, dependency graph valid) — either can reject."""
+    if plan_revision_store.revision_count() >= MAX_REPLANS:
+        return _stop(f"global replan limit ({MAX_REPLANS})")
+
+    revision = plan_revision_store.read_proposal()
+    if revision is None:
+        return prompts.replan_prompt("No readable replan proposal was found.")
+
+    evaluation = plan_revision_evaluator.evaluate(
+        feature_store.load(), revision, plan_observation_store.load(), MAX_FEATURES,
+        max(0, STEP_BUDGET - state_store.load().step), STEPS_PER_FEATURE,
+    )
+    if not evaluation.passed:
+        errors = " | ".join(f"{e.code}: {e.message}" for e in evaluation.errors)
+        return prompts.replan_prompt(f"The deterministic plan evaluator rejected the proposal: {errors}")
+
+    result = feature_store.apply_revision(revision, MAX_FEATURES)
+    if not result.success:
+        return prompts.replan_prompt(f"The proposed revision was rejected: {result.error}")
+
+    plan_revision_store.record(revision, list(result.features), evaluation)
+    state_store.set(state_keys.VERIFY_FAILURES, "0")
+    harness_log.info(f"[dev] applied plan revision {plan_revision_store.revision_count()}: {revision.reason}")
+    return bearings(None)
+
+
 def bearings(envelope: Envelope | None) -> str:
     # New session (one feature): resets the per-feature guard counter.
     state_store.set(state_keys.FEATURE_STEPS, "1")
@@ -167,6 +206,7 @@ def pick(envelope: Envelope | None) -> str:
 
     state_store.set(state_keys.CURRENT_FEATURE_ID, str(next_feature.id))
     state_store.set(state_keys.CURRENT_FEATURE_TITLE, next_feature.title)
+    state_store.set(state_keys.VERIFY_FAILURES, "0")
     # Labels the trace with the current feature (see trace.TraceEntry.label) — without
     # this, every trace.jsonl line only has the global step, with no indication of which
     # feature it belongs to.
@@ -183,7 +223,7 @@ def implement(envelope: Envelope | None) -> str:
     attempted, success, result = _try_automated_verify()
     if attempted:
         state_store.set(state_keys.CURRENT_FEATURE_VERIFY, result)
-        return _complete_verified_feature(result) if success else prompts.fix_prompt(result)
+        return _complete_verified_feature(result) if success else _handle_verify_failure(result)
 
     return prompts.verify_prompt()
 
@@ -198,7 +238,7 @@ def verify(envelope: Envelope | None) -> str:
     if not attempted:
         return prompts.verify_retry_prompt()
     state_store.set(state_keys.CURRENT_FEATURE_VERIFY, result)
-    return _complete_verified_feature(result) if success else prompts.fix_prompt(result)
+    return _complete_verified_feature(result) if success else _handle_verify_failure(result)
 
 
 def handoff(envelope: Envelope | None) -> str:
@@ -672,6 +712,30 @@ def _over_feature_budget() -> bool:
 def _stop(motivo: str) -> str:
     harness_log.error(f"[dev] stopped due to {motivo}. feature_list in .harness/feature_list.json")
     return "stop"
+
+
+def _handle_verify_failure(failure: str) -> str:
+    """Routes a deterministic verify failure to either the ordinary per-feature fix loop
+    or a global replan proposal. One failed implement() and one explicit verify() are the
+    normal corrective loop; only the 3rd consecutive deterministic failure on the same
+    feature escalates — after a genuine fix opportunity, and only while the run hasn't
+    already exhausted its replan budget."""
+    failures = _int_or(_state(state_keys.VERIFY_FAILURES), 0) + 1
+    state_store.set(state_keys.VERIFY_FAILURES, str(failures))
+
+    if failures < 3 or plan_revision_store.revision_count() >= MAX_REPLANS:
+        return prompts.fix_prompt(failure)
+
+    try:
+        feature_id: int | None = int(_state(state_keys.CURRENT_FEATURE_ID))
+    except ValueError:
+        feature_id = None
+    observation = plan_observation_store.append(
+        "verification_failure", feature_id,
+        f"Feature #{_state(state_keys.CURRENT_FEATURE_ID)} failed deterministic verification {failures} times.",
+        failure,
+    )
+    return prompts.replan_prompt(f"{observation.id}: {observation.summary} Latest evidence: {failure}")
 
 
 def _done() -> str:

@@ -761,6 +761,58 @@ func TestImplement_ParallelVerifyCmds_DisallowedOperator_RejectedWithoutRunningA
 	}
 }
 
+func TestReplan_AppliesVersionedRevisionWithoutChangingRunId(t *testing.T) {
+	targetDir, _ := isolate(t)
+	planWith(targetDir)
+	runId := engine.LoadRunConfig().RunId
+	observation := engine.AppendPlanObservation("missing_dependency", intPtr(2), "Feature B needs a foundation.", "compiler failure")
+	if err := os.MkdirAll(filepath.Dir(engine.ReplanProposalPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proposal := fmt.Sprintf(`{"reason":"missing dependency","alternativesConsidered":["keep stub","add dependency; selected"],"basedOnObservationIds":["%s"],"revisedFeatures":[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":3},{"id":3,"title":"Foundation","priority":1}]}`, observation.Id)
+	if err := os.WriteFile(engine.ReplanProposalPath, []byte(proposal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Replan(cmd("replan"))
+
+	if !strings.Contains(result, "Foundation") {
+		t.Fatalf("unexpected result: %s", result)
+	}
+	if len(engine.LoadFeatures()) != 3 {
+		t.Fatalf("expected 3 features, got %d", len(engine.LoadFeatures()))
+	}
+	if engine.LoadRunConfig().RunId != runId {
+		t.Fatalf("expected run id to survive replan")
+	}
+	if engine.PlanRevisionCount() != 1 {
+		t.Fatalf("expected revision count 1, got %d", engine.PlanRevisionCount())
+	}
+	if _, err := os.Stat(filepath.Join(".harness", "plans", "plan-v1.json")); err != nil {
+		t.Fatalf("expected plan-v1.json to exist: %v", err)
+	}
+}
+
+func TestVerify_ThirdConsecutiveFailure_RequestsGlobalReplan(t *testing.T) {
+	targetDir, _ := isolate(t)
+	advanceToVerify(targetDir) // first failure occurs in Implement()
+	Verify(cmd("verify"))      // second: normal local correction
+
+	result := Verify(cmd("verify")) // third: global escalation
+
+	if !strings.Contains(result, "global development plan") {
+		t.Fatalf("expected global development plan prompt, got: %s", result)
+	}
+	if !strings.Contains(result, "alternativesConsidered") {
+		t.Fatalf("expected revision shape hint, got: %s", result)
+	}
+	if !strings.Contains(result, `"value":"replan"`) {
+		t.Fatalf("expected replan envelope, got: %s", result)
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
 func TestImplement_EmptyVerifyCmds_FallsBackToLegacySingleVerifyCmdPath(t *testing.T) {
 	targetDir, _ := isolate(t)
 	planWith(targetDir)

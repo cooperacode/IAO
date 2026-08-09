@@ -8,6 +8,7 @@ var tasks = new Dictionary<string, Func<Envelope?, string>>
 {
     ["start"] = _ => DevelopmentTasks.Start(),
     ["plan"] = envelope => DevelopmentTasks.Plan(envelope),
+    ["replan"] = envelope => DevelopmentTasks.Replan(envelope),
     ["bearings"] = envelope => DevelopmentTasks.Bearings(envelope),
     ["smoke"] = envelope => DevelopmentTasks.Smoke(envelope),
     ["pick"] = envelope => DevelopmentTasks.Pick(envelope),

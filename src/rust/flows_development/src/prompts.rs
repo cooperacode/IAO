@@ -5,7 +5,8 @@
 use harness_engine::envelope::{Envelope, envelope_type};
 use harness_engine::feature_store::{self, Feature};
 use harness_engine::{
-    artifact_store, context_policy, prompt_formatter, run_config_store, state_store,
+    artifact_store, context_policy, plan_observation_store, plan_revision_store,
+    prompt_formatter, run_config_store, state_store,
 };
 
 use crate::tasks::{
@@ -144,6 +145,66 @@ surrounding text. Repeat the command with '{VERIFY_CMD}' and '{TARGET_DIR}'."
             "plan",
             vec![VERIFY_CMD.to_string(), TARGET_DIR.to_string()],
         ),
+        None,
+    )
+}
+
+// Deterministic gate for a global plan revision: asks the driver to write a
+// `PlanRevision` (see `harness_engine::feature_store::PlanRevision`) to
+// `plan_revision_store::PROPOSAL_PATH`, citing at least two alternatives and at least one
+// persisted observation. The harness (`tasks::replan`), not the driver, decides whether the
+// proposal is accepted.
+pub fn replan_prompt(observation: &str) -> String {
+    let current_plan = match std::fs::read_to_string(".harness/feature_list.json") {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "(current plan unavailable)".to_string(),
+        Err(e) => format!("(current plan unavailable: {e})"),
+    };
+
+    let brief = artifact_store::read(BRIEF_ARTIFACT_NAME).trim().to_string();
+    let brief_block = if brief.is_empty() { String::new() } else { format!("<brief>{brief}</brief>") };
+    let observations = plan_observation_store::load()
+        .iter()
+        .map(|o| {
+            format!(
+                "{} [{}] feature={}: {}; evidence={}",
+                o.id,
+                o.kind,
+                o.feature_id.map(|id| id.to_string()).unwrap_or_else(|| "n/a".to_string()),
+                o.summary,
+                o.evidence.join(" | ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let revision_shape = format!(
+        r#"{{"reason":"why the global plan must change","alternativesConsidered":["alternative A","alternative B; selected because ..."],"basedOnObservationIds":["OBS-001"],"revisedFeatures":{FEATURES_SHAPE}}}"#
+    );
+
+    let input = format!(
+        "The global development plan may no longer fit the observed repository state.\n\
+\n\
+<observation>{observation}</observation>\n\
+<persisted-observations>{observations}</persisted-observations>\n\
+{brief_block}\n\
+<current-plan>{current_plan}</current-plan>\n\
+\n\
+Explore at least two materially different responses to the observation and choose\n\
+one. Write a JSON OBJECT to '{}' with this shape:\n\
+{revision_shape}\n\
+\n\
+The revisedFeatures array is the complete replacement plan. Retain every passed\n\
+feature unchanged (same id, definition and dependencies). Pending features may be\n\
+reprioritized, changed, removed, split or added. IDs must be positive and unique;\n\
+dependencies must exist and remain acyclic. Do not change the verify command,\n\
+target directory or run identity. Return `replan` without arguments after writing\n\
+the proposal; the harness will validate and apply it.",
+        plan_revision_store::PROPOSAL_PATH
+    );
+
+    prompt_formatter::format(
+        &input,
+        &Envelope::new(envelope_type::COMMAND, "replan", vec![]),
         None,
     )
 }

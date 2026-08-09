@@ -13,7 +13,8 @@
 use harness_engine::Envelope;
 use harness_engine::run_config_store::RunConfig;
 use harness_engine::{
-    artifact_store, docs_reader, feature_store, harness_config, harness_log, run_config_store,
+    artifact_store, docs_reader, feature_store, harness_config, harness_log,
+    plan_observation_store, plan_revision_evaluator, plan_revision_store, run_config_store,
     state_store,
 };
 
@@ -25,6 +26,11 @@ use std::process::Command;
 // never closes.
 pub const MAX_FEATURES: usize = 10;
 pub const STEPS_PER_FEATURE: i32 = 8;
+// Ceiling on how many global plan revisions ("replan") a single run may apply — mirrors
+// .NET's DevelopmentTasks.MaxReplans. Once reached, both `replan` and the third-failure
+// escalation in `handle_verify_failure` stop offering the replan path (see both call sites
+// below): the driver keeps correcting locally via `fix_prompt` instead.
+pub const MAX_REPLANS: i32 = 2;
 
 // Effective step ceiling passed to harness_host (override of the global one): slack for
 // the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus
@@ -40,6 +46,11 @@ pub const CURRENT_FEATURE_SUMMARY_KEY: &str = "current_feature_summary";
 pub const CURRENT_FEATURE_VERIFY_KEY: &str = "current_feature_verify";
 pub const CURRENT_BEARINGS_KEY: &str = "current_bearings";
 pub const FEATURE_STEPS_KEY: &str = "feature_steps";
+// Consecutive deterministic verify failures on the CURRENT feature — reset whenever a new
+// feature is picked (see `pick`) or a plan revision is applied (see `replan`). Escalates to
+// a global replan proposal only on the third failure (see `handle_verify_failure`): one
+// failed `implement` and one explicit `verify` are the normal corrective loop.
+pub const VERIFY_FAILURES_KEY: &str = "verify_failures";
 
 // Name of the brief artifact in artifact_store (.harness/brief.md) — retained for
 // auditability and compatibility; implementation sessions use each feature's bounded context.
@@ -147,6 +158,56 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     bearings(None)
 }
 
+/// Validates and, if the deterministic gate approves, atomically applies a driver-proposed
+/// revision of the active plan (written to `plan_revision_store::PROPOSAL_PATH`, not the
+/// envelope — same reasoning as `PLAN_FILE_PATH`). The harness decides acceptance, not the
+/// driver: `plan_revision_evaluator::evaluate` judges evidence/invariants, then
+/// `feature_store::apply_revision` re-checks the invariants it alone enforces and performs
+/// the write.
+pub fn replan(_envelope: Option<&Envelope>) -> String {
+    if plan_revision_store::revision_count() >= MAX_REPLANS {
+        return stop(&format!("global replan limit ({MAX_REPLANS})"));
+    }
+
+    let revision = match plan_revision_store::read_proposal() {
+        Some(r) => r,
+        None => return prompts::replan_prompt("No readable replan proposal was found."),
+    };
+
+    let remaining_steps = (STEP_BUDGET - state_store::load().step).max(0);
+    let evaluation = plan_revision_evaluator::evaluate(
+        &feature_store::load(),
+        &revision,
+        &plan_observation_store::load(),
+        MAX_FEATURES,
+        remaining_steps,
+        STEPS_PER_FEATURE,
+    );
+    if !evaluation.passed() {
+        let errors = evaluation
+            .errors
+            .iter()
+            .map(|e| format!("{}: {}", e.code, e.message))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        return prompts::replan_prompt(&format!("The deterministic plan evaluator rejected the proposal: {errors}"));
+    }
+
+    let result = feature_store::apply_revision(&revision, MAX_FEATURES);
+    if !result.success {
+        return prompts::replan_prompt(&format!("The proposed revision was rejected: {}", result.error));
+    }
+
+    plan_revision_store::record(&revision, &result.features, &evaluation);
+    state_store::set(VERIFY_FAILURES_KEY, "0");
+    harness_log::info(&format!(
+        "[dev] applied plan revision {}: {}",
+        plan_revision_store::revision_count(),
+        revision.reason
+    ));
+    bearings(None)
+}
+
 pub fn bearings(_envelope: Option<&Envelope>) -> String {
     // New session (one feature): resets the per-feature guard counter.
     state_store::set(FEATURE_STEPS_KEY, "1");
@@ -189,6 +250,7 @@ pub fn pick(_envelope: Option<&Envelope>) -> String {
 
     state_store::set(CURRENT_FEATURE_ID_KEY, &next.id.to_string());
     state_store::set(CURRENT_FEATURE_TITLE_KEY, &next.title);
+    state_store::set(VERIFY_FAILURES_KEY, "0");
     // Tags the trace with the current feature (see trace::TraceEntry::label) — without
     // this, every trace.jsonl line only has the global step, without saying which
     // feature it belongs to.
@@ -218,7 +280,7 @@ pub fn implement(_envelope: Option<&Envelope>) -> String {
                 return if auto.success {
                     handoff::complete_verified_feature(&auto.result)
                 } else {
-                    prompts::fix_prompt(Some(&auto.result))
+                    handle_verify_failure(&auto.result)
                 };
             }
         }
@@ -238,7 +300,7 @@ pub fn verify(_envelope: Option<&Envelope>) -> String {
     let auto = verify::try_automated_verify(id, &target, &config.verify_cmd, &config.verify_cmds);
     if !auto.attempted { return prompts::verify_retry_prompt(); }
     state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
-    if auto.success { handoff::complete_verified_feature(&auto.result) } else { prompts::fix_prompt(Some(&auto.result)) }
+    if auto.success { handoff::complete_verified_feature(&auto.result) } else { handle_verify_failure(&auto.result) }
 }
 
 pub fn handoff_task(_envelope: Option<&Envelope>) -> String {
@@ -294,6 +356,32 @@ fn over_feature_budget() -> bool {
         return true;
     }
     false
+}
+
+/// Routes a deterministic verify failure to a local fix on the first two occurrences, and
+/// escalates to a global replan proposal on the third — after `implement`'s automatic
+/// verify and one explicit `verify` retry have both had a genuine chance to fix it. Counts
+/// PER FEATURE (`pick` resets `VERIFY_FAILURES_KEY` on every new selection; `replan` resets
+/// it too, since a freshly-accepted revision deserves its own three strikes).
+fn handle_verify_failure(failure: &str) -> String {
+    let failures: i32 = state(VERIFY_FAILURES_KEY).parse().unwrap_or(0) + 1;
+    state_store::set(VERIFY_FAILURES_KEY, &failures.to_string());
+
+    if failures < 3 || plan_revision_store::revision_count() >= MAX_REPLANS {
+        return prompts::fix_prompt(Some(failure));
+    }
+
+    let feature_id: Option<i32> = state(CURRENT_FEATURE_ID_KEY).parse().ok();
+    let observation = plan_observation_store::append(
+        "verification_failure",
+        feature_id,
+        &format!(
+            "Feature #{} failed deterministic verification {failures} times.",
+            state(CURRENT_FEATURE_ID_KEY)
+        ),
+        &[failure],
+    );
+    prompts::replan_prompt(&format!("{}: {} Latest evidence: {failure}", observation.id, observation.summary))
 }
 
 pub(crate) fn stop(reason: &str) -> String {
@@ -942,6 +1030,113 @@ mod tests {
 
         assert!(result.contains(r#""value":"verify"#));
         assert_eq!(feature_store::pending_count(), 2);
+    }
+
+    // --- replan --------------------------------------------------------------------------
+
+    #[test]
+    fn replan_aplica_revisao_versionada_sem_trocar_run_id() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan_default();
+        let run_id_before = run_config_store::load().run_id;
+        let observation = harness_engine::plan_observation_store::append(
+            "missing_dependency",
+            Some(2),
+            "Feature B needs a foundation.",
+            &["compiler failure"],
+        );
+        std::fs::create_dir_all(".harness").unwrap();
+        std::fs::write(
+            harness_engine::plan_revision_store::PROPOSAL_PATH,
+            format!(
+                r#"{{"reason":"missing dependency","alternativesConsidered":["keep stub","add dependency; selected"],"basedOnObservationIds":["{}"],"revisedFeatures":[{{"id":1,"title":"A","priority":2}},{{"id":2,"title":"B","priority":3}},{{"id":3,"title":"Foundation","priority":1}}]}}"#,
+                observation.id
+            ),
+        )
+        .unwrap();
+
+        let result = replan(Some(&cmd("replan", vec![])));
+
+        assert!(result.contains("Foundation"));
+        assert_eq!(feature_store::load().len(), 3);
+        assert_eq!(run_config_store::load().run_id, run_id_before);
+        assert_eq!(harness_engine::plan_revision_store::revision_count(), 1);
+        assert!(std::path::Path::new(".harness/plans/plan-v1.json").exists());
+    }
+
+    #[test]
+    fn terceira_falha_deterministica_solicita_replanejamento_global() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        advance_to_verify(); // first failure occurs inside implement()'s automatic verify
+        verify(Some(&cmd("verify", vec!["FAIL: red tests"]))); // second: normal local correction
+
+        let result = verify(Some(&cmd("verify", vec!["FAIL: red tests again"]))); // third: global escalation
+
+        assert!(result.contains("global development plan"));
+        assert!(result.contains("alternativesConsidered"));
+        assert!(result.contains(r#""value":"replan""#));
+    }
+
+    #[test]
+    fn replan_com_limite_de_revisoes_esgotado_para_o_flow() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        plan_default();
+        for _ in 0..MAX_REPLANS {
+            let approval = harness_engine::plan_revision_evaluator::PlanRevisionEvaluation {
+                verdict: harness_engine::plan_revision_evaluator::PlanRevisionVerdict::Approve,
+                errors: Vec::new(),
+                warnings: Vec::new(),
+                diff: harness_engine::plan_revision_evaluator::PlanDiff::default(),
+            };
+            let revision = harness_engine::feature_store::PlanRevision {
+                reason: "x".to_string(),
+                alternatives_considered: vec!["A".to_string(), "B".to_string()],
+                revised_features: feature_store::load(),
+                based_on_observation_ids: vec!["OBS-001".to_string()],
+            };
+            harness_engine::plan_revision_store::record(&revision, &revision.revised_features, &approval);
+        }
+
+        let result = replan(Some(&cmd("replan", vec![])));
+
+        assert_eq!(result, "stop");
+    }
+
+    #[test]
+    fn terceira_falha_com_limite_de_replans_ja_esgotado_permanece_em_fix_prompt() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        advance_to_verify();
+        for _ in 0..MAX_REPLANS {
+            let approval = harness_engine::plan_revision_evaluator::PlanRevisionEvaluation {
+                verdict: harness_engine::plan_revision_evaluator::PlanRevisionVerdict::Approve,
+                errors: Vec::new(),
+                warnings: Vec::new(),
+                diff: harness_engine::plan_revision_evaluator::PlanDiff::default(),
+            };
+            let revision = harness_engine::feature_store::PlanRevision {
+                reason: "x".to_string(),
+                alternatives_considered: vec!["A".to_string(), "B".to_string()],
+                revised_features: feature_store::load(),
+                based_on_observation_ids: vec!["OBS-001".to_string()],
+            };
+            harness_engine::plan_revision_store::record(&revision, &revision.revised_features, &approval);
+        }
+
+        verify(Some(&cmd("verify", vec!["FAIL: red tests"]))); // second failure
+
+        let result = verify(Some(&cmd("verify", vec!["FAIL: red tests again"]))); // third failure, but no replan budget left
+
+        assert!(!result.contains("global development plan"));
+        assert!(result.contains(r#""value":"implement"#));
+        assert!(!result.contains(r#""value":"replan""#));
     }
 
     #[test]

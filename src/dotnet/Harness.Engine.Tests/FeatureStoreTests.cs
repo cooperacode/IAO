@@ -263,4 +263,52 @@ public class FeatureStoreTests : IDisposable
 
         Assert.Empty(FeatureStore.Load());
     }
+
+    [Fact]
+    public void ApplyRevision_PreservaAprovadaEPermiteRepriorizarEAdicionar()
+    {
+        FeatureStore.Write([
+            new Feature(1, "foundation", 1, true),
+            new Feature(2, "api", 3, false, [1]),
+        ]);
+        var revision = new PlanRevision(
+            "verification exposed a missing authentication layer",
+            ["keep a temporary stub", "add authentication first; selected because it is a real dependency"],
+            [
+                new Feature(1, "foundation", 1, false),
+                new Feature(2, "api", 3, false, [1, 3]),
+                new Feature(3, "authentication", 2, false, [1]),
+            ]);
+
+        var result = FeatureStore.ApplyRevision(revision, 10);
+
+        Assert.True(result.Success, result.Error);
+        Assert.True(FeatureStore.Load().Single(f => f.Id == 1).Passes);
+        Assert.Equal(3, FeatureStore.NextPending()!.Id);
+    }
+
+    [Fact]
+    public void ApplyRevision_RejeitaRemocaoOuAlteracaoDeFeatureAprovada()
+    {
+        FeatureStore.Write([new Feature(1, "foundation", 1, true)]);
+        var revision = new PlanRevision("change", ["A", "B"], [new Feature(1, "renamed", 1, false)]);
+
+        var result = FeatureStore.ApplyRevision(revision, 10);
+
+        Assert.False(result.Success);
+        Assert.Contains("cannot be modified", result.Error);
+        Assert.Equal("foundation", FeatureStore.Load().Single().Title);
+    }
+
+    [Fact]
+    public void ApplyRevision_RejeitaCicloEExigeAlternativas()
+    {
+        FeatureStore.Write([new Feature(1, "A", 1, false), new Feature(2, "B", 2, false)]);
+        var noAlternatives = new PlanRevision("change", ["only one"], [new Feature(1, "A", 1, false)]);
+        var cyclic = new PlanRevision("change", ["A", "B"], [
+            new Feature(1, "A", 1, false, [2]), new Feature(2, "B", 2, false, [1])]);
+
+        Assert.Contains("two considered alternatives", FeatureStore.ApplyRevision(noAlternatives, 10).Error);
+        Assert.Contains("cyclic dependency", FeatureStore.ApplyRevision(cyclic, 10).Error);
+    }
 }

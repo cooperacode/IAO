@@ -28,9 +28,16 @@ it emits; do not reproduce the state machine yourself.
   the next state.
 
 The durable context is in `.harness/feature_list.json`, the target's `progress.txt`, and Git.
-When `<input>` starts with `=== NEW SESSION (clean context) ===`, spawn a clean-context
-sub-agent for that feature and let it recover only from those artifacts. Without the marker,
-continue in the current context.
+Without the `=== NEW SESSION (clean context) ===` marker, continue in the current context.
+
+MANDATORY when `<input>` starts with `=== NEW SESSION (clean context) ===`: this driver has no
+tool available here to spawn an isolated sub-session, so perform a hard in-context reset instead
+of asking for one that doesn't exist. Discard every prior feature's reasoning and turn history
+from your working memory. Rebuild context solely from the `<input>` and `<skills>` blocks in
+this same stdout output — they already carry the feature spec and the `dev-implement`
+methodology — falling back to `.harness/feature_list.json`, the target's `progress.txt`, and Git
+only if you need more than what's in the task text. Then implement the feature as if this were a
+fresh session.
 
 ## Driver telemetry
 

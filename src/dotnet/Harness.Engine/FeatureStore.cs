@@ -238,6 +238,74 @@ public static class FeatureStore
         Write([.. features.Select(f => f.Id == id ? f with { Passes = true } : f)]);
     }
 
+    /// <summary>
+    /// Applies a complete replacement proposed during a running development flow. Passed
+    /// features are immutable evidence: a revision must retain them byte-for-byte at the
+    /// domain level and they remain passed. Pending features may be reprioritized, split,
+    /// added or removed, provided the resulting dependency graph is valid.
+    /// </summary>
+    public static PlanRevisionResult ApplyRevision(PlanRevision revision, int maxFeatures)
+    {
+        if (string.IsNullOrWhiteSpace(revision.Reason))
+            return PlanRevisionResult.Rejected("a revision reason is required");
+        if (revision.Alternatives.Length < 2)
+            return PlanRevisionResult.Rejected("at least two considered alternatives are required");
+        if (revision.Features.Length == 0)
+            return PlanRevisionResult.Rejected("the revised plan must contain features");
+        if (revision.Features.Length > maxFeatures)
+            return PlanRevisionResult.Rejected($"the revised plan exceeds the {maxFeatures}-feature limit");
+
+        var proposed = NormalizeRevisionFeatures(revision.Features);
+        if (proposed is null)
+            return PlanRevisionResult.Rejected("features must have unique positive ids, titles and positive priorities");
+
+        var current = Load();
+        var proposedById = proposed.ToDictionary(f => f.Id);
+        foreach (var passed in current.Where(f => f.Passes))
+        {
+            if (!proposedById.TryGetValue(passed.Id, out var retained))
+                return PlanRevisionResult.Rejected($"passed feature #{passed.Id} cannot be removed");
+            if (!SameDefinition(passed, retained))
+                return PlanRevisionResult.Rejected($"passed feature #{passed.Id} cannot be modified");
+        }
+
+        var passedIds = current.Where(f => f.Passes).Select(f => f.Id).ToHashSet();
+        var merged = proposed.Select(f => f with { Passes = passedIds.Contains(f.Id) }).ToList();
+        if (DependencyGraphError(merged) is { } graphError)
+            return PlanRevisionResult.Rejected(graphError);
+
+        Write(merged);
+        return PlanRevisionResult.Accepted(merged);
+    }
+
+    private static List<Feature>? NormalizeRevisionFeatures(IReadOnlyList<Feature> features)
+    {
+        if (features.Any(f => f.Id <= 0 || string.IsNullOrWhiteSpace(f.Title) || f.Priority <= 0)
+            || features.Select(f => f.Id).Distinct().Count() != features.Count)
+            return null;
+
+        return [.. features.Select(feature => feature with
+        {
+            Passes = false,
+            DependsOn = feature.Deps.Distinct().ToArray(),
+            Description = TruncateDescription(feature.Description),
+            References = feature.Refs.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct().ToArray(),
+            ImplementationContext = TruncateImplementationContext(feature.ImplementationContext),
+        })];
+    }
+
+    private static bool SameDefinition(Feature left, Feature right) =>
+        left.Id == right.Id
+        && left.Title == right.Title
+        && left.Priority == right.Priority
+        && left.Description == right.Description
+        && left.Deps.SequenceEqual(right.Deps)
+        && left.Refs.SequenceEqual(right.Refs)
+        && left.Context.RequirementItems.SequenceEqual(right.Context.RequirementItems)
+        && left.Context.ConstraintItems.SequenceEqual(right.Context.ConstraintItems)
+        && left.Context.FileItems.SequenceEqual(right.Context.FileItems)
+        && left.Context.AcceptanceItems.SequenceEqual(right.Context.AcceptanceItems);
+
     /// <summary>How many features are still left (<c>Passes == false</c>).</summary>
     public static int PendingCount() => Load().Count(f => !f.Passes);
 
@@ -255,6 +323,8 @@ public static class FeatureStore
         {
             if (File.Exists(FilePath))
                 File.Delete(FilePath);
+            PlanRevisionStore.Reset();
+            PlanObservationStore.Reset();
         }
         catch (Exception ex)
         {
@@ -382,3 +452,20 @@ public sealed class ImplementationContextJsonConverter : JsonConverter<Implement
 /// Native AOT requirement.
 /// </summary>
 public record FeatureList(List<Feature> Items);
+
+public sealed record PlanRevision(
+    string Reason,
+    string[]? AlternativesConsidered,
+    Feature[]? RevisedFeatures,
+    string[]? BasedOnObservationIds = null)
+{
+    [JsonIgnore] public string[] Alternatives => AlternativesConsidered ?? [];
+    [JsonIgnore] public Feature[] Features => RevisedFeatures ?? [];
+    [JsonIgnore] public string[] ObservationIds => BasedOnObservationIds ?? [];
+}
+
+public sealed record PlanRevisionResult(bool Success, string Error, IReadOnlyList<Feature> Features)
+{
+    public static PlanRevisionResult Accepted(IReadOnlyList<Feature> features) => new(true, "", features);
+    public static PlanRevisionResult Rejected(string error) => new(false, error, []);
+}

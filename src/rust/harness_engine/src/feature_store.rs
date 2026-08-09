@@ -99,8 +99,8 @@ pub struct Feature {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct FeatureList {
-    items: Vec<Feature>,
+pub(crate) struct FeatureList {
+    pub(crate) items: Vec<Feature>,
 }
 
 // Raw shape of the array the driver returns in `plan` — `id` is optional (reindexed by
@@ -371,7 +371,9 @@ pub fn all_passing() -> bool {
     !features.is_empty() && features.iter().all(|f| f.passes)
 }
 
-/// Deletes the previous run's list — the PRODUCER flow resets it on its `start`.
+/// Deletes the previous run's list — the PRODUCER flow resets it on its `start`. A fresh
+/// run also has no business with the previous run's plan-revision audit trail or evidence
+/// log, so both are cleared alongside it (mirrors `.NET`'s `FeatureStore.Reset`).
 pub fn reset() {
     let p = std::path::Path::new(FILE_PATH);
     if p.exists() {
@@ -379,6 +381,159 @@ pub fn reset() {
             harness_log::error(&format!("[FeatureStore] failed to clear: {e}"));
         }
     }
+    crate::plan_revision_store::reset();
+    crate::plan_observation_store::reset();
+}
+
+/// A driver-proposed complete replacement of the active plan, written to
+/// `.harness/replan.json` (see `plan_revision_store::PROPOSAL_PATH`). `alternatives_considered`
+/// and `based_on_observation_ids` default to empty (not `Option`) — same convention as
+/// `Feature::depends_on`/`RunConfig::verify_cmds`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanRevision {
+    #[serde(default)]
+    pub reason: String,
+    #[serde(rename = "alternativesConsidered", default)]
+    pub alternatives_considered: Vec<String>,
+    #[serde(rename = "revisedFeatures", default)]
+    pub revised_features: Vec<Feature>,
+    #[serde(rename = "basedOnObservationIds", default)]
+    pub based_on_observation_ids: Vec<String>,
+}
+
+/// Outcome of `apply_revision`: either the accepted merged feature list, or a rejection
+/// reason (never both).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanRevisionResult {
+    pub success: bool,
+    pub error: String,
+    pub features: Vec<Feature>,
+}
+
+impl PlanRevisionResult {
+    pub fn accepted(features: Vec<Feature>) -> Self {
+        Self {
+            success: true,
+            error: String::new(),
+            features,
+        }
+    }
+
+    pub fn rejected(error: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            error: error.into(),
+            features: Vec::new(),
+        }
+    }
+}
+
+/// Applies a complete replacement proposed during a running development flow. Passed
+/// features are immutable evidence: a revision must retain them byte-for-byte at the
+/// domain level and they remain passed. Pending features may be reprioritized, split,
+/// added or removed, provided the resulting dependency graph is valid.
+///
+/// This is the deterministic ENFORCEMENT step — `plan_revision_evaluator::evaluate` judges
+/// evidence/invariants first (see `flows_development::tasks::replan`); this function
+/// re-checks the invariants it alone is responsible for (passed-feature immutability,
+/// graph validity) and performs the write.
+pub fn apply_revision(revision: &PlanRevision, max_features: usize) -> PlanRevisionResult {
+    if revision.reason.trim().is_empty() {
+        return PlanRevisionResult::rejected("a revision reason is required");
+    }
+    if revision.alternatives_considered.len() < 2 {
+        return PlanRevisionResult::rejected("at least two considered alternatives are required");
+    }
+    if revision.revised_features.is_empty() {
+        return PlanRevisionResult::rejected("the revised plan must contain features");
+    }
+    if revision.revised_features.len() > max_features {
+        return PlanRevisionResult::rejected(format!("the revised plan exceeds the {max_features}-feature limit"));
+    }
+
+    let proposed = match normalize_revision_features(&revision.revised_features) {
+        Some(p) => p,
+        None => {
+            return PlanRevisionResult::rejected(
+                "features must have unique positive ids, titles and positive priorities",
+            );
+        }
+    };
+
+    let current = load();
+    let proposed_by_id: HashMap<i32, &Feature> = proposed.iter().map(|f| (f.id, f)).collect();
+    for passed in current.iter().filter(|f| f.passes) {
+        match proposed_by_id.get(&passed.id) {
+            None => return PlanRevisionResult::rejected(format!("passed feature #{} cannot be removed", passed.id)),
+            Some(retained) => {
+                if !same_definition(passed, retained) {
+                    return PlanRevisionResult::rejected(format!("passed feature #{} cannot be modified", passed.id));
+                }
+            }
+        }
+    }
+
+    let passed_ids: HashSet<i32> = current.iter().filter(|f| f.passes).map(|f| f.id).collect();
+    let merged: Vec<Feature> = proposed
+        .into_iter()
+        .map(|f| Feature {
+            passes: passed_ids.contains(&f.id),
+            ..f
+        })
+        .collect();
+    if let Some(graph_error) = dependency_graph_error(&merged) {
+        return PlanRevisionResult::rejected(graph_error);
+    }
+
+    write(&merged);
+    PlanRevisionResult::accepted(merged)
+}
+
+// Same per-feature normalization `parse` applies (truncation, dedup, forcing
+// `passes = false`), but WITHOUT reindexing missing ids — a revision's features must
+// already carry explicit positive ids. `None` if any id/title/priority is invalid or ids
+// collide.
+fn normalize_revision_features(features: &[Feature]) -> Option<Vec<Feature>> {
+    if features.iter().any(|f| f.id <= 0 || f.title.trim().is_empty() || f.priority <= 0) {
+        return None;
+    }
+    let mut seen = HashSet::new();
+    let unique_count = features.iter().filter(|f| seen.insert(f.id)).count();
+    if unique_count != features.len() {
+        return None;
+    }
+
+    Some(
+        features
+            .iter()
+            .map(|f| Feature {
+                id: f.id,
+                title: f.title.clone(),
+                priority: f.priority,
+                passes: false,
+                depends_on: unique_i32(f.depends_on.clone()),
+                description: truncate_description(&f.description),
+                references: unique_strings(f.references.clone()),
+                implementation_context: truncate_implementation_context(&f.implementation_context),
+            })
+            .collect(),
+    )
+}
+
+// Same equality `plan_revision_evaluator` uses to decide whether a passed feature was
+// modified — deliberately duplicated (not shared) so this store's own invariant doesn't
+// depend on the evaluator module's definition changing underneath it.
+fn same_definition(left: &Feature, right: &Feature) -> bool {
+    left.id == right.id
+        && left.title == right.title
+        && left.priority == right.priority
+        && left.description == right.description
+        && left.depends_on == right.depends_on
+        && left.references == right.references
+        && left.implementation_context.requirements == right.implementation_context.requirements
+        && left.implementation_context.constraints == right.implementation_context.constraints
+        && left.implementation_context.files == right.implementation_context.files
+        && left.implementation_context.acceptance == right.implementation_context.acceptance
 }
 
 #[cfg(test)]

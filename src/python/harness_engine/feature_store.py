@@ -331,8 +331,185 @@ def all_passing() -> bool:
 
 
 def reset() -> None:
-    """Deletes the previous run's list — the PRODUCER flow resets it on its `start`."""
+    """Deletes the previous run's list — the PRODUCER flow resets it on its `start`. Also
+    clears plan-revision and plan-observation evidence: a new run must not see a previous
+    run's replan history. Imported lazily — plan_revision_store imports Feature/
+    PlanRevision from this module at load time, so a module-level import here would cycle
+    (same reasoning as state_keys.py's docstring, applied to stores instead of tasks/prompts)."""
+    from harness_engine import plan_observation_store, plan_revision_store
+
     try:
         Path(_FILE_PATH).unlink(missing_ok=True)
     except Exception as ex:
         harness_log.error(f"[FeatureStore] failed to clear: {ex}")
+    plan_revision_store.reset()
+    plan_observation_store.reset()
+
+
+# --- plan revisions (Replan) --------------------------------------------------------
+#
+# A revision is a driver-proposed, complete replacement of the active plan — evaluated by
+# plan_revision_evaluator (soft, evidence/invariant judgement) and then applied here (hard
+# domain invariants: passed features are immutable, the dependency graph must stay valid).
+
+
+@dataclass(frozen=True)
+class PlanRevision:
+    """Driver-proposed replacement of the active plan, read from
+    `.harness/replan.json` (plan_revision_store.PROPOSAL_PATH). Nullable fields mirror
+    Feature's: an absent key from a hand-written or older proposal degrades to an empty
+    tuple via the properties below, instead of raising."""
+
+    reason: str
+    alternatives_considered: tuple[str, ...] | None = None
+    revised_features: tuple[Feature, ...] | None = None
+    based_on_observation_ids: tuple[str, ...] | None = None
+
+    @property
+    def alternatives(self) -> tuple[str, ...]:
+        return self.alternatives_considered if self.alternatives_considered is not None else ()
+
+    @property
+    def features(self) -> tuple[Feature, ...]:
+        return self.revised_features if self.revised_features is not None else ()
+
+    @property
+    def observation_ids(self) -> tuple[str, ...]:
+        return self.based_on_observation_ids if self.based_on_observation_ids is not None else ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "reason": self.reason,
+            "alternativesConsidered": (
+                list(self.alternatives_considered) if self.alternatives_considered is not None else None
+            ),
+            "revisedFeatures": (
+                [f.to_dict() for f in self.revised_features] if self.revised_features is not None else None
+            ),
+            "basedOnObservationIds": (
+                list(self.based_on_observation_ids) if self.based_on_observation_ids is not None else None
+            ),
+        }
+
+    @staticmethod
+    def from_dict(payload: dict[str, object]) -> "PlanRevision":
+        alternatives_raw = payload.get("alternativesConsidered")
+        features_raw = payload.get("revisedFeatures")
+        observation_ids_raw = payload.get("basedOnObservationIds")
+        return PlanRevision(
+            reason=str(payload.get("reason") or ""),
+            alternatives_considered=(
+                tuple(str(x) for x in alternatives_raw) if isinstance(alternatives_raw, list) else None
+            ),
+            revised_features=(
+                tuple(Feature.from_dict(x) for x in features_raw if isinstance(x, dict))
+                if isinstance(features_raw, list)
+                else None
+            ),
+            based_on_observation_ids=(
+                tuple(str(x) for x in observation_ids_raw) if isinstance(observation_ids_raw, list) else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class PlanRevisionResult:
+    """Outcome of `apply_revision`: either the accepted, merged feature list, or a
+    rejection reason — never both."""
+
+    success: bool
+    error: str
+    features: tuple[Feature, ...] = ()
+
+    @staticmethod
+    def accepted(features: list[Feature]) -> "PlanRevisionResult":
+        return PlanRevisionResult(True, "", tuple(features))
+
+    @staticmethod
+    def rejected(error: str) -> "PlanRevisionResult":
+        return PlanRevisionResult(False, error, ())
+
+
+def apply_revision(revision: PlanRevision, max_features: int) -> "PlanRevisionResult":
+    """Applies a complete replacement proposed during a running development flow. Passed
+    features are immutable evidence: a revision must retain them byte-for-byte at the
+    domain level and they remain passed. Pending features may be reprioritized, split,
+    added or removed, provided the resulting dependency graph is valid.
+
+    This is the hard, domain-invariant gate — deliberately separate from
+    plan_revision_evaluator.evaluate (the soft, evidence/observation gate): a caller could
+    in principle call this without going through the evaluator, and it must still refuse
+    an invalid plan on its own.
+    """
+    if not revision.reason.strip():
+        return PlanRevisionResult.rejected("a revision reason is required")
+    if len(revision.alternatives) < 2:
+        return PlanRevisionResult.rejected("at least two considered alternatives are required")
+    if len(revision.features) == 0:
+        return PlanRevisionResult.rejected("the revised plan must contain features")
+    if len(revision.features) > max_features:
+        return PlanRevisionResult.rejected(f"the revised plan exceeds the {max_features}-feature limit")
+
+    proposed = _normalize_revision_features(revision.features)
+    if proposed is None:
+        return PlanRevisionResult.rejected(
+            "features must have unique positive ids, titles and positive priorities"
+        )
+
+    current = load()
+    proposed_by_id = {f.id: f for f in proposed}
+    for passed in (f for f in current if f.passes):
+        retained = proposed_by_id.get(passed.id)
+        if retained is None:
+            return PlanRevisionResult.rejected(f"passed feature #{passed.id} cannot be removed")
+        if not _same_definition(passed, retained):
+            return PlanRevisionResult.rejected(f"passed feature #{passed.id} cannot be modified")
+
+    passed_ids = {f.id for f in current if f.passes}
+    merged = [replace(f, passes=f.id in passed_ids) for f in proposed]
+    graph_error = _dependency_graph_error(merged)
+    if graph_error is not None:
+        return PlanRevisionResult.rejected(graph_error)
+
+    write(merged)
+    return PlanRevisionResult.accepted(merged)
+
+
+def _normalize_revision_features(features: tuple[Feature, ...]) -> list[Feature] | None:
+    """Same per-feature normalization as `parse` (truncate description/implementation
+    context, dedupe depends_on/references, force passes=False) but WITHOUT reindexing
+    missing ids — revision features must already carry explicit positive ids."""
+    if any(f.id <= 0 or not f.title.strip() or f.priority <= 0 for f in features):
+        return None
+    if len({f.id for f in features}) != len(features):
+        return None
+
+    return [
+        replace(
+            f,
+            passes=False,
+            depends_on=tuple(dict.fromkeys(f.deps)),
+            description=_truncate_description(f.description),
+            references=tuple(dict.fromkeys(r for r in f.refs if r.strip())),
+            implementation_context=_truncate_implementation_context(f.context),
+        )
+        for f in features
+    ]
+
+
+def _same_definition(left: Feature, right: Feature) -> bool:
+    return left.priority == right.priority and _same_definition_except_priority(left, right)
+
+
+def _same_definition_except_priority(left: Feature, right: Feature) -> bool:
+    return (
+        left.id == right.id
+        and left.title == right.title
+        and left.description == right.description
+        and left.deps == right.deps
+        and left.refs == right.refs
+        and left.context.requirements == right.context.requirements
+        and left.context.constraints == right.context.constraints
+        and left.context.files == right.context.files
+        and left.context.acceptance == right.context.acceptance
+    )

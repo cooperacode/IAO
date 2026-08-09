@@ -19,6 +19,10 @@ namespace Harness.Engine;
 [JsonSerializable(typeof(Feature))]
 [JsonSerializable(typeof(FeatureList))]
 [JsonSerializable(typeof(RunConfig))]
+[JsonSerializable(typeof(PlanRevision))]
+[JsonSerializable(typeof(AppliedPlanRevision))]
+[JsonSerializable(typeof(PlanObservation))]
+[JsonSerializable(typeof(PlanRevisionEvaluation))]
 // Raw array to deserialize what the driver returns in `plan` (`[{id,title,priority}, ...]`).
 [JsonSerializable(typeof(Feature[]), TypeInfoPropertyName = "FeatureArray")]
 internal partial class HarnessJsonContext : JsonSerializerContext;
@@ -31,4 +35,5 @@ internal partial class HarnessJsonContext : JsonSerializerContext;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true)]
 [JsonSerializable(typeof(FeatureList))]
+[JsonSerializable(typeof(AppliedPlanRevision))]
 internal partial class PrettyFeatureListJsonContext : JsonSerializerContext;

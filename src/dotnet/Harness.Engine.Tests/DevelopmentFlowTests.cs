@@ -40,6 +40,7 @@ public class DevelopmentFlowTests : IDisposable
     // Mirrors DevelopmentTasks.PlanFilePath (private) — the file the driver writes the raw
     // feature-list JSON array to, instead of embedding it in the envelope's args.
     private const string PlanFilePath = ".harness/plan.json";
+    private const string ReplanFilePath = ".harness/replan.json";
 
     private static void Clean()
     {
@@ -50,6 +51,8 @@ public class DevelopmentFlowTests : IDisposable
         ArtifactStore.Reset();
         if (File.Exists(PlanFilePath))
             File.Delete(PlanFilePath);
+        if (File.Exists(ReplanFilePath))
+            File.Delete(ReplanFilePath);
     }
 
     private static void WritePlanFile(string features)
@@ -509,6 +512,10 @@ public class DevelopmentFlowTests : IDisposable
     {
         DevelopmentTasks.Plan(PlanCmd(FeaturesJson, "true", _targetDir));
         RunConfigStore.Write(RunConfigStore.Load() with { VerifyCmds = ["true", "true && false"] });
+        // This path is shared by tests in the process CWD; remove evidence from a previous
+        // valid parallel-verification test so this assertion observes only this attempt.
+        if (File.Exists(VerifyLogPath(2, 1)))
+            File.Delete(VerifyLogPath(2, 1));
 
         var result = DevelopmentTasks.Implement(Cmd("implement", "feito"));
 
@@ -689,5 +696,37 @@ public class DevelopmentFlowTests : IDisposable
 
         Assert.Equal("stop", result);
         Assert.Equal(2, FeatureStore.PendingCount()); // nada foi marcado como passando
+    }
+
+    [Fact]
+    public void Replan_AplicaRevisaoVersionadaSemTrocarRunId()
+    {
+        Plan();
+        var runId = RunConfigStore.Load().RunId;
+        var observation = PlanObservationStore.Append(
+            "missing_dependency", 2, "Feature B needs a foundation.", "compiler failure");
+        File.WriteAllText(ReplanFilePath,
+            $$"""{"reason":"missing dependency","alternativesConsidered":["keep stub","add dependency; selected"],"basedOnObservationIds":["{{observation.Id}}"],"revisedFeatures":[{"id":1,"title":"A","priority":2},{"id":2,"title":"B","priority":3},{"id":3,"title":"Foundation","priority":1}]}""");
+
+        var result = DevelopmentTasks.Replan(Cmd("replan"));
+
+        Assert.Contains("Foundation", result);
+        Assert.Equal(3, FeatureStore.Load().Count);
+        Assert.Equal(runId, RunConfigStore.Load().RunId);
+        Assert.Equal(1, PlanRevisionStore.RevisionCount());
+        Assert.True(File.Exists(".harness/plans/plan-v1.json"));
+    }
+
+    [Fact]
+    public void TerceiraFalhaDeterministica_SolicitaReplanejamentoGlobal()
+    {
+        AdvanceToVerify(); // first failure occurs in Implement()
+        DevelopmentTasks.Verify(Cmd("verify")); // second: normal local correction
+
+        var result = DevelopmentTasks.Verify(Cmd("verify")); // third: global escalation
+
+        Assert.Contains("global development plan", result);
+        Assert.Contains("alternativesConsidered", result);
+        Assert.Contains("\"value\":\"replan\"", result);
     }
 }

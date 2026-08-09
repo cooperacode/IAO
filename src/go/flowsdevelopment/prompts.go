@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -162,6 +163,63 @@ func FixPrompt(verifyFailure string) string {
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),
 		engine.Skills("dev-implement"))
+}
+
+// ReplanPrompt asks the driver to propose a revised global plan in response to an
+// observation (e.g. repeated deterministic verify failure) that suggests the CURRENT plan,
+// not just the code, no longer fits reality. The driver writes a JSON object to
+// engine.ReplanProposalPath and returns `replan` without arguments; the harness (not the
+// driver) then decides whether to accept it — see Replan/PlanRevisionEvaluator.
+func ReplanPrompt(observation string) string {
+	currentPlan := "(current plan unavailable)"
+	if data, err := os.ReadFile(".harness/feature_list.json"); err == nil {
+		currentPlan = string(data)
+	} else if !os.IsNotExist(err) {
+		currentPlan = fmt.Sprintf("(current plan unavailable: %s)", err)
+	}
+
+	briefBlock := ""
+	if brief := strings.TrimSpace(engine.ReadArtifact(briefArtifactName)); brief != "" {
+		briefBlock = fmt.Sprintf("<brief>%s</brief>", brief)
+	}
+
+	observationLines := make([]string, 0, len(engine.LoadPlanObservations()))
+	for _, o := range engine.LoadPlanObservations() {
+		featureId := "n/a"
+		if o.FeatureId != nil {
+			featureId = strconv.Itoa(*o.FeatureId)
+		}
+		observationLines = append(observationLines, fmt.Sprintf("%s [%s] feature=%s: %s; evidence=%s",
+			o.Id, o.Kind, featureId, o.Summary, strings.Join(o.Evidence, " | ")))
+	}
+	observations := strings.Join(observationLines, "\n")
+
+	revisionShape := fmt.Sprintf(
+		`{"reason":"why the global plan must change","alternativesConsidered":["alternative A","alternative B; selected because ..."],"basedOnObservationIds":["OBS-001"],"revisedFeatures":%s}`,
+		featuresShape)
+
+	input := fmt.Sprintf(`The global development plan may no longer fit the observed repository state.
+
+<observation>%s</observation>
+<persisted-observations>%s</persisted-observations>
+%s
+<current-plan>%s</current-plan>
+
+Explore at least two materially different responses to the observation and choose
+one. Write a JSON OBJECT to '%s' with this shape:
+%s
+
+The revisedFeatures array is the complete replacement plan. Retain every passed
+feature unchanged (same id, definition and dependencies). Pending features may be
+reprioritized, changed, removed, split or added. IDs must be positive and unique;
+dependencies must exist and remain acyclic. Do not change the verify command,
+target directory or run identity. Return `+"`replan`"+` without arguments after writing
+the proposal; the harness will validate and apply it.`,
+		observation, observations, briefBlock, currentPlan, engine.ReplanProposalPath, revisionShape)
+
+	return engine.Format(input,
+		engine.NewEnvelope(engine.EnvelopeType.Command, "replan", []string{}),
+		nil)
 }
 
 func HandoffPrompt(automaticFailure string) string {

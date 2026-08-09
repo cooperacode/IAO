@@ -21,6 +21,7 @@ func main() {
 		"implement": Implement,
 		"verify":    Verify,
 		"handoff":   Handoff,
+		"replan":    Replan,
 	}
 
 	// Contextual expectation per command; a rejection becomes a corrective error (the

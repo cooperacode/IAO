@@ -14,6 +14,7 @@ from harness_engine import feature_store, harness_host
 TASKS = {
     "start": lambda _envelope: tasks.start(),
     "plan": tasks.plan,
+    "replan": tasks.replan,
     "bearings": tasks.bearings,
     "smoke": tasks.smoke,
     "pick": tasks.pick,

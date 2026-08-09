@@ -26,6 +26,13 @@ non-default branch when resuming; otherwise create
 
 ## 3. Scaffold deterministic setup
 
+- `init.sh` and `verify-feature.sh` MUST live directly inside the exact directory you report
+  back as `$TARGET_DIR` — never at the repo root, a parent directory, or any other nesting
+  level. The harness locates them by joining your reported `$TARGET_DIR` with these exact
+  filenames; a script placed anywhere else is invisible to it and silently skipped in favor
+  of a weaker fallback. If setup that lives outside `$TARGET_DIR` is required (e.g. a
+  `docker-compose.yml` or infra shared with siblings), reference it from inside these
+  scripts via a relative path — the scripts themselves still belong in `$TARGET_DIR`.
 - Ensure an idempotent `init.sh` prepares, builds, and when applicable starts the project.
 - Ensure an idempotent `verify-feature.sh <id>` runs the established verification path. It
   may run the full suite when there is no per-feature convention.

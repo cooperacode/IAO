@@ -15,6 +15,7 @@ public static partial class DevelopmentTasks
     /// </summary>
     public const int MaxFeatures = 10;
     public const int StepsPerFeature = 8;
+    public const int MaxReplans = 2;
 
     /// <summary>
     /// Effective step ceiling passed to HarnessHost (override of the global one): slack for
@@ -33,6 +34,7 @@ public static partial class DevelopmentTasks
     private const string CurrentFeatureSummaryKey = "current_feature_summary";
     private const string CurrentFeatureVerifyKey = "current_feature_verify";
     private const string FeatureStepsKey = "feature_steps";
+    private const string VerifyFailuresKey = "verify_failures";
     private const string BearingsKey = "current_bearings";
 
     /// <summary>
@@ -150,6 +152,35 @@ public static partial class DevelopmentTasks
         return Bearings(null);
     }
 
+    /// <summary>Validates and atomically applies a driver-proposed revision of the active plan.</summary>
+    public static string Replan(Envelope? envelope)
+    {
+        if (PlanRevisionStore.RevisionCount() >= MaxReplans)
+            return Stop($"global replan limit ({MaxReplans})");
+
+        var revision = PlanRevisionStore.ReadProposal();
+        if (revision is null)
+            return ReplanPrompt("No readable replan proposal was found.");
+
+        var evaluation = PlanRevisionEvaluator.Evaluate(
+            FeatureStore.Load(), revision, PlanObservationStore.Load(), MaxFeatures,
+            Math.Max(0, StepBudget - StateStore.Load().Step), StepsPerFeature);
+        if (!evaluation.Passed)
+        {
+            var errors = string.Join(" | ", evaluation.Errors.Select(e => $"{e.Code}: {e.Message}"));
+            return ReplanPrompt($"The deterministic plan evaluator rejected the proposal: {errors}");
+        }
+
+        var result = FeatureStore.ApplyRevision(revision, MaxFeatures);
+        if (!result.Success)
+            return ReplanPrompt($"The proposed revision was rejected: {result.Error}");
+
+        PlanRevisionStore.Record(revision, result.Features, evaluation);
+        StateStore.Set(VerifyFailuresKey, "0");
+        HarnessLog.Info($"[dev] applied plan revision {PlanRevisionStore.RevisionCount()}: {revision.Reason}");
+        return Bearings(null);
+    }
+
     public static string Bearings(Envelope? envelope)
     {
         // New session (one feature): resets the per-feature guard counter and captures
@@ -193,6 +224,7 @@ public static partial class DevelopmentTasks
 
         StateStore.Set(CurrentFeatureIdKey, next.Id.ToString());
         StateStore.Set(CurrentFeatureTitleKey, next.Title);
+        StateStore.Set(VerifyFailuresKey, "0");
         // Tags the trace with the current feature (see TraceEntry.Label) — without this,
         // every trace.jsonl line only has the global Step, without saying which feature it
         // belongs to.
@@ -215,7 +247,7 @@ public static partial class DevelopmentTasks
             StateStore.Set(CurrentFeatureVerifyKey, autoVerify.Result);
             return autoVerify.Success
                 ? CompleteVerifiedFeature(autoVerify.Result)
-                : FixPrompt(autoVerify.Result);
+                : HandleVerifyFailure(autoVerify.Result);
         }
 
         return VerifyPrompt();
@@ -235,7 +267,7 @@ public static partial class DevelopmentTasks
             StateStore.Set(CurrentFeatureVerifyKey, result.Result);
             return result.Success
                 ? CompleteVerifiedFeature(result.Result)
-                : FixPrompt(result.Result);
+                : HandleVerifyFailure(result.Result);
         }
 
         return VerifyRetryPrompt();
@@ -283,6 +315,25 @@ public static partial class DevelopmentTasks
     {
         HarnessLog.Error($"[dev] stopped due to {reason}. feature_list in .harness/feature_list.json");
         return "stop";
+    }
+
+    private static string HandleVerifyFailure(string failure)
+    {
+        var failures = (int.TryParse(State(VerifyFailuresKey), out var count) ? count : 0) + 1;
+        StateStore.Set(VerifyFailuresKey, failures.ToString());
+
+        // One failed Implement() and one explicit Verify() are the normal corrective loop.
+        // Escalate only on the third deterministic failure, after a genuine fix opportunity.
+        if (failures < 3 || PlanRevisionStore.RevisionCount() >= MaxReplans)
+            return FixPrompt(failure);
+
+        var featureId = int.TryParse(State(CurrentFeatureIdKey), out var id) ? id : (int?)null;
+        var observation = PlanObservationStore.Append(
+            "verification_failure", featureId,
+            $"Feature #{State(CurrentFeatureIdKey)} failed deterministic verification {failures} times.",
+            failure);
+        return ReplanPrompt(
+            $"{observation.Id}: {observation.Summary} Latest evidence: {failure}");
     }
 
     private static string Done()

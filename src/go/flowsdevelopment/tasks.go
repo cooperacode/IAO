@@ -33,6 +33,11 @@ const (
 	// global one): slack for the worst case of MaxFeatures features spending StepsPerFeature
 	// each, plus start/plan and the boundaries.
 	StepBudget = MaxFeatures*StepsPerFeature + 8
+
+	// MaxReplans caps how many global plan revisions one run may apply — Replan() itself
+	// enforces this (via engine.PlanRevisionCount), and handleVerifyFailure stops escalating
+	// to a replan proposal once the cap is reached (falls back to the local fix loop).
+	MaxReplans = 2
 )
 
 // State keys used by this flow's task functions (tasks.go/prompts.go/verify.go/handoff.go).
@@ -43,6 +48,11 @@ const (
 	currentFeatureVerifyKey  = "current_feature_verify"
 	currentBearingsKey       = "current_bearings"
 	featureStepsKey          = "feature_steps"
+	// verifyFailuresKey counts consecutive deterministic verify failures on the CURRENT
+	// feature (reset to "0" whenever Pick selects a feature and whenever a replan is
+	// applied) — the third failure escalates from a local fix prompt to a global replan
+	// proposal (see handleVerifyFailure).
+	verifyFailuresKey = "verify_failures"
 
 	// briefArtifactName is retained in the ArtifactStore (.harness/brief.md) for auditability
 	// and compatibility; implementation sessions use each feature's bounded context.
@@ -152,6 +162,44 @@ func Plan(envelope *engine.Envelope) string {
 	return Bearings(nil)
 }
 
+// Replan validates and, if the deterministic gate accepts it, applies a driver-proposed
+// revision of the active plan (written to engine.ReplanProposalPath, not the envelope — same
+// out-of-band convention as planFilePath). The harness — not the driver — decides whether the
+// revision is accepted: PlanRevisionEvaluator judges evidence/invariants, then ApplyRevision
+// performs the actual replacement only if the evaluator approved it.
+func Replan(envelope *engine.Envelope) string {
+	if engine.PlanRevisionCount() >= MaxReplans {
+		return stopFlow(fmt.Sprintf("global replan limit (%d)", MaxReplans))
+	}
+
+	revision := engine.ReadPlanRevisionProposal()
+	if revision == nil {
+		return ReplanPrompt("No readable replan proposal was found.")
+	}
+
+	remainingSteps := max(0, StepBudget-engine.LoadState().Step)
+	evaluation := engine.EvaluatePlanRevision(
+		engine.LoadFeatures(), *revision, engine.LoadPlanObservations(), MaxFeatures,
+		remainingSteps, StepsPerFeature)
+	if !evaluation.Passed() {
+		parts := make([]string, len(evaluation.Errors))
+		for i, e := range evaluation.Errors {
+			parts[i] = fmt.Sprintf("%s: %s", e.Code, e.Message)
+		}
+		return ReplanPrompt(fmt.Sprintf("The deterministic plan evaluator rejected the proposal: %s", strings.Join(parts, " | ")))
+	}
+
+	result := engine.ApplyRevision(*revision, MaxFeatures)
+	if !result.Success {
+		return ReplanPrompt(fmt.Sprintf("The proposed revision was rejected: %s", result.Error))
+	}
+
+	engine.RecordPlanRevision(*revision, result.Features, evaluation)
+	engine.SetState(verifyFailuresKey, "0")
+	engine.LogInfo(fmt.Sprintf("[dev] applied plan revision %d: %s", engine.PlanRevisionCount(), revision.Reason))
+	return Bearings(nil)
+}
+
 func capFeatures(features []engine.Feature, max int) []engine.Feature {
 	sorted := make([]engine.Feature, len(features))
 	copy(sorted, features)
@@ -220,6 +268,7 @@ func Pick(envelope *engine.Envelope) string {
 
 	engine.SetState(currentFeatureIdKey, strconv.Itoa(next.Id))
 	engine.SetState(currentFeatureTitleKey, next.Title)
+	engine.SetState(verifyFailuresKey, "0")
 	// Labels the trace with the current feature (see TraceEntry.Label) — without this,
 	// every trace.jsonl line only has the global Step, with no indication of which feature
 	// it belongs to.
@@ -241,7 +290,7 @@ func Implement(envelope *engine.Envelope) string {
 		if autoVerify.Success {
 			return completeVerifiedFeature(autoVerify.Result)
 		}
-		return FixPrompt(autoVerify.Result)
+		return handleVerifyFailure(autoVerify.Result)
 	}
 
 	return VerifyPrompt()
@@ -265,7 +314,7 @@ func Verify(_ *engine.Envelope) string {
 	if autoVerify.Success {
 		return completeVerifiedFeature(autoVerify.Result)
 	}
-	return FixPrompt(autoVerify.Result)
+	return handleVerifyFailure(autoVerify.Result)
 }
 
 // Handoff records the driver's manual handoff confirmation.
@@ -296,6 +345,34 @@ func overFeatureBudget() bool {
 func stopFlow(reason string) string {
 	engine.LogError(fmt.Sprintf("[dev] stopped due to %s. feature_list in .harness/feature_list.json", reason))
 	return "stop"
+}
+
+// handleVerifyFailure counts consecutive deterministic verify failures on the current
+// feature. One failed Implement() and one explicit Verify() are the normal corrective loop;
+// only the THIRD failure escalates — after a genuine fix opportunity — from a local fix
+// prompt to a global replan proposal, recorded as a persisted PlanObservation so the
+// evidence survives the fresh-context session boundary. Never escalates once the replan
+// budget (MaxReplans) is already exhausted — a stuck feature then just keeps retrying
+// locally (bounded by the per-feature step guard) instead of asking for a replan the
+// harness would refuse anyway.
+func handleVerifyFailure(failure string) string {
+	failures, _ := strconv.Atoi(state(verifyFailuresKey))
+	failures++
+	engine.SetState(verifyFailuresKey, strconv.Itoa(failures))
+
+	if failures < 3 || engine.PlanRevisionCount() >= MaxReplans {
+		return FixPrompt(failure)
+	}
+
+	var featureId *int
+	if id, err := strconv.Atoi(state(currentFeatureIdKey)); err == nil {
+		featureId = &id
+	}
+	observation := engine.AppendPlanObservation(
+		"verification_failure", featureId,
+		fmt.Sprintf("Feature #%s failed deterministic verification %d times.", state(currentFeatureIdKey), failures),
+		failure)
+	return ReplanPrompt(fmt.Sprintf("%s: %s Latest evidence: %s", observation.Id, observation.Summary, failure))
 }
 
 func done() string {
