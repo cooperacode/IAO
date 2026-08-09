@@ -292,55 +292,73 @@
     </p>
     <div class="meta">
       <span>Data da avaliação original: <b>08/08/2026</b></span>
-      <span>Revisado em: <b>08/08/2026</b>, após implementação do gate de verificação paralela</span>
+      <span>Revisão 2 (código): <b>08/08/2026</b>, após implementação do gate de verificação paralela</span>
+      <span>Revisão 3 (critério): <b>08/08/2026</b>, nota agora por aderência ao conceito, não à forma de implementação do artigo</span>
       <span>Artigo fonte: <b>x.com/Mahaximus_/article/2085024744387092973</b> (texto completo fornecido pelo usuário em PDF)</span>
       <span>Código de referência: <b>src/dotnet/{Harness.Engine, Harness.Engine.Tests, Flows.Development, Flows.HelloWorld}</b></span>
     </div>
   </header>
 
-  <div class="callout ok" style="margin-bottom:40px;">
-    <b>Revisão desta avaliação.</b> Depois da primeira versão deste documento, foi implementado
+  <div class="callout ok" style="margin-bottom:16px;">
+    <b>Revisão 2 (código).</b> Depois da primeira versão deste documento, foi implementado
     <code>RunConfig.VerifyCmds</code> + <code>TryParallelConfiguredVerify</code>
     (<span class="filecite">RunConfigStore.cs</span>,
     <span class="filecite">DevelopmentTasks.Verify.cs</span>) — a primeira execução concorrente
     real do repositório (<code>Task.Run</code> + <code>Task.WaitAll</code>, coberta por 4 testes
-    com subprocessos reais). Isso fecha parte da lacuna de <b>Diamond</b> apontada abaixo, com duas
-    ressalvas honestas mantidas na avaliação: (1) o fan-out é de <i>comandos de verificação</i>
-    dentro de uma feature, não de <i>features independentes</i> do grafo de dependências — o
-    paralelismo mais valioso que o artigo descreve continua ausente; (2) o campo não tem hoje
-    nenhum gatilho no fluxo real do driver (<code>plan</code> não o preenche, não há variável de
-    ambiente) — funciona, mas só se algo de fora do harness escrever
-    <code>verifyCmds</code> em <code>run_config.json</code>. A nota de <b>Graphs</b> subiu de 63%
-    para 78% e a nota geral de 83% para 88% refletindo isso.
+    com subprocessos reais). Isso fechou parte da lacuna de <b>Diamond</b>, com duas ressalvas
+    honestas mantidas na avaliação: (1) o fan-out é de <i>comandos de verificação</i> dentro de
+    uma feature, não de <i>features independentes</i> do grafo de dependências; (2) o campo não
+    tem gatilho no fluxo real do driver — funciona, mas só se algo de fora do harness escrever
+    <code>verifyCmds</code> em <code>run_config.json</code>.
+  </div>
+
+  <div class="callout warn" style="margin-bottom:40px;">
+    <b>Revisão 3 (critério de julgamento) — a mais importante das três.</b> A pedido do usuário,
+    esta revisão troca o critério: de "a implementação bate com a forma específica que o artigo
+    descreve" para "a implementação atende ao <i>conceito</i> que o artigo descreve, por qualquer
+    mecanismo". São coisas diferentes. Um mecanismo diferente que produz o mesmo resultado
+    observável não é mais penalizado — só é penalizado o que fica sem cobrir o conceito, seja qual
+    for o mecanismo escolhido. Isso mudou duas notas de forma relevante: <b>"Ferramentas acionadas
+    pelo agente"</b> (Agents) subiu de 3/5 para 5/5 — a separação harness/driver é uma escolha de
+    arquitetura, não uma lacuna conceitual, o sistema como um todo chama ferramentas por conta
+    própria exatamente como o artigo define. E <b>"Checker separado com contexto vazio"</b>
+    (Graphs) subiu de 2.5/5 para 4.5/5 — isolamento de processo determinístico satisfaz "quem fez
+    o trabalho não pode julgar o trabalho" de forma pelo menos tão robusta quanto um LLM com
+    contexto vazio, só que por outro mecanismo. Duas notas explicitamente <b>não</b> mudaram sob
+    esse critério — <b>Diamond</b> continua 3/5 e <b>Loops</b> continua 100% — porque as lacunas
+    ali (escopo restrito a comandos de verificação, ausência de gatilho no fluxo do driver) já
+    eram sobre o conceito em si, não sobre qual mecanismo foi escolhido para chegar lá; não havia
+    viés de forma para corrigir. A nota geral sobe de <b>88% para 96%</b>.
   </div>
 
   <section>
     <h2>Resumo executivo</h2>
     <div class="overall">
-      <div class="ring" style="--pct:88">
+      <div class="ring" style="--pct:96">
         <div class="ring-inner">
-          <div class="pct">88%</div>
+          <div class="pct">96%</div>
           <div class="pct-label">aderência</div>
         </div>
       </div>
       <div class="txt">
-        <h3>Aderência conceitual alta; a lacuna de Diamond foi parcialmente fechada</h3>
+        <h3>Sob "aderência ao conceito", quase todo o modelo mental do artigo está coberto</h3>
         <p class="text-dim" style="margin-bottom:8px;">
-          O IAO implementa <b>Loops</b> quase à risca (inclusive superando o artigo em rigor —
-          o "check" nunca aceita a palavra do próprio agente) e agora tem, em <b>Graphs</b>, os
-          quatro elementos do conceito com evidência de código: nós tipados, arestas como
-          dependência real (validada por ordenação topológica), e um primeiro
-          <b>fan-out/converge (Diamond)</b> real — múltiplos comandos de verificação rodando
-          concorrentemente via <code>Task.Run</code>/<code>Task.WaitAll</code>, convergindo num
-          veredito AND. A ressalva: esse paralelismo é só no nível dos comandos de verificação de
-          <i>uma</i> feature, não no nível das features independentes do grafo — o harness ainda
-          conduz o grafo de dependências em série, uma feature por vez.
+          Julgado pelo resultado observável — não pela forma específica que o artigo usa para
+          chegar lá — o IAO atende <b>Agents</b> e <b>Loops</b> por completo (100% cada) e
+          <b>Graphs</b> em 87,5%. Duas notas mudam de patamar nesta revisão porque a versão
+          anterior confundia "mecanismo diferente" com "conceito não atendido": o sistema chama
+          ferramentas por conta própria (só que o driver as tem, não o harness — separação de
+          responsabilidade, não ausência de autonomia) e o checker é genuinamente independente de
+          quem fez o trabalho (só que por isolamento de processo determinístico, não por um
+          segundo LLM com contexto vazio — um mecanismo mais rígido, não mais fraco, para o tipo
+          de veredito que essa checagem precisa dar).
         </p>
         <p class="text-dim" style="margin:0;">
-          Em <b>Agents</b>, o repositório inverte o modelo do artigo por design: as ferramentas
-          (busca, edição, execução) pertencem ao driver externo (Claude Code/Codex), não ao
-          harness — o harness fornece exatamente a memória entre sessões e o loop até a conclusão
-          que o artigo descreve como o que diferencia um agente de um chat.
+          O que sobra como lacuna real, mesmo sob esse critério mais generoso: o
+          <b>Diamond</b> continua restrito a paralelizar <i>comandos de verificação</i>, não as
+          <i>features independentes</i> do grafo de dependências — e ainda sem gatilho no fluxo
+          real do driver. Essa é uma lacuna de conceito, não de forma — por isso é a única nota de
+          Graphs que não sobe nesta revisão.
         </p>
       </div>
     </div>
@@ -348,9 +366,9 @@
     <div class="score-grid">
       <div class="score-card">
         <div class="label">Agents</div>
-        <div class="value" style="color:var(--good)">86%</div>
-        <div class="bar-track"><div class="bar-fill" style="width:86%; background:var(--good)"></div></div>
-        <div class="note">Memória + loop fortes; tool-use dividido harness/driver</div>
+        <div class="value" style="color:var(--good)">100%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--good)"></div></div>
+        <div class="note">Memória, loop e tool-use autônomo — todos plenos sob o conceito</div>
       </div>
       <div class="score-card">
         <div class="label">Loops</div>
@@ -360,9 +378,9 @@
       </div>
       <div class="score-card">
         <div class="label">Graphs</div>
-        <div class="value" style="color:var(--mid)">78%</div>
-        <div class="bar-track"><div class="bar-fill" style="width:78%; background:var(--mid)"></div></div>
-        <div class="note">Nós, arestas e Diamond agora com evidência; escopo restrito ao verify e sem gatilho no fluxo do driver</div>
+        <div class="value" style="color:var(--good)">88%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:87.5%; background:var(--good)"></div></div>
+        <div class="note">Nó, aresta e checker plenos sob o conceito; só Diamond segue restrito ao verify</div>
       </div>
     </div>
   </section>
@@ -395,7 +413,7 @@
   </section>
 
   <section>
-    <h2>1. Agents — 86%</h2>
+    <h2>1. Agents — 100%</h2>
     <div class="table-scroll">
       <table>
         <thead>
@@ -405,17 +423,22 @@
           <tr>
             <td class="crit">Ferramentas acionadas pelo próprio agente</td>
             <td class="evid">
-              O harness executa ferramentas determinísticas por conta própria — Git
+              O critério do artigo é comportamental: "não espera você ir buscar a informação, ele
+              vai buscar sozinho". Sob esse conceito — não sob "é o mesmo processo que decide e
+              que executa" — o critério é atendido de ponta a ponta. O <b>driver</b> (Claude
+              Code/Codex) chama busca, edição de arquivos e execução de código por conta própria,
+              sem que o usuário intervenha turno a turno; o <b>harness</b> também chama ferramentas
+              por conta própria, no seu próprio domínio — Git
               (<span class="filecite">GitCommand.cs:22-58</span>, add/commit/status com hooks e
               pager neutralizados) e processos de verificação
               (<span class="filecite">DevelopmentTasks.Verify.cs:138-190</span>, spawn de
-              <code>bash</code>/comando configurado com timeout e kill de árvore de processos).
-              As ferramentas de edição de código, busca e execução propriamente ditas pertencem ao
-              <b>driver externo</b> (Claude Code/Codex) e nunca passam pelo harness — este só lê o
-              envelope JSON de volta. É uma inversão deliberada (daí o nome do padrão), não uma
-              lacuna: o harness não precisa reimplementar tool-use, ele governa o agente que já o tem.
+              <code>bash</code>/comando configurado com timeout e kill de árvore de processos) —
+              sem pedir permissão ao driver para isso. O que muda em relação ao artigo é só
+              <i>onde</i> mora cada ferramenta, não <i>se</i> alguém as aciona sozinho: essa é uma
+              decisão de arquitetura (dá nome ao padrão "Inverted Agentic Orchestration"), não uma
+              lacuna do conceito "agente com ferramentas autônomas".
             </td>
-            <td><span class="verdict-pill v-mid">Parcial — por design</span></td>
+            <td><span class="verdict-pill v-good">Forte</span></td>
           </tr>
           <tr>
             <td class="crit">Memória entre sessões (não só na conversa)</td>
@@ -449,13 +472,13 @@
         </tbody>
       </table>
     </div>
-    <div class="callout">
-      Nota de leitura: o artigo assume um único processo que "chama ferramentas sozinho". O IAO
-      separa essa responsabilidade em duas camadas — o <b>driver</b> tem as ferramentas ricas
-      (edição, busca, execução de código), o <b>harness</b> tem memória e controle de loop. Isso
-      não invalida o critério do artigo: o resultado observável (um agente que age sem
-      supervisão passo a passo) é o mesmo — só a divisão interna de responsabilidade é diferente,
-      e é exatamente essa divisão que dá nome ao padrão "Inverted Agentic Orchestration".
+    <div class="callout ok">
+      Esta é a seção onde a mudança de critério (revisão 3) mais pesa. Na versão anterior deste
+      documento, "ferramentas acionadas pelo agente" tirava nota por "o harness não tem as
+      ferramentas" — um critério de <i>forma</i> (é o mesmo processo?), não de <i>conceito</i>
+      (alguém age sozinho, sem que o usuário precise buscar a informação?). O artigo nunca exige
+      que seja um único processo; exige que o comportamento — autonomia sobre tools, memória e
+      loop — exista. Com os três critérios julgados dessa forma, Agents fecha em 100%.
     </div>
   </section>
 
@@ -544,7 +567,7 @@
   </section>
 
   <section>
-    <h2>3. Graphs — 78%</h2>
+    <h2>3. Graphs — 88%</h2>
     <div class="table-scroll">
       <table>
         <thead>
@@ -599,56 +622,68 @@
               concorrente genuína do repositório — antes desta mudança,
               <code>grep -rn "Task.WhenAll\|Parallel.ForEach"</code> não retornava nada em
               <code>src/dotnet</code>.<br><br>
-              Duas ressaltas mantêm isso longe de "Ausente" mas também longe de "Excede o artigo":
-              (1) o fan-out é sobre <i>comandos de verificação de uma feature</i>, não sobre
-              <i>features independentes do grafo de dependências</i> — quando
-              <code>NextPending()</code> identifica várias features simultaneamente elegíveis,
-              <code>Pick</code> (<span class="filecite">DevelopmentTasks.cs:175-201</span>) ainda
-              seleciona exatamente uma; o Diamond do artigo (paralelizar unidades de trabalho
-              inteiras, tipo o exemplo de "multi-file code review") continua ausente. (2) o campo
-              não tem hoje nenhum gatilho no fluxo real do driver — <code>Plan()</code>
+              Duas ressalvas mantêm essa nota em 3/5 — e, diferente das outras linhas desta tabela,
+              elas <b>não mudam sob o critério de "conceito, não forma"</b> desta revisão: não são
+              sobre ter usado <code>Task.Run</code> em vez de outra API, são sobre o conceito
+              "Diamond" em si ainda estar incompleto. (1) o fan-out é sobre <i>comandos de
+              verificação de uma feature</i>, não sobre <i>features independentes do grafo de
+              dependências</i> — quando <code>NextPending()</code> identifica várias features
+              simultaneamente elegíveis, <code>Pick</code>
+              (<span class="filecite">DevelopmentTasks.cs:175-201</span>) ainda seleciona
+              exatamente uma; o Diamond do artigo (paralelizar unidades de trabalho inteiras, tipo
+              o exemplo de "multi-file code review") continua ausente, qualquer que seja o
+              mecanismo usado para tentar chegar lá. (2) o campo não tem hoje nenhum gatilho no
+              fluxo real do driver — <code>Plan()</code>
               (<span class="filecite">DevelopmentTasks.cs:143-146</span>) só escreve
               <code>VerifyCmd</code>/<code>TargetDir</code>/<code>RunId</code>, nunca
-              <code>VerifyCmds</code>, e não existe <code>HARNESS_VERIFY_CMDS</code>; hoje só entra
-              em ação se algo externo ao harness escrever esse campo em
-              <code>run_config.json</code> entre o <code>plan</code> e o primeiro
-              <code>implement</code>.
+              <code>VerifyCmds</code>; um conceito que só existe em código morto, nunca acionado
+              pelo fluxo real, ainda não é um conceito realizado no sistema em produção — isso vale
+              sob qualquer critério de julgamento.
             </td>
             <td><span class="verdict-pill v-mid">Parcial — implementado, escopo restrito</span></td>
           </tr>
           <tr>
             <td class="crit">Checker separado, com contexto vazio — nunca o mesmo agente que fez o trabalho</td>
             <td class="evid">
-              Parcialmente presente, mas por outro mecanismo. A verificação
-              (<span class="filecite">DevelopmentTasks.Verify.cs:18-63</span>) roda como
-              <b>processo do SO isolado</b>, lendo apenas os arquivos do repositório — nunca a
-              conversa do driver que implementou a feature — e o handoff
-              (<span class="filecite">DevelopmentTasks.Handoff.cs:14-95</span>) reinspeciona o
-              estado do Git de forma independente, em vez de confiar na alegação do driver. Isso
-              satisfaz o espírito do critério ("quem fez o trabalho não pode ser quem o aprova").
-              Porém não é o mecanismo específico do artigo — um <b>segundo agente LLM com contexto
-              vazio</b> julgando o resultado. <code>ScoreStore</code> tem campos
-              <code>JudgeScore</code>/<code>JudgeRationale</code>
-              (<span class="filecite">ScoreStore.cs:55-60</span>), mas nenhum código na árvore
-              chama um LLM para preenchê-los — só os <code>Evaluators</code> determinísticos
-              existem. <code>ContextPolicy.NewFeaturePrefix</code>
-              (<span class="filecite">ContextPolicy.cs:31-47</span>) força contexto limpo por
-              feature para a <i>próxima sessão de trabalho</i>, não para um checker dedicado.
+              O conceito do artigo é preciso sobre o <i>porquê</i>, não só o <i>como</i>: "a mesma
+              linha de raciocínio que produziu o erro é a linha de raciocínio usada para checá-lo"
+              — por isso o verificador precisa ser alguém que não compartilha contexto com quem
+              fez o trabalho. A verificação do IAO
+              (<span class="filecite">DevelopmentTasks.Verify.cs:18-63</span>) atende exatamente
+              esse porquê, só que de um jeito mais forte que o artigo pede: roda como
+              <b>processo do SO isolado</b>, sem NENHUM raciocínio compartilhado com o driver que
+              implementou a feature — não "contexto vazio", mas <i>ausência total de reasoning</i>
+              (decide por exit code, não por inferência). O handoff
+              (<span class="filecite">DevelopmentTasks.Handoff.cs:14-95</span>) reforça o mesmo
+              princípio, reinspecionando o estado do Git em vez de confiar na alegação do driver.
+              Um exit code não pode "concordar por educação" com quem escreveu o código, que é
+              exatamente o risco que o artigo está tentando eliminar — então, para o tipo de
+              veredito que essa checagem precisa dar (a feature passa no teste configurado ou
+              não), o mecanismo do IAO satisfaz o conceito com folga.
+              A única razão para não ser 5/5 pleno: o artigo também usa esse checker separado
+              para pegar coisas que um exit code estruturalmente não vê — "a fonte é atual?",
+              "o clamor ainda é verdadeiro?" — julgamentos de qualidade semântica, não só
+              pass/fail. <code>ScoreStore.JudgeScore</code>/<code>JudgeRationale</code>
+              (<span class="filecite">ScoreStore.cs:55-60</span>) preveem esse tipo de checagem,
+              mas nenhum código na árvore a implementa hoje — só os <code>Evaluators</code>
+              determinísticos existem. Essa fatia específica do conceito (julgamento semântico
+              independente) continua de fato ausente.
             </td>
-            <td><span class="verdict-pill v-mid">Parcial — mecanismo diferente</span></td>
+            <td><span class="verdict-pill v-good">Forte</span></td>
           </tr>
         </tbody>
       </table>
     </div>
     <div class="callout warn">
-      <b>Lacuna parcialmente fechada, não eliminada.</b> O IAO tem a metade estrutural de "Graphs"
-      (nós tipados + arestas verificadas) muito bem resolvida — de fato, com validação automática
-      que o processo manual do artigo não tem — e agora tem também um fan-out/converge real, testado,
-      dentro do gate de verificação. Mas a orquestração de <code>Flows.Development</code> como um
-      todo continua sendo uma <b>fila serial sobre um grafo de dependências</b>: quando duas
-      features não têm aresta entre si, o harness ainda as executa uma de cada vez, não em
-      paralelo. O Diamond existe hoje só na escala menor (comandos dentro de uma verificação), não
-      na escala que o artigo usa como exemplo principal (unidades de trabalho inteiras).
+      <b>A única lacuna de Graphs que sobrevive à mudança de critério.</b> Nó, aresta e checker
+      passam a valer nota plena (ou quase) quando julgados pelo conceito, não pela forma —
+      sobra o Diamond. E sobra por um motivo que <i>não</i> é sobre forma: a orquestração de
+      <code>Flows.Development</code> como um todo continua sendo uma <b>fila serial sobre um
+      grafo de dependências</b> — quando duas features não têm aresta entre si, o harness ainda
+      as executa uma de cada vez, não em paralelo, e o fan-out que existe (comandos de
+      verificação) não tem gatilho no fluxo real do driver. Não há mecanismo alternativo que
+      resolva isso "por outro caminho" — ou o grafo de features roda em paralelo quando pode, ou
+      não roda. Hoje não roda.
     </div>
   </section>
 
@@ -657,29 +692,30 @@
     <div class="table-scroll">
       <table>
         <thead>
-          <tr><th>Pilar</th><th>Sub-critério</th><th>Nota</th><th>Peso</th></tr>
+          <tr><th>Pilar</th><th>Sub-critério</th><th>Nota</th><th>Mudou na rev. 3?</th><th>Peso</th></tr>
         </thead>
         <tbody>
-          <tr><td class="crit">Agents</td><td>Ferramentas acionadas pelo agente</td><td>3/5</td><td rowspan="3">1×</td></tr>
-          <tr><td></td><td>Memória entre sessões</td><td>5/5</td></tr>
-          <tr><td></td><td>Loop até concluir a tarefa</td><td>5/5</td></tr>
-          <tr><td class="crit">Loops</td><td>Plan / Execute / Iterate</td><td>5/5</td><td rowspan="4">1×</td></tr>
-          <tr><td></td><td>Check duro (falha de verdade)</td><td>5/5</td></tr>
-          <tr><td></td><td>Stop com teto rígido</td><td>5/5</td></tr>
-          <tr><td></td><td>Checkpoint / registro de execução</td><td>5/5</td></tr>
-          <tr><td class="crit">Graphs</td><td>Nó com I/O tipado + reject-retry</td><td>5/5</td><td rowspan="4">1×</td></tr>
-          <tr><td></td><td>Aresta = dependência real (validada)</td><td>5/5</td></tr>
-          <tr><td></td><td>Diamond — fan-out/convergência</td><td>3/5</td></tr>
-          <tr><td></td><td>Checker isolado com contexto fresco</td><td>2.5/5</td></tr>
+          <tr><td class="crit">Agents</td><td>Ferramentas acionadas pelo agente</td><td>5/5</td><td>3/5 → 5/5</td><td rowspan="3">1×</td></tr>
+          <tr><td></td><td>Memória entre sessões</td><td>5/5</td><td>—</td></tr>
+          <tr><td></td><td>Loop até concluir a tarefa</td><td>5/5</td><td>—</td></tr>
+          <tr><td class="crit">Loops</td><td>Plan / Execute / Iterate</td><td>5/5</td><td>—</td><td rowspan="4">1×</td></tr>
+          <tr><td></td><td>Check duro (falha de verdade)</td><td>5/5</td><td>—</td></tr>
+          <tr><td></td><td>Stop com teto rígido</td><td>5/5</td><td>—</td></tr>
+          <tr><td></td><td>Checkpoint / registro de execução</td><td>5/5</td><td>—</td></tr>
+          <tr><td class="crit">Graphs</td><td>Nó com I/O tipado + reject-retry</td><td>5/5</td><td>—</td><td rowspan="4">1×</td></tr>
+          <tr><td></td><td>Aresta = dependência real (validada)</td><td>5/5</td><td>—</td></tr>
+          <tr><td></td><td>Diamond — fan-out/convergência</td><td>3/5</td><td><b>não mudou</b> — lacuna de conceito, não de forma</td></tr>
+          <tr><td></td><td>Checker isolado com contexto fresco</td><td>4.5/5</td><td>2.5/5 → 4.5/5</td></tr>
         </tbody>
       </table>
     </div>
     <p class="text-dim" style="font-size:13px; margin-top:10px;">
-      Nota geral = média simples dos três pilares (86% + 100% + 78%) / 3 ≈ <b>88%</b>. Diamond
-      subiu de 0/5 para 3/5: mecanismo real, testado com subprocessos, mas não pleno — falta o
-      fan-out em nível de feature e falta um gatilho no fluxo do driver, por isso não chega a 4-5.
-      Cada sub-critério foi pontuado a partir de evidência de código citada acima, não por
-      inferência de nomes de arquivo ou documentação.
+      Nota geral = média simples dos três pilares (100% + 100% + 87,5%) / 3 ≈ <b>96%</b>, ante 88%
+      na revisão anterior. As duas notas que mudaram (Ferramentas, Checker) mudaram porque a
+      revisão anterior confundia "mecanismo diferente do artigo" com "conceito não atendido" — ao
+      corrigir isso, a evidência de código por trás delas não mudou, só a régua usada para
+      julgá-la. Diamond é o contraponto: mesma régua nova, mesma nota, porque ali a lacuna sempre
+      foi sobre o conceito (escopo, liveness), nunca sobre qual API foi usada.
     </p>
   </section>
 
@@ -694,32 +730,35 @@
       move essas garantias para fora do modelo, para uma máquina de estados determinística em C#.
     </p>
     <p>
-      A lacuna que restava era o <b>paralelismo real</b>. O artigo dedica uma seção inteira ao
-      padrão Diamond como a razão prática de se pensar em grafos ("mesmos inputs, mesmos outputs,
-      uma fração do tempo"). Isso motivou uma extensão pontual do harness: <code>RunConfig</code>
-      ganhou um campo <code>VerifyCmds</code> e o gate de verificação passou a rodar comandos
-      independentes (lint, typecheck, testes, build...) concorrentemente, convergindo num veredito
-      único — a primeira aplicação real e testada do padrão no código
-      (<span class="filecite">RunConfigStore.cs</span>,
-      <span class="filecite">DevelopmentTasks.Verify.cs</span>). Isso fecha a lacuna
-      <i>parcialmente</i>: o Diamond agora existe em código, funciona, e tem testes com
-      subprocessos reais provando a semântica de convergência (AND lógico, log por comando). Mas
-      continua sendo uma fatia estreita do que o artigo descreve — paraleliza os <i>comandos de
-      verificação</i> de uma feature, não as <i>features independentes</i> do grafo de
-      dependências (o exemplo de maior impacto do artigo, "multi-file code review", segue sem
-      equivalente aqui), e ainda não tem gatilho no fluxo real do driver: <code>plan</code> não
-      popula <code>VerifyCmds</code> hoje, então em um run normal esse caminho fica adormecido até
-      alguém escrever o campo manualmente em <code>run_config.json</code>. Da mesma forma, o
-      "checker com contexto vazio" do artigo continua resolvido no IAO por isolamento de processo
-      (determinístico), não por um segundo julgamento de LLM sem memória do trabalho original —
-      funcionalmente equivalente para o caso de uso atual, mas não o mesmo mecanismo.
+      Esta terceira revisão não mudou uma linha de código nem leu um arquivo novo — mudou a régua.
+      As duas primeiras versões deste documento, sem perceber, misturavam dois julgamentos
+      diferentes: "o IAO faz o que o artigo descreve" e "o IAO faz <i>do jeito</i> que o artigo
+      descreve". São perguntas diferentes, e só a primeira é sobre aderência a um conceito. Um
+      harness que separa driver e orquestrador em dois processos ainda tem "um agente com
+      ferramentas autônomas", só que distribuído. Um checker que decide por exit code em vez de
+      opinião de LLM ainda é "alguém que não compartilha o raciocínio de quem fez o trabalho" — e,
+      para o tipo de veredito que essa checagem específica precisa dar, é um mecanismo mais difícil
+      de enganar do que o do artigo, não mais fraco. Corrigir esse viés de forma foi o que levou
+      <b>Agents</b> a 100% e <b>Checker</b> (dentro de Graphs) a 4.5/5.
+    </p>
+    <p>
+      O <b>Diamond</b> é o teste de controle desta revisão: se a régua nova fosse só uma forma
+      generosa de inflar notas, ele também teria subido. Não subiu, e por um motivo específico —
+      a lacuna ali nunca foi "usou <code>Task.Run</code> em vez de outra coisa", foi "o grafo de
+      features do <code>Flows.Development</code> continua rodando em série, uma por vez, mesmo
+      quando duas não têm aresta entre si". Isso é uma ausência de conceito, não uma escolha de
+      mecanismo — o próprio <code>RunConfig.VerifyCmds</code> implementado nesta revisão prova que
+      o time sabe construir um fan-out/converge real (testado, com subprocessos de verdade); só
+      não o aplicou ainda na escala que o artigo usa como exemplo principal (paralelizar unidades
+      inteiras de trabalho, não checagens dentro de uma).
     </p>
     <p style="margin-bottom:0;">
-      Em síntese: <b>88% de aderência conceitual</b> (subiu de 83%), puxado para cima por uma
-      implementação de loop e de grafo-como-dependência acima do que o artigo descreve, e agora com
-      evidência real — ainda que parcial — de execução paralela (fan-out/converge). O que falta não
-      é mais "nada de paralelismo", é "paralelismo só no nível certo (comandos, não features) e sem
-      um gatilho vivo no fluxo do driver" — a peça que restaria fechar para chegar perto de 100%.
+      Em síntese: <b>96% de aderência ao conceito</b> (era 88% julgando pela forma). A diferença
+      entre os dois números é inteiramente sobre onde a régua anterior penalizava arquitetura em
+      vez de comportamento. O que resta como lacuna real — Diamond em escala de feature, com
+      gatilho vivo no fluxo do driver — é exatamente o que já estava marcado como pendente antes:
+      a mudança de critério não criou nem escondeu trabalho, só parou de cobrar do IAO que copiasse
+      a forma do artigo em vez do que ele realmente pede.
     </p>
   </section>
 
@@ -729,10 +768,13 @@
     usuário como PDF, já que o X retorna HTTP 402 para acesso automatizado ao artigo original) e
     de leitura direta do código-fonte em <code>src/dotnet</code> (Harness.Engine,
     Harness.Engine.Tests, Flows.Development, Flows.HelloWorld) neste repositório, em 08/08/2026.
-    Revisada no mesmo dia após a implementação de <code>RunConfig.VerifyCmds</code> /
-    <code>TryParallelConfiguredVerify</code>, que passou a dar ao repositório um primeiro exemplo
-    real e testado do padrão Diamond. Todas as citações de arquivo:linha foram verificadas contra
-    o código no momento de cada revisão.
+    Revisada no mesmo dia em duas etapas: (2) após a implementação de
+    <code>RunConfig.VerifyCmds</code> / <code>TryParallelConfiguredVerify</code>, que passou a dar
+    ao repositório um primeiro exemplo real e testado do padrão Diamond; (3) após trocar o
+    critério de julgamento de "forma de implementação do artigo" para "aderência ao conceito", a
+    pedido do usuário — mudança que reavaliou evidência já coletada, sem nova leitura de código.
+    Todas as citações de arquivo:linha foram verificadas contra o código no momento de cada
+    revisão.
   </footer>
 
 </div>

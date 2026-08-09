@@ -25,9 +25,25 @@ it emits; do not reproduce the state machine yourself.
   next state.
 
 The durable context is in `.harness/feature_list.json`, the target's `progress.txt`, and Git.
-When `<input>` starts with `=== NEW SESSION (clean context) ===`, spawn a clean-context
-sub-agent for that feature and let it recover only from those artifacts. Without the marker,
-continue in the current context.
+Without the `=== NEW SESSION (clean context) ===` marker (see below), continue in the current
+context.
+
+## Sub-agent delegation
+
+When `<input>` starts with `=== NEW SESSION (clean context) ===`, you MUST spawn a new
+sub-agent now to handle that feature — do not continue working in the current context, and do
+not perform `<input>` yourself. Pass it the full `<input>` block AND the full `<skills>` block
+from this same stdout output, verbatim, as its task — together they already carry the feature
+spec and the `dev-implement` methodology it needs. Do not summarize either and do not tell the
+sub-agent to go read them from files instead; `.harness/feature_list.json`, the target's
+`progress.txt`, and Git are only the durable state it can fall back on if it needs more than
+what's in the task text.
+
+The sub-agent only does the delegated work and reports back; it does not inherit this file's
+instructions and knows nothing about the harness Transport protocol, `.harness/inbox.json`, or
+the `<response>` shape. That stays yours: once the sub-agent finishes, you are the one who fills
+`<response>` per the Transport rules above, writes the envelope to the inbox, and invokes the
+harness again.
 
 ## Driver telemetry
 

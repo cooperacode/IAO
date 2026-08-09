@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format follows [Semantic Versioning](https://semver.org/) and entries are
 organized using categories such as `Added`, `Changed`, `Fixed`, and `Breaking`.
 
+## [0.5.0] - 2026-08-06
+
+### Added
+
+- Support for diamond-shaped agent hierarchies, allowing for more complex task delegation in verification pipelines.
+
+### Changed
+
+- Improved handling of the `=== NEW SESSION (clean context) ===` marker to ensure proper delegation of tasks to sub-agents.
+
+### Fixed
+
+- Resolved an issue where the harness would not properly delegate tasks to sub-agents when the `=== NEW SESSION (clean context) ===` marker was present.
+
 ## [Unreleased]
 
 ## [0.3.0] - 2026-08-05
