@@ -1,0 +1,1 @@
+[2026-08-13 15:52 UTC] Feature #1 - Specification domain models + AOT JSON context: src/dotnet/iao.slnx | 1 + 1 file changed, 1 insertion(+). Verify with: ./verify-feature.sh. Result: PASS: verify-feature.sh 1 passed. Log: .harness/logs/verify-feature-1.log
