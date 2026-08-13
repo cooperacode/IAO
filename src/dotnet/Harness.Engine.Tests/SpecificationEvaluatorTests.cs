@@ -376,4 +376,251 @@ public class SpecificationEvaluatorTests
         // RF-001 is still uncovered since the only ADR points at RF-999 instead.
         Assert.Contains("SDD_REQUIREMENT_NOT_ALLOCATED", codes);
     }
+
+    // ---- ReadinessEvaluator ----
+
+    private static ReadinessSlice ValidReadinessSlice(string id, string[]? dependsOn = null) => new(
+        id, "core", "goal", ["in-scope"], ["out-of-scope"], "observable outcome",
+        ["RF-001"], ["ADR-001"], dependsOn ?? [], ["contract-1"],
+        "happy path", "failure path", "acceptance criterion", "target", "strategy");
+
+    private static ReadinessVerdict ValidReadinessVerdict() => new(
+        "READY",
+        [ValidReadinessSlice("SL-001")],
+        [],
+        []);
+
+    [Fact]
+    public void EvaluateReadiness_VerdictReadyValidoComFatiaInicialECoberturaCompleta_Passa()
+    {
+        var result = SpecificationEvaluator.EvaluateReadiness(ValidReadinessVerdict(), ["RF-001"], ["ADR-001"]);
+
+        Assert.True(result.Passed);
+        Assert.Empty(result.Violations);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_VerdictDesconhecido_RetornaCodigoEstavel()
+    {
+        var verdict = ValidReadinessVerdict() with { Verdict = "MAYBE" };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_VERDICT_INVALID");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_VerdictFail_IgnoraValidacaoDeFatias()
+    {
+        // FAIL:* is a rejection of an earlier phase, not a slice proposal — an empty slice list
+        // must not be treated as a violation in that case.
+        var verdict = new ReadinessVerdict("FAIL:design", [], ["needs rework"], []);
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.True(result.Passed);
+    }
+
+    [Theory]
+    [InlineData("FAIL:product")]
+    [InlineData("FAIL:analysis")]
+    [InlineData("FAIL:design")]
+    public void EvaluateReadiness_VerdictsFailPermitidos_NaoDisparamViolacaoDeVerdict(string verdict)
+    {
+        var proposal = new ReadinessVerdict(verdict, [], [], []);
+
+        var result = SpecificationEvaluator.EvaluateReadiness(proposal, ["RF-001"], ["ADR-001"]);
+
+        Assert.DoesNotContain(result.Violations, v => v.Code == "READINESS_VERDICT_INVALID");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_ConflictsOuResidualsNulos_RetornaViolacoesDeProveniencia()
+    {
+        var verdict = ValidReadinessVerdict() with { Conflicts = null!, Residuals = null! };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("READINESS_CONFLICTS_MISSING", codes);
+        Assert.Contains("READINESS_RESIDUALS_MISSING", codes);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_VerdictReadySemFatias_EhRejeitado()
+    {
+        var verdict = ValidReadinessVerdict() with { Slices = [] };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_SLICES_EMPTY");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_MaisDeDezFatias_EhRejeitado()
+    {
+        var slices = Enumerable.Range(1, 11).Select(i => ValidReadinessSlice($"SL-{i:000}")).ToArray();
+        var verdict = ValidReadinessVerdict() with { Slices = slices };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_TOO_MANY_SLICES");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_IdsDeFatiaDuplicados_EhRejeitado()
+    {
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices = [ValidReadinessSlice("SL-001"), ValidReadinessSlice("SL-001")],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_SLICE_ID_DUPLICATE");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_ReferenciaDeRequisitoOrfa_EhRejeitadaComCodigoEstavel()
+    {
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices = [ValidReadinessSlice("SL-001") with { RequirementIds = ["RF-999"] }],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var violation = Assert.Single(result.Violations, v => v.Code == "READINESS_REQUIREMENT_REFERENCE_DANGLING");
+        Assert.Contains("RF-999", violation.Message);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_ReferenciaDeAdrOrfa_EhRejeitadaComCodigoEstavel()
+    {
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices = [ValidReadinessSlice("SL-001") with { AdrIds = ["ADR-999"] }],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var violation = Assert.Single(result.Violations, v => v.Code == "READINESS_ADR_REFERENCE_DANGLING");
+        Assert.Contains("ADR-999", violation.Message);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_DependeDeFatiaInexistenteOuDeSiMesma_EhRejeitado()
+    {
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices =
+            [
+                ValidReadinessSlice("SL-001", dependsOn: ["SL-999"]),
+                ValidReadinessSlice("SL-002", dependsOn: ["SL-002"]),
+            ],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var danglingCount = result.Violations.Count(v => v.Code == "READINESS_DEPENDENCY_REFERENCE_DANGLING");
+        Assert.Equal(2, danglingCount);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_DependenciaCiclicaEntreDuasFatias_EhRejeitadaComCodigoEstavel()
+    {
+        // SL-001 -> SL-002 -> SL-001 (2-cycle): neither slice can ever be the first to run.
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices =
+            [
+                ValidReadinessSlice("SL-001", dependsOn: ["SL-002"]),
+                ValidReadinessSlice("SL-002", dependsOn: ["SL-001"]),
+            ],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_DEPENDENCY_CYCLE");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_DependenciaCiclicaEntreTresFatias_EhRejeitadaComCodigoEstavel()
+    {
+        // SL-001 -> SL-002 -> SL-003 -> SL-001 (3-cycle).
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices =
+            [
+                ValidReadinessSlice("SL-001", dependsOn: ["SL-002"]),
+                ValidReadinessSlice("SL-002", dependsOn: ["SL-003"]),
+                ValidReadinessSlice("SL-003", dependsOn: ["SL-001"]),
+            ],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_DEPENDENCY_CYCLE");
+    }
+
+    [Fact]
+    public void EvaluateReadiness_AutoDependencia_NaoDisparaCicloApenasReferenciaInvalida()
+    {
+        // A self-loop isn't "another slice", so it's a dangling reference, not a cycle — the
+        // cycle graph must never build an edge from a slice to itself.
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices = [ValidReadinessSlice("SL-001", dependsOn: ["SL-001"])],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("READINESS_DEPENDENCY_REFERENCE_DANGLING", codes);
+        Assert.DoesNotContain("READINESS_DEPENDENCY_CYCLE", codes);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_NenhumaFatiaInicial_EhRejeitadoComCodigoEstavel()
+    {
+        // Every slice declares *some* dependsOn id (one dangling), so none has an empty
+        // dependsOn — no starting slice, even though the (dangling-edge-free) graph has no cycle.
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices =
+            [
+                ValidReadinessSlice("SL-001", dependsOn: ["SL-002"]),
+                ValidReadinessSlice("SL-002", dependsOn: ["SL-999"]),
+            ],
+        };
+
+        var result = SpecificationEvaluator.EvaluateReadiness(verdict, ["RF-001"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("READINESS_NO_INITIAL_SLICE", codes);
+        Assert.DoesNotContain("READINESS_DEPENDENCY_CYCLE", codes);
+    }
+
+    [Fact]
+    public void EvaluateReadiness_RequisitoNaoCobertoPorNenhumaFatia_EhRejeitadoComCodigoEstavel()
+    {
+        // RF-002 exists on the accepted SRS, but no slice's requirementIds references it.
+        var result = SpecificationEvaluator.EvaluateReadiness(ValidReadinessVerdict(), ["RF-001", "RF-002"], ["ADR-001"]);
+
+        Assert.False(result.Passed);
+        var violation = Assert.Single(result.Violations, v => v.Code == "READINESS_REQUIREMENT_NOT_SLICED");
+        Assert.Contains("RF-002", violation.Message);
+    }
 }

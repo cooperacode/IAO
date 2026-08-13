@@ -214,4 +214,76 @@ public class SpecificationRendererTests
 
         Assert.Contains("## Controls\n_None._", rendered);
     }
+
+    // ---- RenderReadiness (30-readiness-handoff.md) ----
+
+    private static ReadinessVerdict SampleReadiness() => new(
+        "READY",
+        [
+            new ReadinessSlice(
+                "SL-001", "core", "Create and list tasks.",
+                ["create a task", "list tasks"], ["editing a task"],
+                "a created task appears in the list",
+                ["RF-001"], ["ADR-001"], [], ["Tasks API"],
+                "user adds a task and sees it listed", "invalid input is rejected",
+                "the task appears in the response", "ASP.NET Core Web API",
+                "integration tests against a local Postgres"),
+        ],
+        ["Pagination strategy is still open."],
+        ["Legacy data import is out of scope."]);
+
+    [Fact]
+    public void RenderReadiness_MesmaEntrada_ProduzMesmosBytesEmDuasChamadas()
+    {
+        var readiness = SampleReadiness();
+
+        var first = SpecificationRenderer.RenderReadiness(readiness);
+        var second = SpecificationRenderer.RenderReadiness(readiness);
+
+        Assert.Equal(first, second);
+        Assert.Equal(
+            System.Text.Encoding.UTF8.GetBytes(first),
+            System.Text.Encoding.UTF8.GetBytes(second));
+    }
+
+    [Fact]
+    public void RenderReadiness_ContemVerdictConflitosResiduosEFatias()
+    {
+        var rendered = SpecificationRenderer.RenderReadiness(SampleReadiness());
+
+        Assert.Contains("## Verdict", rendered);
+        Assert.Contains("READY", rendered);
+        Assert.Contains("## Conflicts", rendered);
+        Assert.Contains("Pagination strategy is still open.", rendered);
+        Assert.Contains("## Residuals", rendered);
+        Assert.Contains("Legacy data import is out of scope.", rendered);
+        Assert.Contains("## Slices", rendered);
+        Assert.Contains("SL-001", rendered);
+    }
+
+    [Fact]
+    public void RenderReadiness_ColecaoVazia_MantemSecaoComPlaceholder()
+    {
+        var readiness = SampleReadiness() with { Slices = [], Conflicts = [], Residuals = [] };
+
+        var rendered = SpecificationRenderer.RenderReadiness(readiness);
+
+        Assert.Contains("## Conflicts\n_None._", rendered);
+        Assert.Contains("## Residuals\n_None._", rendered);
+        Assert.Contains("## Slices\n_None._", rendered);
+    }
+
+    [Fact]
+    public void RenderReadiness_EscapaCaracteresEspeciaisDeMarkdown()
+    {
+        var readiness = SampleReadiness() with
+        {
+            Conflicts = ["Uses *asterisks* and [brackets]."],
+        };
+
+        var rendered = SpecificationRenderer.RenderReadiness(readiness);
+
+        Assert.Contains("\\*asterisks\\*", rendered);
+        Assert.Contains("\\[brackets\\]", rendered);
+    }
 }

@@ -17,6 +17,7 @@ public static partial class SpecificationTasks
     private const string PrdProposalPath = ".harness/specification/active/prd.proposal.json";
     private const string SrsProposalPath = ".harness/specification/active/srs.proposal.json";
     private const string SddProposalPath = ".harness/specification/active/sdd.proposal.json";
+    private const string ReviewProposalPath = ".harness/specification/active/review.proposal.json";
 
     private const string IdeaShape =
         """{"schema":"iao/idea/v1","title":"...","problem":"...","users":["..."],"desiredOutcomes":["..."],"constraints":["..."],"openQuestions":[{"id":"OQ-1","question":"...","blocking":false}]}""";
@@ -29,6 +30,9 @@ public static partial class SpecificationTasks
 
     private const string SddShape =
         """{"schema":"iao/sdd/v1","srsDigest":"sha256:...","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}""";
+
+    private const string ReviewShape =
+        """{"verdict":"READY","slices":[{"id":"SL-1","classification":"...","goal":"...","inScope":["..."],"outOfScope":["..."],"observableOutcome":"...","requirementIds":["RF-1"],"adrIds":["ADR-1"],"dependsOn":[],"contracts":["..."],"happyPath":"...","failurePath":"...","acceptanceCriterion":"...","suggestedTarget":"...","suggestedVerificationStrategy":"..."}],"conflicts":[],"residuals":[]}""";
 
     // --- discover ---------------------------------------------------------
 
@@ -197,4 +201,53 @@ public static partial class SpecificationTasks
             """,
             output: new Envelope(EnvelopeType.Command, "design", []));
     }
+
+    // --- review -----------------------------------------------------------------
+
+    private static string ReviewPrompt() =>
+        PromptFormatter.Format(
+            input: $"""
+            Assess readiness for this Specification run (blueprint 0004 §2/§7, blueprint 0006
+            review phase): judge whether the accepted idea/PRD/SRS/SDD chain is internally
+            consistent, or whether an earlier phase needs to be redone.
+
+            Write a JSON OBJECT to the file '{ReviewProposalPath}' (a real file, written with your
+            file-write tool — NOT escaped or embedded inside the envelope you send back) with this
+            shape: {ReviewShape}
+            `verdict` must be exactly one of "READY", "FAIL:product", "FAIL:analysis" or
+            "FAIL:design". `conflicts` and `residuals` are always required arrays (use `[]` when
+            there are none — never omit them).
+
+            If `verdict` is "READY": propose at most 10 readiness slices, each with a unique id.
+            Every `requirementIds` entry must reference a real requirement from the accepted SRS
+            and every `adrIds` entry must reference a real ADR from the accepted SDD. Every
+            `dependsOn` entry must name another slice in this same list (never itself, never an
+            id outside this proposal); the dependency graph must be acyclic, and at least one
+            slice must have an empty `dependsOn` (a starting slice). Every requirement in the
+            accepted SRS must be covered by at least one slice's `requirementIds` — the slices
+            must form a complete cover.
+
+            If `verdict` starts with "FAIL:": leave `slices` empty — a FAIL verdict is a
+            rejection of an earlier phase, not a slice proposal; explain the rejection through
+            `conflicts`/`residuals` instead.
+
+            Return `review` without arguments when done; the harness will validate the file and
+            either pause for approval (READY), recascade to the failing phase (FAIL:*), or
+            re-request `review` with the reported violations.
+            """,
+            output: new Envelope(EnvelopeType.Command, "review", []));
+
+    private static string ReviewRetryPrompt(IEnumerable<string> violations) =>
+        PromptFormatter.Format(
+            input: $"""
+            The readiness verdict proposal at '{ReviewProposalPath}' did not pass
+            ReadinessEvaluator:
+            {string.Join("\n", violations.Select(v => $"- {v}"))}
+
+            Rewrite the file at the exact same path with this shape: {ReviewShape}
+            `verdict` must be exactly one of "READY", "FAIL:product", "FAIL:analysis" or
+            "FAIL:design", and `conflicts`/`residuals` must always be present arrays. Return
+            `review` without arguments for another harness-controlled attempt.
+            """,
+            output: new Envelope(EnvelopeType.Command, "review", []));
 }

@@ -4,7 +4,9 @@ using Flows.Specification;
 // Composition root for the Specification flow (blueprint 0004 §2 "State machine"). No
 // orchestration here — dispatch, guards, and transport live in Harness.Engine. This slice
 // wires the happy-path prefix:
-// start → discover → product → analysis → design → stop
+// start → discover → product → analysis → design → review → stop (awaiting_approval)
+// review's recascade routing (blueprint 0006) can send the run back through
+// product/analysis/design before it reaches review again — see SpecificationTasks.Review.
 var tasks = new Dictionary<string, Func<Envelope?, string>>
 {
     ["start"] = _ => SpecificationTasks.Start(),
@@ -12,9 +14,10 @@ var tasks = new Dictionary<string, Func<Envelope?, string>>
     ["product"] = envelope => SpecificationTasks.Product(envelope),
     ["analysis"] = envelope => SpecificationTasks.Analysis(envelope),
     ["design"] = envelope => SpecificationTasks.Design(envelope),
+    ["review"] = envelope => SpecificationTasks.Review(envelope),
 };
 
-// discover/product/analysis/design retry in place on evaluator failure (see
+// discover/product/analysis/design/review retry in place on evaluator failure (see
 // SpecificationTasks) — the deterministic evaluators are the gate, so no envelope-arg
 // validator applies here.
 var validators = new Dictionary<string, Func<Envelope, ValidationResult>>();

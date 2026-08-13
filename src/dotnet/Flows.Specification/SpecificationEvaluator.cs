@@ -231,6 +231,120 @@ public static class SpecificationEvaluator
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
     }
 
+    /// <summary>Verdict values a readiness proposal may declare (blueprint 0006 review state machine).</summary>
+    private static readonly string[] AllowedReadinessVerdicts = ["READY", "FAIL:product", "FAIL:analysis", "FAIL:design"];
+
+    /// <summary>
+    /// Validates a <c>review</c>-phase readiness verdict proposal: <see cref="ReadinessVerdict.Verdict"/>
+    /// is restricted to an explicit allowed set, and <see cref="ReadinessVerdict.Conflicts"/>/
+    /// <see cref="ReadinessVerdict.Residuals"/> must be present (non-null — a source-gen'd
+    /// deserialize can leave a JSON-omitted array null even though the C# type says
+    /// non-nullable). A <c>FAIL:*</c> verdict is a rejection of an earlier phase, not a slice
+    /// proposal, so the remaining checks apply only when <paramref name="verdict"/> is
+    /// <c>"READY"</c>: at least one and at most ten slices, unique slice IDs, every
+    /// requirement/ADR reference resolves against <paramref name="knownRequirementIds"/>/
+    /// <paramref name="knownAdrIds"/>, every <c>dependsOn</c> id names another slice in the same
+    /// proposal (never itself, never external), the <c>dependsOn</c> graph is acyclic, at least
+    /// one slice has no prerequisite, and every known requirement is covered by at least one
+    /// slice — the readiness slices form a complete cover (§5 ReadinessEvaluator).
+    /// </summary>
+    public static EvaluationResult EvaluateReadiness(ReadinessVerdict verdict, string[] knownRequirementIds, string[] knownAdrIds)
+    {
+        var violations = new List<EvaluationViolation>();
+
+        if (!AllowedReadinessVerdicts.Contains(verdict.Verdict))
+            violations.Add(new EvaluationViolation("READINESS_VERDICT_INVALID", $"verdict '{verdict.Verdict}' is not one of: {string.Join(", ", AllowedReadinessVerdicts)}"));
+
+        if (verdict.Conflicts is null)
+            violations.Add(new EvaluationViolation("READINESS_CONFLICTS_MISSING", "conflicts must be a non-null array (use an empty array when there are none)"));
+
+        if (verdict.Residuals is null)
+            violations.Add(new EvaluationViolation("READINESS_RESIDUALS_MISSING", "residuals must be a non-null array (use an empty array when there are none)"));
+
+        if (verdict.Verdict != "READY")
+            return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
+
+        var slices = verdict.Slices ?? [];
+
+        if (slices.Length == 0)
+            violations.Add(new EvaluationViolation("READINESS_SLICES_EMPTY", "a READY verdict requires at least one readiness slice"));
+
+        if (slices.Length > 10)
+            violations.Add(new EvaluationViolation("READINESS_TOO_MANY_SLICES", $"{slices.Length} slices exceeds the 10-slice cap"));
+
+        AddDuplicateIdViolations(violations, slices.Select(s => s.Id), "READINESS_SLICE_ID_DUPLICATE", "readiness slice");
+
+        var sliceIds = slices.Select(s => s.Id).ToHashSet();
+        var knownRequirementIdSet = knownRequirementIds.ToHashSet();
+        var knownAdrIdSet = knownAdrIds.ToHashSet();
+
+        foreach (var slice in slices)
+        {
+            foreach (var requirementId in slice.RequirementIds)
+                if (!knownRequirementIdSet.Contains(requirementId))
+                    violations.Add(new EvaluationViolation("READINESS_REQUIREMENT_REFERENCE_DANGLING", $"slice '{slice.Id}' references unknown requirement '{requirementId}'"));
+
+            foreach (var adrId in slice.AdrIds)
+                if (!knownAdrIdSet.Contains(adrId))
+                    violations.Add(new EvaluationViolation("READINESS_ADR_REFERENCE_DANGLING", $"slice '{slice.Id}' references unknown ADR '{adrId}'"));
+
+            foreach (var dependencyId in slice.DependsOn)
+                if (dependencyId == slice.Id || !sliceIds.Contains(dependencyId))
+                    violations.Add(new EvaluationViolation("READINESS_DEPENDENCY_REFERENCE_DANGLING", $"slice '{slice.Id}' depends on unknown or self-referencing slice '{dependencyId}'"));
+        }
+
+        if (HasReadinessDependencyCycle(slices))
+            violations.Add(new EvaluationViolation("READINESS_DEPENDENCY_CYCLE", "the slice dependsOn graph contains a cycle"));
+
+        if (slices.Length > 0 && !slices.Any(s => s.DependsOn.Length == 0))
+            violations.Add(new EvaluationViolation("READINESS_NO_INITIAL_SLICE", "at least one slice must have an empty dependsOn (an initial slice with no prerequisite)"));
+
+        var coveredRequirementIds = slices.SelectMany(s => s.RequirementIds).ToHashSet();
+        foreach (var requirementId in knownRequirementIds)
+            if (!coveredRequirementIds.Contains(requirementId))
+                violations.Add(new EvaluationViolation("READINESS_REQUIREMENT_NOT_SLICED", $"requirement '{requirementId}' is not covered by any readiness slice"));
+
+        return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
+    }
+
+    // Kahn's algorithm over the dependsOn graph. Only edges that point at another real slice in
+    // the same proposal count — dangling/self references are already reported by
+    // READINESS_DEPENDENCY_REFERENCE_DANGLING above and must not also poison this check. Built
+    // defensively against duplicate slice IDs (already reported by
+    // READINESS_SLICE_ID_DUPLICATE) so a malformed proposal can't crash the evaluator instead of
+    // just failing it.
+    private static bool HasReadinessDependencyCycle(ReadinessSlice[] slices)
+    {
+        var indegree = new Dictionary<string, int>();
+        var adjacency = new Dictionary<string, List<string>>();
+        foreach (var slice in slices)
+        {
+            indegree.TryAdd(slice.Id, 0);
+            adjacency.TryAdd(slice.Id, []);
+        }
+
+        foreach (var slice in slices)
+            foreach (var dependencyId in slice.DependsOn)
+                if (dependencyId != slice.Id && adjacency.ContainsKey(dependencyId))
+                {
+                    adjacency[dependencyId].Add(slice.Id);
+                    indegree[slice.Id]++;
+                }
+
+        var queue = new Queue<string>(indegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+        var visited = 0;
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            visited++;
+            foreach (var next in adjacency[current])
+                if (--indegree[next] == 0)
+                    queue.Enqueue(next);
+        }
+
+        return visited < indegree.Count;
+    }
+
     private static void AddDuplicateIdViolations(List<EvaluationViolation> violations, IEnumerable<string> ids, string code, string kind)
     {
         var duplicates = ids

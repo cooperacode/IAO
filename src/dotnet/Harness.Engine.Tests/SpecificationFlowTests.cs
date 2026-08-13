@@ -5,9 +5,10 @@ namespace Harness.Engine.Tests;
 
 /// <summary>
 /// Specification flow happy path (blueprint 0004 §2):
-/// start → discover → product → analysis → design → stop. Covers resume-from-persisted-phase
-/// on a fresh "start" (kill + restart) and the retry-in-place behavior of
-/// discover/product/analysis/design on evaluator failure.
+/// start → discover → product → analysis → design → review → stop (awaiting_approval). Covers
+/// resume-from-persisted-phase on a fresh "start" (kill + restart), the retry-in-place behavior
+/// of discover/product/analysis/design/review on evaluator failure, and review's recascade
+/// routing (blueprint 0006).
 /// </summary>
 public class SpecificationFlowTests : IDisposable
 {
@@ -15,6 +16,7 @@ public class SpecificationFlowTests : IDisposable
     private const string PrdProposalPath = ".harness/specification/active/prd.proposal.json";
     private const string SrsProposalPath = ".harness/specification/active/srs.proposal.json";
     private const string SddProposalPath = ".harness/specification/active/sdd.proposal.json";
+    private const string ReviewProposalPath = ".harness/specification/active/review.proposal.json";
 
     private const string ValidIdeaJson =
         """
@@ -32,7 +34,7 @@ public class SpecificationFlowTests : IDisposable
         StateStore.Reset();
         Trace.Reset();
         SpecificationStore.Reset();
-        foreach (var path in new[] { IdeaProposalPath, PrdProposalPath, SrsProposalPath, SddProposalPath })
+        foreach (var path in new[] { IdeaProposalPath, PrdProposalPath, SrsProposalPath, SddProposalPath, ReviewProposalPath })
             if (File.Exists(path))
                 File.Delete(path);
     }
@@ -41,6 +43,7 @@ public class SpecificationFlowTests : IDisposable
     private static void WritePrdProposal(string json) => WriteProposal(PrdProposalPath, json);
     private static void WriteSrsProposal(string json) => WriteProposal(SrsProposalPath, json);
     private static void WriteSddProposal(string json) => WriteProposal(SddProposalPath, json);
+    private static void WriteReviewProposal(string json) => WriteProposal(ReviewProposalPath, json);
 
     private static void WriteProposal(string path, string json)
     {
@@ -76,6 +79,23 @@ public class SpecificationFlowTests : IDisposable
         "controls":[]}
         """;
 
+    // Covers RF-1 (from ValidSrsJson) and ADR-1 (from ValidSddJson) with a single initial slice
+    // (empty dependsOn) — a minimal complete, acyclic cover.
+    private const string ValidReadyReviewJson =
+        """
+        {"verdict":"READY",
+        "slices":[{"id":"SL-1","classification":"core","goal":"Track tasks","inScope":["create task"],"outOfScope":[],
+        "observableOutcome":"a created task appears in the list","requirementIds":["RF-1"],"adrIds":["ADR-1"],
+        "dependsOn":[],"contracts":[],"happyPath":"user adds a task","failurePath":"invalid input is rejected",
+        "acceptanceCriterion":"the task appears in the response","suggestedTarget":"webapi","suggestedVerificationStrategy":"integration test"}],
+        "conflicts":[],"residuals":[]}
+        """;
+
+    private static string FailReviewJson(string phase) =>
+        $$"""
+        {"verdict":"FAIL:{{phase}}","slices":[],"conflicts":["needs rework"],"residuals":[]}
+        """;
+
     /// <summary>Drives discover to completion and returns the accepted idea's digest.</summary>
     private static string AdvanceToProduct()
     {
@@ -109,17 +129,30 @@ public class SpecificationFlowTests : IDisposable
         return digest!;
     }
 
+    /// <summary>Drives discover+product+analysis+design to completion; phase persists as "review".</summary>
+    private static string AdvanceToReview()
+    {
+        var srsDigest = AdvanceToDesign();
+        WriteSddProposal(ValidSddJson(srsDigest));
+        SpecificationTasks.Design(Cmd("design"));
+        var (_, digest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        return digest!;
+    }
+
     // --- (a) happy path -----------------------------------------------------------------
 
     [Fact]
-    public void HappyPath_StartDiscoverProductAnalysisDesign_FechaComSrsESddAceitos()
+    public void Design_SddValido_AceitaEAvancaParaReviewEmVezDeParar()
     {
         var srsDigest = AdvanceToDesign();
         WriteSddProposal(ValidSddJson(srsDigest));
 
         var result = SpecificationTasks.Design(Cmd("design"));
 
-        Assert.Equal("stop", result);
+        Assert.Contains("\"value\":\"review\"", result);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("in_progress", SpecificationStore.LoadRun().Status);
         var (srs, _) = SpecificationStore.ReadAccepted(
             SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
         var (sdd, sddDigest) = SpecificationStore.ReadAccepted(
@@ -127,8 +160,25 @@ public class SpecificationFlowTests : IDisposable
         Assert.NotNull(srs);
         Assert.NotNull(sdd);
         Assert.NotNull(sddDigest);
-        Assert.Equal("completed", SpecificationStore.LoadRun().Status);
-        Assert.Equal("stop", SpecificationStore.LoadRun().Phase);
+    }
+
+    [Fact]
+    public void HappyPath_StartDiscoverProductAnalysisDesignReview_PausaAguardandoAprovacaoComReadinessAceito()
+    {
+        AdvanceToReview();
+        WriteReviewProposal(ValidReadyReviewJson);
+
+        var result = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Equal("stop", result);
+        Assert.Equal("awaiting_approval", SpecificationStore.LoadRun().Status);
+        Assert.Equal("approve", SpecificationStore.LoadRun().Phase);
+        var (verdict, digest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
+        Assert.NotNull(verdict);
+        Assert.NotNull(digest);
+        Assert.Equal("READY", verdict!.Verdict);
+        Assert.Single(verdict.Slices);
     }
 
     [Fact]
@@ -246,11 +296,27 @@ public class SpecificationFlowTests : IDisposable
     }
 
     [Fact]
+    public void Start_ComRunEmReview_RetomaEmVezDeReiniciarDoDiscover()
+    {
+        AdvanceToReview(); // ...→ design accepted, phase persisted as "review"
+
+        var result = SpecificationTasks.Start(); // simulates a kill + restart mid-run
+
+        Assert.Contains("\"value\":\"review\"", result);
+        Assert.Contains(ReviewProposalPath, result);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("in_progress", SpecificationStore.LoadRun().Status);
+        var (sdd, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        Assert.NotNull(sdd);
+    }
+
+    [Fact]
     public void Start_SemRunEmProgresso_ReiniciaDoDiscoverEDescartaAceitosAnteriores()
     {
-        var srsDigest = AdvanceToDesign();
-        WriteSddProposal(ValidSddJson(srsDigest));
-        SpecificationTasks.Design(Cmd("design")); // run completed
+        AdvanceToReview();
+        WriteReviewProposal(ValidReadyReviewJson);
+        SpecificationTasks.Review(Cmd("review")); // run reaches "awaiting_approval" (not in_progress)
 
         var result = SpecificationTasks.Start(); // no run in progress → genuinely new run
 
@@ -379,5 +445,142 @@ public class SpecificationFlowTests : IDisposable
         var (sdd, _) = SpecificationStore.ReadAccepted(
             SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
         Assert.Null(sdd);
+    }
+
+    // --- (d) review phase: structural retry-in-place, READY, and recascade routing --------
+
+    [Fact]
+    public void Review_SemPropostaLegivel_ReemiteComMensagemDeArquivoAusente()
+    {
+        AdvanceToReview(); // no review.proposal.json written
+
+        var result = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Contains("\"value\":\"review\"", result);
+        Assert.Contains(ReviewProposalPath, result);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+    }
+
+    [Fact]
+    public void Review_VerdictInvalido_MantemEmReviewEReportaCodigoEstavel()
+    {
+        AdvanceToReview();
+        WriteReviewProposal("""{"verdict":"MAYBE","slices":[],"conflicts":[],"residuals":[]}""");
+
+        var result = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Contains("\"value\":\"review\"", result);
+        Assert.Contains("READINESS_VERDICT_INVALID", result);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        var (verdict, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
+        Assert.Null(verdict);
+    }
+
+    [Fact]
+    public void Review_FailProduct_RecascadeiaParaProductComContadorIncrementado()
+    {
+        AdvanceToReview();
+        WriteReviewProposal(FailReviewJson("product"));
+
+        var result = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Contains("\"value\":\"product\"", result);
+        Assert.Equal("product", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("in_progress", SpecificationStore.LoadRun().Status);
+        Assert.Equal(1, SpecificationStore.LoadRun().Counters["recascades"]);
+    }
+
+    [Fact]
+    public void Review_FailAnalysis_RecascadeiaParaAnalysisERetornaAteReviewNovamenteViaDesign()
+    {
+        AdvanceToReview();
+        WriteReviewProposal(FailReviewJson("analysis"));
+
+        var routeResult = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Contains("\"value\":\"analysis\"", routeResult);
+        Assert.Equal("analysis", SpecificationStore.LoadRun().Phase);
+        Assert.Equal(1, SpecificationStore.LoadRun().Counters["recascades"]);
+
+        // Re-walks forward: analysis -> design -> review, exactly like the first pass.
+        var (prd, prdDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+        Assert.NotNull(prd);
+        WriteSrsProposal(ValidSrsJson(prdDigest!));
+        var analysisResult = SpecificationTasks.Analysis(Cmd("analysis"));
+        Assert.Contains("\"value\":\"design\"", analysisResult);
+        Assert.Equal("design", SpecificationStore.LoadRun().Phase);
+
+        var (srs, srsDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        Assert.NotNull(srs);
+        WriteSddProposal(ValidSddJson(srsDigest!));
+        var designResult = SpecificationTasks.Design(Cmd("design"));
+        Assert.Contains("\"value\":\"review\"", designResult);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+
+        // The recascade counter survived the forward walk through analysis/design.
+        Assert.Equal(1, SpecificationStore.LoadRun().Counters["recascades"]);
+    }
+
+    [Fact]
+    public void Review_FailDesign_RecascadeiaParaDesignERetornaAteReviewNovamente()
+    {
+        AdvanceToReview();
+        WriteReviewProposal(FailReviewJson("design"));
+
+        var routeResult = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Contains("\"value\":\"design\"", routeResult);
+        Assert.Equal("design", SpecificationStore.LoadRun().Phase);
+
+        var (srs, srsDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        Assert.NotNull(srs);
+        WriteSddProposal(ValidSddJson(srsDigest!));
+        var designResult = SpecificationTasks.Design(Cmd("design"));
+
+        Assert.Contains("\"value\":\"review\"", designResult);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        Assert.Equal(1, SpecificationStore.LoadRun().Counters["recascades"]);
+    }
+
+    [Fact]
+    public void Review_TerceiraTentativaDeRecascade_ParaComNeedsHumanDecisionEmVezDeNovoRetry()
+    {
+        AdvanceToReview();
+
+        // 1st recascade: FAIL:design -> back to design -> resubmit -> review again.
+        WriteReviewProposal(FailReviewJson("design"));
+        SpecificationTasks.Review(Cmd("review"));
+        Assert.Equal("design", SpecificationStore.LoadRun().Phase);
+        var (_, srsDigest1) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        WriteSddProposal(ValidSddJson(srsDigest1!));
+        SpecificationTasks.Design(Cmd("design"));
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        Assert.Equal(1, SpecificationStore.LoadRun().Counters["recascades"]);
+
+        // 2nd recascade: FAIL:design again -> back to design -> resubmit -> review again.
+        WriteReviewProposal(FailReviewJson("design"));
+        SpecificationTasks.Review(Cmd("review"));
+        Assert.Equal("design", SpecificationStore.LoadRun().Phase);
+        var (_, srsDigest2) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        WriteSddProposal(ValidSddJson(srsDigest2!));
+        SpecificationTasks.Design(Cmd("design"));
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        Assert.Equal(2, SpecificationStore.LoadRun().Counters["recascades"]);
+
+        // 3rd attempt hits the two-recascade budget: terminal, not another retry.
+        WriteReviewProposal(FailReviewJson("design"));
+        var thirdResult = SpecificationTasks.Review(Cmd("review"));
+
+        Assert.Equal("stop", thirdResult);
+        Assert.Equal("needs_human_decision", SpecificationStore.LoadRun().Status);
+        Assert.Equal("recascade limit reached", SpecificationStore.LoadRun().TerminalReason);
+        // Still parked at "review" — the third FAIL was rejected before it could route anywhere.
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
     }
 }

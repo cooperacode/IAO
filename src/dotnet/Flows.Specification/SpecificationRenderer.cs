@@ -95,6 +95,52 @@ public static class SpecificationRenderer
         return sb.ToString();
     }
 
+    /// <summary>Renders an accepted <see cref="ReadinessVerdict"/> as <c>30-readiness-handoff.md</c>.</summary>
+    public static string RenderReadiness(ReadinessVerdict verdict)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("# Readiness Handoff\n\n");
+
+        sb.Append("## Verdict\n");
+        sb.Append(Escape(verdict.Verdict)).Append("\n\n");
+
+        sb.Append("## Conflicts\n");
+        AppendBulletsOrNone(sb, verdict.Conflicts, c => $"- {Escape(c)}");
+
+        sb.Append("## Residuals\n");
+        AppendBulletsOrNone(sb, verdict.Residuals, r => $"- {Escape(r)}");
+
+        sb.Append("## Slices\n");
+        if (verdict.Slices.Length == 0)
+        {
+            sb.Append("_None._\n");
+        }
+        else
+        {
+            foreach (var slice in verdict.Slices)
+            {
+                sb.Append($"### {Escape(slice.Id)} — {Escape(slice.Classification)}\n");
+                sb.Append($"- **Goal:** {Escape(slice.Goal)}\n");
+                sb.Append($"- **In Scope:** {JoinIds(slice.InScope)}\n");
+                sb.Append($"- **Out of Scope:** {JoinIds(slice.OutOfScope)}\n");
+                sb.Append($"- **Observable Outcome:** {Escape(slice.ObservableOutcome)}\n");
+                sb.Append($"- **Requirements:** {JoinIds(slice.RequirementIds)}\n");
+                sb.Append($"- **ADRs:** {JoinIds(slice.AdrIds)}\n");
+                sb.Append($"- **Depends On:** {JoinIds(slice.DependsOn)}\n");
+                sb.Append($"- **Contracts:** {JoinIds(slice.Contracts)}\n");
+                sb.Append($"- **Happy Path:** {Escape(slice.HappyPath)}\n");
+                sb.Append($"- **Failure Path:** {Escape(slice.FailurePath)}\n");
+                sb.Append($"- **Acceptance Criterion:** {Escape(slice.AcceptanceCriterion)}\n");
+                sb.Append($"- **Suggested Target:** {Escape(slice.SuggestedTarget)}\n");
+                sb.Append($"- **Suggested Verification Strategy:** {Escape(slice.SuggestedVerificationStrategy)}\n");
+                sb.Append('\n');
+            }
+        }
+
+        return sb.ToString();
+    }
+
     // Renders each item in array order (the order the accepted JSON already carries) so the
     // output is a pure function of the input — no re-sorting that could disagree with what a
     // human reviewer sees in the source document. "_None._" keeps every section present even
