@@ -162,6 +162,19 @@ public sealed record InterfaceControl(
     string[] RequirementIds);
 
 /// <summary>
+/// SDD produced by the <c>design</c> phase — the top-level document wrapping <see cref="Adr"/>
+/// and <see cref="InterfaceControl"/> items, mirroring how <see cref="SoftwareSpecification"/>
+/// wraps <see cref="Requirement"/>/<see cref="AcceptanceCriterion"/> for the SRS (§2, §3).
+/// <see cref="SrsDigest"/> is the parent-digest freshness field SddEvaluator checks (§5:
+/// "prdDigest atual" pattern, one phase down).
+/// </summary>
+public sealed record SoftwareDesignDocument(
+    string Schema,
+    string SrsDigest,
+    Adr[] Adrs,
+    InterfaceControl[] Controls);
+
+/// <summary>
 /// One readiness slice: the unit the Development planner turns into a feature. Fields mirror
 /// the readiness contract in §7 verbatim — classification, scope, the OBJ → RF/RNF/SEC →
 /// ADR → slice matrix, real dependencies (capped at ten slices per run), contracts/data/error

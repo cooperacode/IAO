@@ -15,12 +15,20 @@ public static partial class SpecificationTasks
     // directly instead of adding a public accessor for a single call site's sake.
     private const string IdeaProposalPath = ".harness/specification/active/idea.proposal.json";
     private const string PrdProposalPath = ".harness/specification/active/prd.proposal.json";
+    private const string SrsProposalPath = ".harness/specification/active/srs.proposal.json";
+    private const string SddProposalPath = ".harness/specification/active/sdd.proposal.json";
 
     private const string IdeaShape =
         """{"schema":"iao/idea/v1","title":"...","problem":"...","users":["..."],"desiredOutcomes":["..."],"constraints":["..."],"openQuestions":[{"id":"OQ-1","question":"...","blocking":false}]}""";
 
     private const string PrdShape =
         """{"schema":"iao/prd/v1","ideaDigest":"sha256:...","vision":"...","goals":[{"id":"G-1","statement":"..."}],"successMetrics":[{"id":"M-1","goalId":"G-1","measure":"...","target":"..."}],"nonGoals":["..."],"scope":["..."],"risks":[{"id":"R-1","description":"...","mitigation":"...","severity":"..."}],"decisions":[{"id":"D-1","statement":"...","rationale":"..."}],"openQuestions":[]}""";
+
+    private const string SrsShape =
+        """{"schema":"iao/srs/v1","prdDigest":"sha256:...","functionalRequirements":[{"id":"RF-1","goalIds":["G-1"],"statement":"...","dependsOn":[],"acceptanceIds":["AC-1"]}],"qualityRequirements":[],"acceptanceCriteria":[{"id":"AC-1","requirementIds":["RF-1"],"given":"...","when":"...","then":"..."}],"interfaces":[],"dataRules":[],"delivery":{"target":"...","verificationStrategy":"...","isBootstrap":true}}""";
+
+    private const string SddShape =
+        """{"schema":"iao/sdd/v1","srsDigest":"sha256:...","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}""";
 
     // --- discover ---------------------------------------------------------
 
@@ -75,8 +83,7 @@ public static partial class SpecificationTasks
             distinct; leave no blocking open question unresolved.
 
             Return `product` without arguments when done; the harness will validate the file and
-            either persist prd.accepted.json and stop, or re-request `product` with the reported
-            violations.
+            either advance to `analysis`, or re-request `product` with the reported violations.
             """,
             output: new Envelope(EnvelopeType.Command, "product", []));
     }
@@ -97,5 +104,97 @@ public static partial class SpecificationTasks
             harness-controlled attempt.
             """,
             output: new Envelope(EnvelopeType.Command, "product", []));
+    }
+
+    // --- analysis -------------------------------------------------------------
+
+    private static string AnalysisPrompt()
+    {
+        var (_, prdDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+
+        return PromptFormatter.Format(
+            input: $"""
+            Draft the SRS for this Specification run (blueprint 0004 §2/§3, analysis phase),
+            building on the accepted PRD (digest '{prdDigest}').
+
+            Write a JSON OBJECT to the file '{SrsProposalPath}' (a real file, written with your
+            file-write tool — NOT escaped or embedded inside the envelope you send back) with this
+            shape: {SrsShape}
+            `schema` must be exactly "{SpecificationEvaluator.SrsSchema}" and `prdDigest` must be
+            set to exactly '{prdDigest}'. Every goal from the accepted PRD must be covered by at
+            least one requirement's `goalIds`. Every functional and quality requirement needs a
+            unique id and at least one `acceptanceIds` entry that resolves to a real entry in
+            `acceptanceCriteria`. Every `dependsOn` id and every acceptance criterion/interface/
+            data-rule requirement reference must point at a requirement id that actually exists.
+
+            Return `analysis` without arguments when done; the harness will validate the file and
+            either advance to `design`, or re-request `analysis` with the reported violations.
+            """,
+            output: new Envelope(EnvelopeType.Command, "analysis", []));
+    }
+
+    private static string AnalysisRetryPrompt(IEnumerable<string> violations)
+    {
+        var (_, prdDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+
+        return PromptFormatter.Format(
+            input: $"""
+            The SRS proposal at '{SrsProposalPath}' did not pass SrsEvaluator:
+            {string.Join("\n", violations.Select(v => $"- {v}"))}
+
+            Rewrite the file at the exact same path with this shape: {SrsShape}
+            `schema` must be exactly "{SpecificationEvaluator.SrsSchema}" and `prdDigest` must be
+            set to exactly '{prdDigest}'. Return `analysis` without arguments for another
+            harness-controlled attempt.
+            """,
+            output: new Envelope(EnvelopeType.Command, "analysis", []));
+    }
+
+    // --- design ---------------------------------------------------------------
+
+    private static string DesignPrompt()
+    {
+        var (_, srsDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+
+        return PromptFormatter.Format(
+            input: $"""
+            Draft the SDD for this Specification run (blueprint 0004 §2/§3, design phase),
+            building on the accepted SRS (digest '{srsDigest}').
+
+            Write a JSON OBJECT to the file '{SddProposalPath}' (a real file, written with your
+            file-write tool — NOT escaped or embedded inside the envelope you send back) with this
+            shape: {SddShape}
+            `schema` must be exactly "{SpecificationEvaluator.SddSchema}" and `srsDigest` must be
+            set to exactly '{srsDigest}'. Every functional and quality requirement from the
+            accepted SRS must be allocated to (referenced by) at least one ADR's
+            `requirementIds`. Every ADR id must be unique, and every ADR/control requirement
+            reference must point at a requirement id that actually exists in the accepted SRS.
+
+            Return `design` without arguments when done; the harness will validate the file and
+            either persist sdd.accepted.json and stop, or re-request `design` with the reported
+            violations.
+            """,
+            output: new Envelope(EnvelopeType.Command, "design", []));
+    }
+
+    private static string DesignRetryPrompt(IEnumerable<string> violations)
+    {
+        var (_, srsDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+
+        return PromptFormatter.Format(
+            input: $"""
+            The SDD proposal at '{SddProposalPath}' did not pass SddEvaluator:
+            {string.Join("\n", violations.Select(v => $"- {v}"))}
+
+            Rewrite the file at the exact same path with this shape: {SddShape}
+            `schema` must be exactly "{SpecificationEvaluator.SddSchema}" and `srsDigest` must be
+            set to exactly '{srsDigest}'. Return `design` without arguments for another
+            harness-controlled attempt.
+            """,
+            output: new Envelope(EnvelopeType.Command, "design", []));
     }
 }

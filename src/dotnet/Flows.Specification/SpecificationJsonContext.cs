@@ -29,6 +29,7 @@ namespace Flows.Specification;
 [JsonSerializable(typeof(DeliveryContract))]
 [JsonSerializable(typeof(Adr))]
 [JsonSerializable(typeof(InterfaceControl))]
+[JsonSerializable(typeof(SoftwareDesignDocument))]
 [JsonSerializable(typeof(ReadinessSlice))]
 [JsonSerializable(typeof(ReadinessVerdict))]
 [JsonSerializable(typeof(ApprovalDecision))]

@@ -29,6 +29,8 @@ public static class SpecificationEvaluator
 {
     public const string IdeaSchema = "iao/idea/v1";
     public const string PrdSchema = "iao/prd/v1";
+    public const string SrsSchema = "iao/srs/v1";
+    public const string SddSchema = "iao/sdd/v1";
 
     /// <summary>
     /// Upper bound on an idea's canonical JSON size (§5 "tamanho UTF-8"). Mirrors the spirit
@@ -124,6 +126,107 @@ public static class SpecificationEvaluator
         var blocking = prd.OpenQuestions.Where(q => q.Blocking).Select(q => q.Id).ToArray();
         if (blocking.Length > 0)
             violations.Add(new EvaluationViolation("PRD_OPEN_QUESTION_BLOCKING", $"unresolved blocking open question(s): {string.Join(", ", blocking)}"));
+
+        return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
+    }
+
+    /// <summary>
+    /// Validates an <c>analysis</c>-phase SRS proposal against the currently accepted PRD's
+    /// digest (<paramref name="currentPrdDigest"/>) and the accepted PRD's goal ids
+    /// (<paramref name="acceptedGoalIds"/>, so goal coverage is checked against the real
+    /// parent, not whatever goals the proposal itself claims to trace to): digest freshness,
+    /// unique requirement IDs across functional + quality requirements, every accepted goal
+    /// covered by at least one requirement, every requirement backed by at least one existing
+    /// acceptance criterion, and no dangling reference anywhere — <c>dependsOn</c>,
+    /// acceptance/interface/data-rule requirement links (§5 SrsEvaluator).
+    /// </summary>
+    public static EvaluationResult EvaluateSrs(SoftwareSpecification srs, string currentPrdDigest, string[] acceptedGoalIds)
+    {
+        var violations = new List<EvaluationViolation>();
+
+        if (srs.Schema != SrsSchema)
+            violations.Add(new EvaluationViolation("SRS_SCHEMA_UNKNOWN", $"expected schema '{SrsSchema}', got '{srs.Schema}'"));
+
+        if (string.IsNullOrEmpty(currentPrdDigest) || srs.PrdDigest != currentPrdDigest)
+            violations.Add(new EvaluationViolation("SRS_PRD_DIGEST_STALE", $"srs.prdDigest '{srs.PrdDigest}' does not match the current accepted PRD digest '{currentPrdDigest}'"));
+
+        var requirements = srs.FunctionalRequirements.Concat(srs.QualityRequirements).ToArray();
+        AddDuplicateIdViolations(violations, requirements.Select(r => r.Id), "SRS_REQUIREMENT_ID_DUPLICATE", "requirement");
+
+        var requirementIds = requirements.Select(r => r.Id).ToHashSet();
+        var acceptanceCriterionIds = srs.AcceptanceCriteria.Select(a => a.Id).ToHashSet();
+
+        var coveredGoalIds = requirements.SelectMany(r => r.GoalIds).ToHashSet();
+        foreach (var goalId in acceptedGoalIds)
+            if (!coveredGoalIds.Contains(goalId))
+                violations.Add(new EvaluationViolation("SRS_GOAL_NOT_COVERED", $"goal '{goalId}' is not covered by any requirement"));
+
+        foreach (var requirement in requirements)
+        {
+            if (requirement.AcceptanceIds.Length == 0)
+                violations.Add(new EvaluationViolation("SRS_REQUIREMENT_WITHOUT_ACCEPTANCE", $"requirement '{requirement.Id}' has no acceptance criterion"));
+
+            foreach (var acceptanceId in requirement.AcceptanceIds)
+                if (!acceptanceCriterionIds.Contains(acceptanceId))
+                    violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_REFERENCE_DANGLING", $"requirement '{requirement.Id}' references unknown acceptance criterion '{acceptanceId}'"));
+
+            foreach (var dependencyId in requirement.DependsOn)
+                if (!requirementIds.Contains(dependencyId))
+                    violations.Add(new EvaluationViolation("SRS_REQUIREMENT_DEPENDENCY_DANGLING", $"requirement '{requirement.Id}' depends on unknown requirement '{dependencyId}'"));
+        }
+
+        foreach (var criterion in srs.AcceptanceCriteria)
+            foreach (var requirementId in criterion.RequirementIds)
+                if (!requirementIds.Contains(requirementId))
+                    violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_CRITERION_REQUIREMENT_DANGLING", $"acceptance criterion '{criterion.Id}' references unknown requirement '{requirementId}'"));
+
+        foreach (var iface in srs.Interfaces)
+            foreach (var requirementId in iface.RequirementIds)
+                if (!requirementIds.Contains(requirementId))
+                    violations.Add(new EvaluationViolation("SRS_INTERFACE_REQUIREMENT_DANGLING", $"interface '{iface.Id}' references unknown requirement '{requirementId}'"));
+
+        foreach (var rule in srs.DataRules)
+            foreach (var requirementId in rule.RequirementIds)
+                if (!requirementIds.Contains(requirementId))
+                    violations.Add(new EvaluationViolation("SRS_DATA_RULE_REQUIREMENT_DANGLING", $"data rule '{rule.Id}' references unknown requirement '{requirementId}'"));
+
+        return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
+    }
+
+    /// <summary>
+    /// Validates a <c>design</c>-phase SDD proposal against the currently accepted SRS's
+    /// digest (<paramref name="currentSrsDigest"/>) and the accepted SRS's requirement ids
+    /// (<paramref name="requirementIds"/>, functional + quality combined): digest freshness,
+    /// unique ADR IDs, every accepted requirement allocated to at least one ADR, and no
+    /// dangling requirement reference from an ADR or a control (§5 SddEvaluator).
+    /// </summary>
+    public static EvaluationResult EvaluateSdd(SoftwareDesignDocument sdd, string currentSrsDigest, string[] requirementIds)
+    {
+        var violations = new List<EvaluationViolation>();
+
+        if (sdd.Schema != SddSchema)
+            violations.Add(new EvaluationViolation("SDD_SCHEMA_UNKNOWN", $"expected schema '{SddSchema}', got '{sdd.Schema}'"));
+
+        if (string.IsNullOrEmpty(currentSrsDigest) || sdd.SrsDigest != currentSrsDigest)
+            violations.Add(new EvaluationViolation("SDD_SRS_DIGEST_STALE", $"sdd.srsDigest '{sdd.SrsDigest}' does not match the current accepted SRS digest '{currentSrsDigest}'"));
+
+        AddDuplicateIdViolations(violations, sdd.Adrs.Select(a => a.Id), "SDD_ADR_ID_DUPLICATE", "ADR");
+
+        var knownRequirementIds = requirementIds.ToHashSet();
+        var allocatedRequirementIds = sdd.Adrs.SelectMany(a => a.RequirementIds).ToHashSet();
+        foreach (var requirementId in requirementIds)
+            if (!allocatedRequirementIds.Contains(requirementId))
+                violations.Add(new EvaluationViolation("SDD_REQUIREMENT_NOT_ALLOCATED", $"requirement '{requirementId}' is not allocated to any component/ADR"));
+
+        foreach (var adr in sdd.Adrs)
+            foreach (var requirementId in adr.RequirementIds)
+                if (!knownRequirementIds.Contains(requirementId))
+                    violations.Add(new EvaluationViolation("SDD_ADR_REQUIREMENT_DANGLING", $"ADR '{adr.Id}' references unknown requirement '{requirementId}'"));
+
+        foreach (var control in sdd.Controls)
+            foreach (var requirementId in control.RequirementIds)
+                if (!knownRequirementIds.Contains(requirementId))
+                    violations.Add(new EvaluationViolation("SDD_CONTROL_REQUIREMENT_DANGLING", $"control '{control.Id}' references unknown requirement '{requirementId}'"));
 
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
     }

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 
 namespace Flows.Specification;
@@ -48,6 +49,52 @@ public static class SpecificationRenderer
         return sb.ToString();
     }
 
+    /// <summary>Renders an accepted <see cref="SoftwareSpecification"/> as <c>10-software-requirements-specification.md</c>.</summary>
+    public static string RenderSrs(SoftwareSpecification srs)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("# Software Requirements Specification\n\n");
+
+        sb.Append("## Functional Requirements\n");
+        AppendBulletsOrNone(sb, srs.FunctionalRequirements, r => $"- **{r.Id}** [{JoinIds(r.GoalIds)}]: {Escape(r.Statement)}");
+
+        sb.Append("## Quality Requirements\n");
+        AppendBulletsOrNone(sb, srs.QualityRequirements, r => $"- **{r.Id}** [{JoinIds(r.GoalIds)}]: {Escape(r.Statement)}");
+
+        sb.Append("## Acceptance Criteria\n");
+        AppendBulletsOrNone(sb, srs.AcceptanceCriteria, a => $"- **{a.Id}** ({JoinIds(a.RequirementIds)}) — Given {Escape(a.Given)}, When {Escape(a.When)}, Then {Escape(a.Then)}");
+
+        sb.Append("## Interfaces\n");
+        AppendBulletsOrNone(sb, srs.Interfaces, i => $"- **{i.Id}** ({JoinIds(i.RequirementIds)}) {Escape(i.Name)}: {Escape(i.Description)}");
+
+        sb.Append("## Data Rules\n");
+        AppendBulletsOrNone(sb, srs.DataRules, d => $"- **{d.Id}** ({JoinIds(d.RequirementIds)}): {Escape(d.Rule)}");
+
+        sb.Append("## Delivery\n");
+        sb.Append($"- **Target:** {Escape(srs.Delivery.Target)}\n");
+        sb.Append($"- **Verification Strategy:** {Escape(srs.Delivery.VerificationStrategy)}\n");
+        sb.Append($"- **Bootstrap:** {(srs.Delivery.IsBootstrap ? "yes" : "no")}\n");
+
+        return sb.ToString();
+    }
+
+    /// <summary>Renders an accepted <see cref="SoftwareDesignDocument"/> as <c>20-software-design-document.md</c>.</summary>
+    public static string RenderSdd(SoftwareDesignDocument sdd)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("# Software Design Document\n\n");
+
+        sb.Append("## Architecture Decision Records\n");
+        AppendBulletsOrNone(sb, sdd.Adrs, a => $"- **{a.Id}** [{JoinIds(a.RequirementIds)}] {Escape(a.Title)}: {Escape(a.Decision)} — rationale: {Escape(a.Rationale)}");
+
+        sb.Append("## Controls\n");
+        AppendBulletsOrNone(sb, sdd.Controls, c => $"- **{c.Id}** [{JoinIds(c.RequirementIds)}] {Escape(c.Name)}: {Escape(c.Description)}", trailingBlankLine: false);
+
+        return sb.ToString();
+    }
+
     // Renders each item in array order (the order the accepted JSON already carries) so the
     // output is a pure function of the input — no re-sorting that could disagree with what a
     // human reviewer sees in the source document. "_None._" keeps every section present even
@@ -63,6 +110,10 @@ public static class SpecificationRenderer
         if (trailingBlankLine)
             sb.Append('\n');
     }
+
+    // Joins a list of ids for inline display (e.g. "[G-1, G-2]"), escaping each id individually
+    // so a pathological id can't smuggle in Markdown syntax any more than free text can.
+    private static string JoinIds(IReadOnlyList<string> ids) => string.Join(", ", ids.Select(Escape));
 
     // Backslash-escapes the Markdown special characters that free-text PRD fields could
     // contain, so a title/description with e.g. "*bold*" or "[link](x)" in it renders as

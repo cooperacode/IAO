@@ -4,12 +4,12 @@ namespace Flows.Specification;
 
 /// <summary>
 /// Long-running Specification flow (blueprint 0004 §2 "State machine"): idea → PRD → ... →
-/// approval → publish. This slice implements the happy-path prefix only:
+/// approval → publish. This slice implements the happy-path prefix:
 ///
-/// start → discover → product → stop
+/// start → discover → product → analysis → design → stop
 ///
-/// Later phases (analysis, design, review, approve, publish) are out of scope for this
-/// feature — <c>Product()</c> stops the chain once <c>prd.accepted.json</c> is written.
+/// Later phases (review, approve, publish) are out of scope for this feature —
+/// <c>Design()</c> stops the chain once <c>sdd.accepted.json</c> is written.
 ///
 /// Each task only performs effects and decides the NEXT command (the <c>output</c> Envelope);
 /// orchestration (dispatch, global guards, transport) lives in Harness.Engine, dispatched via
@@ -37,10 +37,16 @@ public static partial class SpecificationTasks
     {
         var run = SpecificationStore.LoadRun();
 
-        if (run.Status == "in_progress" && run.Phase is "discover" or "product")
+        if (run.Status == "in_progress" && run.Phase is "discover" or "product" or "analysis" or "design")
         {
             HarnessLog.Info($"[spec] run in progress detected (phase={run.Phase}); resuming.");
-            return run.Phase == "product" ? ProductPrompt() : DiscoverPrompt();
+            return run.Phase switch
+            {
+                "product" => ProductPrompt(),
+                "analysis" => AnalysisPrompt(),
+                "design" => DesignPrompt(),
+                _ => DiscoverPrompt(),
+            };
         }
 
         // Fresh run (or a previous run reached a terminal state): the previous run's
@@ -81,8 +87,8 @@ public static partial class SpecificationTasks
     /// <summary>
     /// Validates the PRD proposal with <see cref="SpecificationEvaluator.EvaluatePrd"/> against
     /// the currently accepted idea's digest. On failure, retries in place (same command,
-    /// violations reported). On pass, persists <c>prd.accepted.json</c>, marks the run
-    /// completed, and stops — this feature's happy path ends here.
+    /// violations reported). On pass, persists <c>prd.accepted.json</c> and advances to
+    /// <c>analysis</c>.
     /// </summary>
     public static string Product(Envelope? envelope)
     {
@@ -101,8 +107,68 @@ public static partial class SpecificationTasks
 
         SpecificationStore.WriteAccepted(
             SpecificationStore.Phases.Prd, prd, SpecificationJsonContext.Default.PrdDocument);
+        SpecificationStore.SaveRun(new RunState(StateStore.Load().Step, "in_progress", "analysis", new(), null, null));
+        HarnessLog.Info("[spec] product accepted; prd.accepted.json written; advancing to analysis.");
+        return AnalysisPrompt();
+    }
+
+    /// <summary>
+    /// Validates the SRS proposal with <see cref="SpecificationEvaluator.EvaluateSrs"/> against
+    /// the currently accepted PRD's digest and goal ids. On failure, retries in place (same
+    /// command, violations reported). On pass, persists <c>srs.accepted.json</c> and advances
+    /// to <c>design</c>.
+    /// </summary>
+    public static string Analysis(Envelope? envelope)
+    {
+        var srs = SpecificationStore.ReadProposal(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        if (srs is null)
+            return AnalysisRetryPrompt([
+                $"no readable SRS proposal was found at '{SrsProposalPath}' (missing or not valid JSON)."
+            ]);
+
+        var (prd, prdDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+        var acceptedGoalIds = prd?.Goals.Select(g => g.Id).ToArray() ?? [];
+        var evaluation = SpecificationEvaluator.EvaluateSrs(srs, prdDigest ?? "", acceptedGoalIds);
+        if (!evaluation.Passed)
+            return AnalysisRetryPrompt(evaluation.Violations.Select(v => $"{v.Code}: {v.Message}"));
+
+        SpecificationStore.WriteAccepted(
+            SpecificationStore.Phases.Srs, srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        SpecificationStore.SaveRun(new RunState(StateStore.Load().Step, "in_progress", "design", new(), null, null));
+        HarnessLog.Info("[spec] analysis accepted; srs.accepted.json written; advancing to design.");
+        return DesignPrompt();
+    }
+
+    /// <summary>
+    /// Validates the SDD proposal with <see cref="SpecificationEvaluator.EvaluateSdd"/> against
+    /// the currently accepted SRS's digest and requirement ids. On failure, retries in place
+    /// (same command, violations reported). On pass, persists <c>sdd.accepted.json</c>, marks
+    /// the run completed, and stops — this feature's happy path ends here.
+    /// </summary>
+    public static string Design(Envelope? envelope)
+    {
+        var sdd = SpecificationStore.ReadProposal(
+            SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        if (sdd is null)
+            return DesignRetryPrompt([
+                $"no readable SDD proposal was found at '{SddProposalPath}' (missing or not valid JSON)."
+            ]);
+
+        var (srs, srsDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        var requirementIds = srs is null
+            ? []
+            : srs.FunctionalRequirements.Concat(srs.QualityRequirements).Select(r => r.Id).ToArray();
+        var evaluation = SpecificationEvaluator.EvaluateSdd(sdd, srsDigest ?? "", requirementIds);
+        if (!evaluation.Passed)
+            return DesignRetryPrompt(evaluation.Violations.Select(v => $"{v.Code}: {v.Message}"));
+
+        SpecificationStore.WriteAccepted(
+            SpecificationStore.Phases.Sdd, sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
         SpecificationStore.SaveRun(new RunState(StateStore.Load().Step, "completed", "stop", new(), null, null));
-        HarnessLog.Info("[spec] discover→product completed; prd.accepted.json written.");
+        HarnessLog.Info("[spec] discover→product→analysis→design completed; sdd.accepted.json written.");
         return "stop";
     }
 }

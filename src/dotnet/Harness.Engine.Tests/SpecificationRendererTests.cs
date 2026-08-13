@@ -90,4 +90,128 @@ public class SpecificationRendererTests
         Assert.Contains("## Decisions\n_None._", rendered);
         Assert.Contains("## Open Questions\n_None._", rendered);
     }
+
+    // ---- RenderSrs (10-software-requirements-specification.md) ----
+
+    private static SoftwareSpecification SampleSrs() => new(
+        "iao/srs/v1",
+        "sha256:prd-todoapp",
+        [new Requirement("RF-001", ["OBJ-001"], "Create, list, filter, complete, edit and remove tasks.", [], ["AC-001"])],
+        [new Requirement("RNF-001", ["OBJ-002"], "Persist tasks across an API-only restart.", ["RF-001"], ["AC-002"])],
+        [
+            new AcceptanceCriterion("AC-001", ["RF-001"], "a task exists", "it is listed", "it appears in the response"),
+            new AcceptanceCriterion("AC-002", ["RNF-001"], "the API restarts", "a task is read back", "its fields are unchanged"),
+        ],
+        [new InterfaceContract("IF-001", ["RF-001"], "Tasks API", "REST endpoints for task management.")],
+        [new DataRule("DR-001", ["RF-001"], "A task id is unique within the store.")],
+        new DeliveryContract("ASP.NET Core Web API", "integration tests against a local Postgres", true));
+
+    [Fact]
+    public void RenderSrs_MesmaEntrada_ProduzMesmosBytesEmDuasChamadas()
+    {
+        var srs = SampleSrs();
+
+        var first = SpecificationRenderer.RenderSrs(srs);
+        var second = SpecificationRenderer.RenderSrs(srs);
+
+        Assert.Equal(first, second);
+        Assert.Equal(
+            System.Text.Encoding.UTF8.GetBytes(first),
+            System.Text.Encoding.UTF8.GetBytes(second));
+    }
+
+    [Fact]
+    public void RenderSrs_ContemRequisitosECriteriosDeAceitacao()
+    {
+        var rendered = SpecificationRenderer.RenderSrs(SampleSrs());
+
+        Assert.Contains("## Functional Requirements", rendered);
+        Assert.Contains("**RF-001**", rendered);
+        Assert.Contains("## Quality Requirements", rendered);
+        Assert.Contains("**RNF-001**", rendered);
+        Assert.Contains("## Acceptance Criteria", rendered);
+        Assert.Contains("**AC-001**", rendered);
+    }
+
+    [Fact]
+    public void RenderSrs_EscapaCaracteresEspeciaisDeMarkdown()
+    {
+        var srs = SampleSrs() with
+        {
+            FunctionalRequirements = [new Requirement("RF-001", ["OBJ-001"], "Uses *asterisks* and [brackets].", [], ["AC-001"])],
+        };
+
+        var rendered = SpecificationRenderer.RenderSrs(srs);
+
+        Assert.Contains("\\*asterisks\\*", rendered);
+        Assert.Contains("\\[brackets\\]", rendered);
+    }
+
+    [Fact]
+    public void RenderSrs_ColecaoVazia_MantemSecaoComPlaceholder()
+    {
+        var srs = SampleSrs() with { Interfaces = [], DataRules = [] };
+
+        var rendered = SpecificationRenderer.RenderSrs(srs);
+
+        Assert.Contains("## Interfaces\n_None._", rendered);
+        Assert.Contains("## Data Rules\n_None._", rendered);
+    }
+
+    // ---- RenderSdd (20-software-design-document.md) ----
+
+    private static SoftwareDesignDocument SampleSdd() => new(
+        "iao/sdd/v1",
+        "sha256:srs-todoapp",
+        [new Adr("ADR-001", "Vertical Slice Architecture", "Organize the API by feature slice.", "Keeps each endpoint cohesive.", ["RF-001", "RNF-001"])],
+        [new InterfaceControl("IC-001", "Input validation", "Reject malformed task payloads at the boundary.", ["RF-001"])]);
+
+    [Fact]
+    public void RenderSdd_MesmaEntrada_ProduzMesmosBytesEmDuasChamadas()
+    {
+        var sdd = SampleSdd();
+
+        var first = SpecificationRenderer.RenderSdd(sdd);
+        var second = SpecificationRenderer.RenderSdd(sdd);
+
+        Assert.Equal(first, second);
+        Assert.Equal(
+            System.Text.Encoding.UTF8.GetBytes(first),
+            System.Text.Encoding.UTF8.GetBytes(second));
+    }
+
+    [Fact]
+    public void RenderSdd_ContemAdrsEControles()
+    {
+        var rendered = SpecificationRenderer.RenderSdd(SampleSdd());
+
+        Assert.Contains("## Architecture Decision Records", rendered);
+        Assert.Contains("**ADR-001**", rendered);
+        Assert.Contains("## Controls", rendered);
+        Assert.Contains("**IC-001**", rendered);
+    }
+
+    [Fact]
+    public void RenderSdd_EscapaCaracteresEspeciaisDeMarkdown()
+    {
+        var sdd = SampleSdd() with
+        {
+            Adrs = [new Adr("ADR-001", "Uses `backticks` and _underscores_.", "decision", "rationale", ["RF-001"])],
+        };
+
+        var rendered = SpecificationRenderer.RenderSdd(sdd);
+
+        Assert.Contains("\\`backticks\\`", rendered);
+        Assert.Contains("\\_underscores\\_", rendered);
+    }
+
+    [Fact]
+    public void RenderSdd_ColecaoVazia_MantemSecaoComPlaceholder()
+    {
+        var sdd = SampleSdd() with { Controls = [] };
+
+        var rendered = SpecificationRenderer.RenderSdd(sdd);
+
+        Assert.Contains("## Controls\n_None._", rendered);
+    }
 }
