@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Harness.Engine\Harness.Engine.csproj" />
     <ProjectReference Include="..\Flows.Development\Flows.Development.csproj" />
+    <ProjectReference Include="..\Flows.Specification\Flows.Specification.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,4 +9,8 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Harness.Engine\Harness.Engine.csproj" />
+  </ItemGroup>
+
 </Project>

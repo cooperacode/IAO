@@ -9,8 +9,12 @@ namespace Harness.Engine;
 /// either the complete previous version or the complete new one, never an intermediate
 /// state. Doesn't apply to the log/trace <c>File.AppendAllText</c> calls — those are
 /// already atomic at the event level (one line, one call) and don't need a file swap.
+///
+/// Public (not internal): reused as-is by sibling flow assemblies (e.g.
+/// <c>Flows.Specification.SpecificationStore</c>) that want the same atomicity guarantee
+/// without reimplementing it.
 /// </summary>
-internal static class AtomicIO
+public static class AtomicIO
 {
     public static void WriteAllTextAtomic(string path, string content)
     {
