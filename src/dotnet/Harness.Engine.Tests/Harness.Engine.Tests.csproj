@@ -24,4 +24,8 @@
     <ProjectReference Include="..\Flows.Specification\Flows.Specification.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
