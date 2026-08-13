@@ -725,6 +725,57 @@ public class SpecificationFlowTests : IDisposable
     }
 
     [Fact]
+    public void Approve_PacoteExcedeDocsMaxChars_BloqueiaAntesDePublicarESpecsActiveFicaIntocado()
+    {
+        const string ConfigPath = "harness.json";
+        try
+        {
+            // A configured docsMaxChars far smaller than any real rendered bundle — this is
+            // the "DevelopmentReadinessEvaluator" pre-publish gate (blueprint 0004 §5), which
+            // must reject the bundle BEFORE SpecificationPublisher.Publish ever touches
+            // specs/active/, using the real configured ceiling (not a hardcoded one).
+            File.WriteAllText(ConfigPath, """{"docsMaxChars":10}""");
+            HarnessConfig.Reload();
+
+            var bundleDigest = AdvanceToApprove();
+            WriteApprovalProposal(ValidApprovalJson("approved", bundleDigest));
+
+            var result = SpecificationTasks.Approve(Cmd("approve"));
+
+            Assert.Equal("stop", result);
+            Assert.Equal("publish_blocked", SpecificationStore.LoadRun().Status);
+            Assert.Contains("DEV_READINESS_BUNDLE_TOO_LARGE", SpecificationStore.LoadRun().TerminalReason);
+            Assert.False(Directory.Exists(Path.Combine(SpecsDir, "active")));
+        }
+        finally
+        {
+            if (File.Exists(ConfigPath))
+                File.Delete(ConfigPath);
+            HarnessConfig.Reload();
+        }
+    }
+
+    [Fact]
+    public void Approve_DecisaoAprovada_PosCondicaoViaDocsReaderConfirmaOBundlePublicado()
+    {
+        var bundleDigest = AdvanceToApprove();
+        WriteApprovalProposal(ValidApprovalJson("approved", bundleDigest));
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Equal("stop", result);
+        Assert.Equal("completed", SpecificationStore.LoadRun().Status);
+
+        // "completed" is only reached because SpecificationPublisher.Publish's internal
+        // postcondition (a real DocsReader.Read read-back) already passed — independently
+        // re-confirm that read-back here through the same real DocsReader.Read Development uses.
+        var (_, files) = DocsReader.Read("specs/active");
+        Assert.Equal(
+            ["00-prd.md", "10-software-requirements-specification.md", "20-software-design-document.md", "30-readiness-handoff.md"],
+            files);
+    }
+
+    [Fact]
     public void Start_ComRunAguardandoAprovacao_RetomaEmiteApprovePromptEmVezDeReiniciar()
     {
         var bundleDigest = AdvanceToApprove();

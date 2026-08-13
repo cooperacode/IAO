@@ -705,4 +705,102 @@ public class SpecificationEvaluatorTests
         Assert.Contains("APPROVAL_BUNDLE_DIGEST_STALE", codes);
         Assert.Contains("APPROVAL_RATIONALE_MISSING", codes);
     }
+
+    // ---- DevelopmentReadinessEvaluator ----
+
+    private static Dictionary<string, string> ValidRenderedDocuments() => new()
+    {
+        ["00-prd.md"] = "# PRD\nsome content",
+        ["10-software-requirements-specification.md"] = "# SRS\nsome content",
+        ["20-software-design-document.md"] = "# SDD\nsome content",
+        ["30-readiness-handoff.md"] = "# Readiness\nsome content",
+    };
+
+    [Fact]
+    public void EvaluateDevelopmentReadiness_TudoValido_Passa()
+    {
+        var result = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            ValidPrd("sha256:idea"), ValidSrs("sha256:prd"), ValidSdd("sha256:srs"), ValidReadinessVerdict(),
+            "sha256:bundle", "sha256:bundle", ValidRenderedDocuments(), docsMaxChars: 40_000);
+
+        Assert.True(result.Passed);
+        Assert.Empty(result.Violations);
+    }
+
+    [Fact]
+    public void EvaluateDevelopmentReadiness_DigestDeBundleDesatualizado_EhRejeitadoComCodigoEstavel()
+    {
+        var result = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            ValidPrd("sha256:idea"), ValidSrs("sha256:prd"), ValidSdd("sha256:srs"), ValidReadinessVerdict(),
+            "sha256:stale", "sha256:current", ValidRenderedDocuments(), docsMaxChars: 40_000);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "DEV_READINESS_BUNDLE_DIGEST_STALE");
+    }
+
+    [Fact]
+    public void EvaluateDevelopmentReadiness_QuestaoBloqueanteAbertaNoPrd_EhRejeitadaComCodigoEstavel()
+    {
+        var prd = ValidPrd("sha256:idea") with { OpenQuestions = [new OpenQuestion("Q-1", "still open", true)] };
+
+        var result = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            prd, ValidSrs("sha256:prd"), ValidSdd("sha256:srs"), ValidReadinessVerdict(),
+            "sha256:bundle", "sha256:bundle", ValidRenderedDocuments(), docsMaxChars: 40_000);
+
+        Assert.False(result.Passed);
+        var violation = Assert.Single(result.Violations, v => v.Code == "DEV_READINESS_BLOCKING_QUESTION_OPEN");
+        Assert.Contains("Q-1", violation.Message);
+    }
+
+    [Fact]
+    public void EvaluateDevelopmentReadiness_VerdictComReferenciaOrfa_DelegaParaEvaluateReadinessEAgregaViolacao()
+    {
+        // Not re-derived: this asserts EvaluateDevelopmentReadiness folds in EvaluateReadiness's
+        // own violation (with its own READINESS_* code), rather than re-checking slice structure
+        // itself under a different code.
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices = [ValidReadinessSlice("SL-001") with { RequirementIds = ["RF-999"] }],
+        };
+
+        var result = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            ValidPrd("sha256:idea"), ValidSrs("sha256:prd"), ValidSdd("sha256:srs"), verdict,
+            "sha256:bundle", "sha256:bundle", ValidRenderedDocuments(), docsMaxChars: 40_000);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "READINESS_REQUIREMENT_REFERENCE_DANGLING");
+    }
+
+    [Fact]
+    public void EvaluateDevelopmentReadiness_PacoteExcedeDocsMaxChars_EhRejeitadoComCodigoEstavel()
+    {
+        var result = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            ValidPrd("sha256:idea"), ValidSrs("sha256:prd"), ValidSdd("sha256:srs"), ValidReadinessVerdict(),
+            "sha256:bundle", "sha256:bundle", ValidRenderedDocuments(), docsMaxChars: 10);
+
+        Assert.False(result.Passed);
+        var violation = Assert.Single(result.Violations, v => v.Code == "DEV_READINESS_BUNDLE_TOO_LARGE");
+        Assert.Contains("10", violation.Message);
+    }
+
+    [Fact]
+    public void EvaluateDevelopmentReadiness_TodasAsViolacoesJuntas_SaoRetornadasDeUmaVez()
+    {
+        var prd = ValidPrd("sha256:idea") with { OpenQuestions = [new OpenQuestion("Q-1", "still open", true)] };
+        var verdict = ValidReadinessVerdict() with
+        {
+            Slices = [ValidReadinessSlice("SL-001") with { RequirementIds = ["RF-999"] }],
+        };
+
+        var result = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            prd, ValidSrs("sha256:prd"), ValidSdd("sha256:srs"), verdict,
+            "sha256:stale", "sha256:current", ValidRenderedDocuments(), docsMaxChars: 10);
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("DEV_READINESS_BUNDLE_DIGEST_STALE", codes);
+        Assert.Contains("DEV_READINESS_BLOCKING_QUESTION_OPEN", codes);
+        Assert.Contains("READINESS_REQUIREMENT_REFERENCE_DANGLING", codes);
+        Assert.Contains("DEV_READINESS_BUNDLE_TOO_LARGE", codes);
+    }
 }

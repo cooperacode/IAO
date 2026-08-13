@@ -336,6 +336,68 @@ public static class SpecificationEvaluator
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
     }
 
+    /// <summary>
+    /// Validates that the accepted bundle is actually safe to publish (blueprint 0006 "Antes
+    /// de promover, o DevelopmentReadinessEvaluator deve provar..."). Runs immediately before
+    /// <see cref="SpecificationPublisher.Publish"/> — aggregates every predicate the blueprint
+    /// lists, re-checking (cheap defense-in-depth, not a redundant re-derivation) what earlier
+    /// phases already gated once, since nothing prevents a caller from invoking this evaluator
+    /// on state that has drifted since:
+    /// <list type="bullet">
+    /// <item>bundle digest freshness — re-guards what <see cref="EvaluateApproval"/> already
+    /// checked at decision time (<paramref name="bundleDigestAtApproval"/> vs.
+    /// <paramref name="currentBundleDigest"/>);</item>
+    /// <item>no blocking open question left on the PRD — re-guards what
+    /// <see cref="EvaluatePrd"/> already gated at <c>product</c> time;</item>
+    /// <item>the readiness slice graph (dangling references, DAG, at least one initial slice,
+    /// full requirement coverage) — delegates to <see cref="EvaluateReadiness"/> itself rather
+    /// than re-deriving the same logic a second time, and folds its violations in unchanged
+    /// (they already carry their own stable <c>READINESS_*</c> codes);</item>
+    /// <item>total rendered bundle size against <paramref name="docsMaxChars"/> — a pre-flight
+    /// estimate of what <see cref="Harness.Engine.DocsReader.Read"/> will encounter once
+    /// published; it doesn't need to reproduce DocsReader's exact <c>## &lt;filename&gt;</c>
+    /// wrapping overhead byte-for-byte, since the authoritative detection of an actual
+    /// truncation happens in <see cref="SpecificationPublisher.VerifyPostcondition"/> after
+    /// publish — this predicate exists only to reject an obviously oversized bundle BEFORE
+    /// anything is written to disk.</item>
+    /// </list>
+    /// Deliberately does NOT check "the four published files come from the same run and match
+    /// the manifest" or "publish never overwrites a file outside the previous manifest" — both
+    /// are already fully enforced by <see cref="SpecificationPublisher.Publish"/>'s own
+    /// ownership-manifest check (built for the publish feature); re-implementing them here
+    /// would just be a second, divergence-prone copy of the same rule.
+    /// </summary>
+    public static EvaluationResult EvaluateDevelopmentReadiness(
+        PrdDocument prd,
+        SoftwareSpecification srs,
+        SoftwareDesignDocument sdd,
+        ReadinessVerdict readiness,
+        string bundleDigestAtApproval,
+        string currentBundleDigest,
+        IReadOnlyDictionary<string, string> renderedDocuments,
+        int docsMaxChars)
+    {
+        var violations = new List<EvaluationViolation>();
+
+        if (string.IsNullOrEmpty(currentBundleDigest) || bundleDigestAtApproval != currentBundleDigest)
+            violations.Add(new EvaluationViolation("DEV_READINESS_BUNDLE_DIGEST_STALE", $"approval bundle digest '{bundleDigestAtApproval}' does not match the current bundle digest '{currentBundleDigest}'"));
+
+        var blockingQuestionIds = prd.OpenQuestions.Where(q => q.Blocking).Select(q => q.Id).ToArray();
+        if (blockingQuestionIds.Length > 0)
+            violations.Add(new EvaluationViolation("DEV_READINESS_BLOCKING_QUESTION_OPEN", $"unresolved blocking open question(s): {string.Join(", ", blockingQuestionIds)}"));
+
+        var knownRequirementIds = srs.FunctionalRequirements.Concat(srs.QualityRequirements).Select(r => r.Id).ToArray();
+        var knownAdrIds = sdd.Adrs.Select(a => a.Id).ToArray();
+        var readinessResult = EvaluateReadiness(readiness, knownRequirementIds, knownAdrIds);
+        violations.AddRange(readinessResult.Violations);
+
+        var totalBytes = renderedDocuments.Values.Sum(Encoding.UTF8.GetByteCount);
+        if (totalBytes > docsMaxChars)
+            violations.Add(new EvaluationViolation("DEV_READINESS_BUNDLE_TOO_LARGE", $"rendered bundle is {totalBytes} UTF-8 bytes, exceeds the configured docsMaxChars ceiling of {docsMaxChars}"));
+
+        return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
+    }
+
     // Kahn's algorithm over the dependsOn graph. Only edges that point at another real slice in
     // the same proposal count — dangling/self references are already reported by
     // READINESS_DEPENDENCY_REFERENCE_DANGLING above and must not also poison this check. Built

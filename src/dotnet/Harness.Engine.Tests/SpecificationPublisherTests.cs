@@ -78,7 +78,7 @@ public class SpecificationPublisherTests : IDisposable
 
         var result = SpecificationPublisher.Publish(prd, srs, sdd, readiness);
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, result.Error);
         Assert.Null(result.Error);
 
         var prdPath = Path.Combine(ActiveDir, PrdFilename);
@@ -209,5 +209,61 @@ public class SpecificationPublisherTests : IDisposable
         // The manifest from the first, legitimate publish is untouched.
         Assert.Equal(manifestBefore, File.ReadAllText(ManifestPath));
         Assert.Contains("first vision", File.ReadAllText(Path.Combine(ActiveDir, PrdFilename)));
+    }
+
+    // --- postcondition (blueprint 0004 §6 item 6: "Executar DocsReader.Read") ------------
+
+    [Fact]
+    public void Publish_CaminhoFeliz_SoRetornaSucessoAposPostconditionViaDocsReaderPassar()
+    {
+        var result = SpecificationPublisher.Publish(ValidPrd(), ValidSrs(), ValidSdd(), ValidReadiness());
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Digests);
+
+        // The real DocsReader.Read (the same function Development uses) picks up exactly the
+        // four published files, in order.
+        var (content, files) = DocsReader.Read("specs/active");
+        Assert.Equal([PrdFilename, SrsFilename, SddFilename, ReadinessFilename], files);
+        Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, PrdFilename)), content);
+
+        // VerifyPostcondition, called independently against the just-published state, also
+        // passes using the digests Publish returned.
+        var postcondition = SpecificationPublisher.VerifyPostcondition(result.Digests!);
+        Assert.True(postcondition.Success);
+    }
+
+    [Fact]
+    public void VerifyPostcondition_ArquivoPublicadoAdulteradoNoDisco_BloqueiaNomeandoOArquivo()
+    {
+        var result = SpecificationPublisher.Publish(ValidPrd(), ValidSrs(), ValidSdd(), ValidReadiness());
+        Assert.True(result.Success);
+
+        // Simulates external tampering that happens strictly between the copy and a later
+        // postcondition check — not reachable mid-Publish() in a single-threaded synchronous
+        // call without an artificial seam, so this exercises VerifyPostcondition directly
+        // against a post-tamper on-disk state, using the digests from the original successful
+        // publish (exactly what Publish() itself passes to VerifyPostcondition internally).
+        File.WriteAllText(Path.Combine(ActiveDir, SrsFilename), "tampered content, not what was published");
+
+        var postcondition = SpecificationPublisher.VerifyPostcondition(result.Digests!);
+
+        Assert.False(postcondition.Success);
+        Assert.NotNull(postcondition.Error);
+        Assert.Contains(SrsFilename, postcondition.Error);
+    }
+
+    [Fact]
+    public void VerifyPostcondition_ArquivoEsperadoAusenteNoDisco_BloqueiaComListaDivergente()
+    {
+        var result = SpecificationPublisher.Publish(ValidPrd(), ValidSrs(), ValidSdd(), ValidReadiness());
+        Assert.True(result.Success);
+
+        File.Delete(Path.Combine(ActiveDir, SddFilename));
+
+        var postcondition = SpecificationPublisher.VerifyPostcondition(result.Digests!);
+
+        Assert.False(postcondition.Success);
+        Assert.NotNull(postcondition.Error);
     }
 }

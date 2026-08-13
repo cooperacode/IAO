@@ -280,10 +280,14 @@ public static partial class SpecificationTasks
     ///
     /// On a structurally valid <c>"approved"</c> decision: reads the four accepted documents
     /// that make up the publishable bundle (prd/srs/sdd/readiness — idea is not part of the
-    /// published bundle) and runs <see cref="SpecificationPublisher.Publish"/>. A successful
-    /// publish completes the run; a blocked publish (or an unexpectedly missing accepted
-    /// document) stops at the <c>publish_blocked</c> terminal status (blueprint 0004 §2) with
-    /// the reason recorded for a human to act on.
+    /// published bundle), runs <see cref="SpecificationEvaluator.EvaluateDevelopmentReadiness"/>
+    /// as a pre-publish gate, and only then runs <see cref="SpecificationPublisher.Publish"/>
+    /// (which itself proves its postcondition via a real <see cref="DocsReader.Read"/>
+    /// read-back before reporting success). A failed readiness gate stops at
+    /// <c>publish_blocked</c> without touching <c>specs/active/</c> at all; a successful
+    /// publish (postcondition included) completes the run; a blocked publish (or an
+    /// unexpectedly missing accepted document) stops at the <c>publish_blocked</c> terminal
+    /// status (blueprint 0004 §2) with the reason recorded for a human to act on.
     /// </summary>
     public static string Approve(Envelope? envelope)
     {
@@ -321,6 +325,24 @@ public static partial class SpecificationTasks
         {
             SpecificationStore.SaveRun(run with { Status = "publish_blocked", TerminalReason = "one or more accepted documents (prd/srs/sdd/readiness) are missing; cannot publish." });
             HarnessLog.Error("[spec] approval approved but an accepted document is missing; publish blocked.");
+            return "stop";
+        }
+
+        // Pre-publish gate (blueprint 0006 "Antes de promover, o DevelopmentReadinessEvaluator
+        // deve provar..."): rendered via the SAME SpecificationPublisher.RenderAll a real
+        // Publish() call uses, so this byte-budget check sees exactly what would be written —
+        // never a duplicated/divergent render. specs/active/ is not touched at all if this fails.
+        var rendered = SpecificationPublisher.RenderAll(prd, srs, sdd, readiness);
+        var readinessGate = SpecificationEvaluator.EvaluateDevelopmentReadiness(
+            prd, srs, sdd, readiness,
+            decision.BundleDigest, SpecificationStore.BundleDigest(),
+            rendered, HarnessConfig.Current.DocsMaxChars);
+
+        if (!readinessGate.Passed)
+        {
+            var reason = string.Join("; ", readinessGate.Violations.Select(v => $"{v.Code}: {v.Message}"));
+            SpecificationStore.SaveRun(run with { Status = "publish_blocked", TerminalReason = reason });
+            HarnessLog.Error($"[spec] development readiness gate failed; publish blocked: {reason}");
             return "stop";
         }
 

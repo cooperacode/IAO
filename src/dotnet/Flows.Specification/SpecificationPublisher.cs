@@ -39,20 +39,36 @@ public static class SpecificationPublisher
     private static readonly string[] ExpectedFilenames = [PrdFilename, SrsFilename, SddFilename, ReadinessFilename];
 
     /// <summary>
+    /// Renders the four accepted documents into their published filenames, without touching
+    /// disk. Extracted out of <see cref="Publish"/> so a pre-publish gate (the Development
+    /// readiness evaluator, run from <c>SpecificationTasks.Approve</c>) can render the exact
+    /// same content <see cref="Publish"/> will stage — e.g. for a byte-budget check — without
+    /// re-implementing the filename map or diverging from the real renderer.
+    /// </summary>
+    public static Dictionary<string, string> RenderAll(PrdDocument prd, SoftwareSpecification srs, SoftwareDesignDocument sdd, ReadinessVerdict readiness) => new()
+    {
+        [PrdFilename] = SpecificationRenderer.RenderPrd(prd),
+        [SrsFilename] = SpecificationRenderer.RenderSrs(srs),
+        [SddFilename] = SpecificationRenderer.RenderSdd(sdd),
+        [ReadinessFilename] = SpecificationRenderer.RenderReadiness(readiness),
+    };
+
+    /// <summary>
     /// Renders, stages, validates and — only if validation passes — publishes the four
     /// accepted documents. Returns <see cref="PublishResult.Blocked"/> (with the destination
     /// left completely untouched) if the destination contains any file this flow doesn't
-    /// recognize as its own from a previous publish.
+    /// recognize as its own from a previous publish. After the manifest is written, re-reads
+    /// the destination through the REAL <see cref="Harness.Engine.DocsReader.Read"/> — the
+    /// same function Development uses — via <see cref="VerifyPostcondition"/>, and only
+    /// reports success if that read-back matches byte-for-byte (blueprint 0004 §6 item 6
+    /// "Executar DocsReader.Read"). The copy and manifest write themselves are NOT rolled back
+    /// on a postcondition failure — this method's job is only to determine whether the run may
+    /// be marked <c>completed</c>; the caller turns any <see cref="PublishResult.Blocked"/>
+    /// into <c>publish_blocked</c> either way.
     /// </summary>
     public static PublishResult Publish(PrdDocument prd, SoftwareSpecification srs, SoftwareDesignDocument sdd, ReadinessVerdict readiness)
     {
-        var rendered = new Dictionary<string, string>
-        {
-            [PrdFilename] = SpecificationRenderer.RenderPrd(prd),
-            [SrsFilename] = SpecificationRenderer.RenderSrs(srs),
-            [SddFilename] = SpecificationRenderer.RenderSdd(sdd),
-            [ReadinessFilename] = SpecificationRenderer.RenderReadiness(readiness),
-        };
+        var rendered = RenderAll(prd, srs, sdd, readiness);
 
         var stagingDir = $"{DestinationDir}.staging-{Guid.NewGuid():N}";
 
@@ -98,13 +114,76 @@ public static class SpecificationPublisher
             Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath)!);
             AtomicIO.WriteAllTextAtomic(ManifestPath, JsonSerializer.Serialize(manifest, SpecificationJsonContext.Default.PublishManifest));
 
-            return PublishResult.Ok(digests);
+            return VerifyPostcondition(digests);
         }
         finally
         {
             if (Directory.Exists(stagingDir))
                 Directory.Delete(stagingDir, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Independent, standalone-callable postcondition check (blueprint 0004 §6 item 6): calls
+    /// the REAL <see cref="Harness.Engine.DocsReader.Read"/> against <see cref="DestinationDir"/>
+    /// — not a re-implementation of its file-listing/truncation logic — and byte-compares its
+    /// output against what <see cref="Publish"/> just wrote.
+    /// <list type="bullet">
+    /// <item>names and order: <see cref="Harness.Engine.DocsReader.Read"/>'s returned file list
+    /// must equal <see cref="ExpectedFilenames"/> exactly — a mismatch (fewer files from a
+    /// silent mid-run truncation, wrong order, an unexpected extra name) is reported by name.</item>
+    /// <item>content, per file: the on-disk file is re-read directly (independent of
+    /// DocsReader) and its digest recomputed with the same <see cref="Digest"/> helper
+    /// <see cref="Publish"/> used when staging — a mismatch against
+    /// <paramref name="expectedDigests"/> means the on-disk file no longer matches what was
+    /// actually published (tampered, or a partial/corrupted write).</item>
+    /// <item>content, via DocsReader: DocsReader's own concatenated return value must contain
+    /// each file's full raw on-disk text as a substring — confirms DocsReader picked up the
+    /// complete, untruncated content of every file (a silent mid-file truncation from
+    /// <c>docsMaxChars</c> would drop the tail of that file's text from the concatenation).
+    /// Compared with trailing whitespace trimmed on both sides: <c>DocsReader.Read</c> itself
+    /// does a final <c>TrimEnd()</c> over the WHOLE concatenation (for presentation), which can
+    /// strip a few trailing newline characters off the last file in alphabetical order — that
+    /// is not a truncation, so trimming here avoids a false positive while a genuine mid-file
+    /// truncation (which cuts off real content, not just trailing whitespace) still fails the
+    /// substring check.</item>
+    /// </list>
+    /// Independently callable (not buried as a private local function reachable only through a
+    /// full <see cref="Publish"/> call) so it can be exercised directly against a deliberately
+    /// tampered on-disk state.
+    /// </summary>
+    public static PublishResult VerifyPostcondition(IReadOnlyDictionary<string, string> expectedDigests)
+    {
+        var (content, files) = DocsReader.Read(DestinationDir);
+
+        if (!files.SequenceEqual(ExpectedFilenames))
+            return PublishResult.Blocked(
+                $"postcondition failed: DocsReader.Read('{DestinationDir}') returned files [{string.Join(", ", files)}], expected [{string.Join(", ", ExpectedFilenames)}].");
+
+        foreach (var filename in ExpectedFilenames)
+        {
+            var path = Path.Combine(DestinationDir, filename);
+            string text;
+            try
+            {
+                text = File.ReadAllText(path);
+            }
+            catch (Exception ex)
+            {
+                return PublishResult.Blocked($"postcondition failed: could not read '{path}': {ex.Message}");
+            }
+
+            var actualDigest = Digest(text);
+            if (!expectedDigests.TryGetValue(filename, out var expectedDigest) || actualDigest != expectedDigest)
+                return PublishResult.Blocked(
+                    $"postcondition failed: '{filename}' on-disk digest '{actualDigest}' does not match the digest recorded at publish time '{expectedDigest}'.");
+
+            if (!content.Contains(text.TrimEnd()))
+                return PublishResult.Blocked(
+                    $"postcondition failed: DocsReader.Read('{DestinationDir}')'s content does not contain the full on-disk text of '{filename}' (possible truncation).");
+        }
+
+        return PublishResult.Ok(expectedDigests);
     }
 
     private static PublishManifest? ReadManifest()
