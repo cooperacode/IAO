@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Packaged invocation wrapper for the Specification flow (.NET).
-# start → discover → product → stop
+# start → discover → product → analysis → design → review → approve → stop
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"

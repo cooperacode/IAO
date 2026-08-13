@@ -56,7 +56,8 @@ public static partial class SpecificationTasks
             Return `discover` without arguments when done; the harness will validate the file and
             either advance to `product` or re-request `discover` with the reported violations.
             """,
-            output: new Envelope(EnvelopeType.Command, "discover", []));
+            output: new Envelope(EnvelopeType.Command, "discover", []),
+            skills: PromptFormatter.Skills("spec-discovery"));
 
     private static string DiscoverRetryPrompt(IEnumerable<string> violations) =>
         PromptFormatter.Format(
@@ -68,7 +69,8 @@ public static partial class SpecificationTasks
             `schema` must be exactly "{SpecificationEvaluator.IdeaSchema}". Return `discover`
             without arguments for another harness-controlled attempt.
             """,
-            output: new Envelope(EnvelopeType.Command, "discover", []));
+            output: new Envelope(EnvelopeType.Command, "discover", []),
+            skills: PromptFormatter.Skills("spec-discovery"));
 
     // --- product ------------------------------------------------------------
 
@@ -93,7 +95,8 @@ public static partial class SpecificationTasks
             Return `product` without arguments when done; the harness will validate the file and
             either advance to `analysis`, or re-request `product` with the reported violations.
             """,
-            output: new Envelope(EnvelopeType.Command, "product", []));
+            output: new Envelope(EnvelopeType.Command, "product", []),
+            skills: PromptFormatter.Skills("spec-product"));
     }
 
     private static string ProductRetryPrompt(IEnumerable<string> violations)
@@ -111,7 +114,8 @@ public static partial class SpecificationTasks
             set to exactly '{ideaDigest}'. Return `product` without arguments for another
             harness-controlled attempt.
             """,
-            output: new Envelope(EnvelopeType.Command, "product", []));
+            output: new Envelope(EnvelopeType.Command, "product", []),
+            skills: PromptFormatter.Skills("spec-product"));
     }
 
     // --- analysis -------------------------------------------------------------
@@ -139,7 +143,8 @@ public static partial class SpecificationTasks
             Return `analysis` without arguments when done; the harness will validate the file and
             either advance to `design`, or re-request `analysis` with the reported violations.
             """,
-            output: new Envelope(EnvelopeType.Command, "analysis", []));
+            output: new Envelope(EnvelopeType.Command, "analysis", []),
+            skills: PromptFormatter.Skills("spec-analysis"));
     }
 
     private static string AnalysisRetryPrompt(IEnumerable<string> violations)
@@ -157,7 +162,8 @@ public static partial class SpecificationTasks
             set to exactly '{prdDigest}'. Return `analysis` without arguments for another
             harness-controlled attempt.
             """,
-            output: new Envelope(EnvelopeType.Command, "analysis", []));
+            output: new Envelope(EnvelopeType.Command, "analysis", []),
+            skills: PromptFormatter.Skills("spec-analysis"));
     }
 
     // --- design ---------------------------------------------------------------
@@ -185,7 +191,8 @@ public static partial class SpecificationTasks
             either persist sdd.accepted.json and stop, or re-request `design` with the reported
             violations.
             """,
-            output: new Envelope(EnvelopeType.Command, "design", []));
+            output: new Envelope(EnvelopeType.Command, "design", []),
+            skills: PromptFormatter.Skills("spec-design"));
     }
 
     private static string DesignRetryPrompt(IEnumerable<string> violations)
@@ -203,7 +210,8 @@ public static partial class SpecificationTasks
             set to exactly '{srsDigest}'. Return `design` without arguments for another
             harness-controlled attempt.
             """,
-            output: new Envelope(EnvelopeType.Command, "design", []));
+            output: new Envelope(EnvelopeType.Command, "design", []),
+            skills: PromptFormatter.Skills("spec-design"));
     }
 
     // --- review -----------------------------------------------------------------
@@ -239,7 +247,8 @@ public static partial class SpecificationTasks
             either pause for approval (READY), recascade to the failing phase (FAIL:*), or
             re-request `review` with the reported violations.
             """,
-            output: new Envelope(EnvelopeType.Command, "review", []));
+            output: new Envelope(EnvelopeType.Command, "review", []),
+            skills: PromptFormatter.Skills("spec-review"));
 
     private static string ReviewRetryPrompt(IEnumerable<string> violations) =>
         PromptFormatter.Format(
@@ -253,7 +262,8 @@ public static partial class SpecificationTasks
             "FAIL:design", and `conflicts`/`residuals` must always be present arrays. Return
             `review` without arguments for another harness-controlled attempt.
             """,
-            output: new Envelope(EnvelopeType.Command, "review", []));
+            output: new Envelope(EnvelopeType.Command, "review", []),
+            skills: PromptFormatter.Skills("spec-review"));
 
     // --- approve ------------------------------------------------------------------
 
@@ -312,7 +322,8 @@ public static partial class SpecificationTasks
             Return `approve` without arguments when done; the harness will validate the file and
             act on the decision, or re-request `approve` with the reported violations.
             """,
-            output: new Envelope(EnvelopeType.Command, "approve", []));
+            output: new Envelope(EnvelopeType.Command, "approve", []),
+            skills: PromptFormatter.Skills("spec-review"));
     }
 
     private static string ApproveRetryPrompt(IEnumerable<string> violations)
@@ -330,6 +341,7 @@ public static partial class SpecificationTasks
             exactly '{bundleDigest}', and `rationale` must state a real reason. Return `approve`
             without arguments for another harness-controlled attempt.
             """,
-            output: new Envelope(EnvelopeType.Command, "approve", []));
+            output: new Envelope(EnvelopeType.Command, "approve", []),
+            skills: PromptFormatter.Skills("spec-review"));
     }
 }
