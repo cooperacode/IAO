@@ -307,6 +307,35 @@ public static class SpecificationEvaluator
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
     }
 
+    /// <summary>Decision values an approval proposal may declare (blueprint 0004 §5 ApprovalEvaluator).</summary>
+    private static readonly string[] AllowedApprovalDecisions = ["approved", "revise"];
+
+    /// <summary>
+    /// Validates an <c>approve</c>-phase approval decision proposal (§5 ApprovalEvaluator):
+    /// <see cref="ApprovalDecision.Decision"/> restricted to an explicit allowed set,
+    /// <see cref="ApprovalDecision.BundleDigest"/> must match <paramref name="currentBundleDigest"/>
+    /// exactly — the "nenhuma versão aceita mudou depois do preview" predicate: if any accepted
+    /// phase in the chain was re-accepted since the bundle was previewed, <see cref="SpecificationStore.BundleDigest"/>
+    /// changed and the decision is bound to a stale preview — and <see cref="ApprovalDecision.Rationale"/>
+    /// must be a real, non-placeholder statement (a rubber-stamp approval with no stated reason
+    /// shouldn't structurally pass).
+    /// </summary>
+    public static EvaluationResult EvaluateApproval(ApprovalDecision decision, string currentBundleDigest)
+    {
+        var violations = new List<EvaluationViolation>();
+
+        if (!AllowedApprovalDecisions.Contains(decision.Decision))
+            violations.Add(new EvaluationViolation("APPROVAL_DECISION_INVALID", $"decision '{decision.Decision}' is not one of: {string.Join(", ", AllowedApprovalDecisions)}"));
+
+        if (string.IsNullOrEmpty(currentBundleDigest) || decision.BundleDigest != currentBundleDigest)
+            violations.Add(new EvaluationViolation("APPROVAL_BUNDLE_DIGEST_STALE", $"decision.bundleDigest '{decision.BundleDigest}' does not match the current bundle digest '{currentBundleDigest}'"));
+
+        if (string.IsNullOrWhiteSpace(decision.Rationale))
+            violations.Add(new EvaluationViolation("APPROVAL_RATIONALE_MISSING", "rationale is required"));
+
+        return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
+    }
+
     // Kahn's algorithm over the dependsOn graph. Only edges that point at another real slice in
     // the same proposal count — dangling/self references are already reported by
     // READINESS_DEPENDENCY_REFERENCE_DANGLING above and must not also poison this check. Built

@@ -136,6 +136,34 @@ public static class SpecificationStore
     /// <summary>Digest of an arbitrary value under the same canonicalization <see cref="WriteAccepted{T}"/> uses — for verifying a digest a child phase claims without re-reading the parent from disk.</summary>
     public static string DigestOf<T>(T value, JsonTypeInfo<T> typeInfo) => Digest(Canonicalize(value, typeInfo));
 
+    /// <summary>
+    /// Digest of the whole accepted chain (idea → prd → srs → sdd → readiness), in that fixed
+    /// order — what <c>ApprovalDecision.BundleDigest</c> (§5 ApprovalEvaluator: "bundleDigest
+    /// atual") must match. Any accepted phase changing (re-accepted after the approval preview
+    /// was rendered) changes this value, which is exactly the staleness the approval gate needs
+    /// to detect. A phase that isn't accepted yet contributes an empty segment rather than
+    /// aborting — an incomplete chain still yields a stable (if unmatchable) digest instead of
+    /// throwing.
+    /// </summary>
+    public static string BundleDigest()
+    {
+        var (_, ideaDigest) = ReadAccepted(Phases.Idea, SpecificationJsonContext.Default.IdeaFrame);
+        var (_, prdDigest) = ReadAccepted(Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+        var (_, srsDigest) = ReadAccepted(Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        var (_, sddDigest) = ReadAccepted(Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        var (_, readinessDigest) = ReadAccepted(Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
+
+        var joined = string.Join("|", new[]
+        {
+            ideaDigest ?? "",
+            prdDigest ?? "",
+            srsDigest ?? "",
+            sddDigest ?? "",
+            readinessDigest ?? "",
+        });
+        return Digest(joined);
+    }
+
     /// <summary>Clears every proposal/accepted/run file for the active run — a fresh <c>start</c>, and test isolation.</summary>
     public static void Reset()
     {

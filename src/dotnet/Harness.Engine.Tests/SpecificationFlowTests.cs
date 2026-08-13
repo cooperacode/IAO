@@ -17,6 +17,11 @@ public class SpecificationFlowTests : IDisposable
     private const string SrsProposalPath = ".harness/specification/active/srs.proposal.json";
     private const string SddProposalPath = ".harness/specification/active/sdd.proposal.json";
     private const string ReviewProposalPath = ".harness/specification/active/review.proposal.json";
+    private const string ApprovalProposalPath = ".harness/specification/active/approval.proposal.json";
+
+    // "specs" folder relative to the test process's CWD — only the approve/publish tests
+    // populate it (via SpecificationPublisher), created/deleted by them.
+    private static readonly string SpecsDir = Path.Combine(Directory.GetCurrentDirectory(), "specs");
 
     private const string ValidIdeaJson =
         """
@@ -33,16 +38,19 @@ public class SpecificationFlowTests : IDisposable
     {
         StateStore.Reset();
         Trace.Reset();
-        SpecificationStore.Reset();
-        foreach (var path in new[] { IdeaProposalPath, PrdProposalPath, SrsProposalPath, SddProposalPath, ReviewProposalPath })
+        SpecificationStore.Reset(); // also removes publish-manifest.json (same directory)
+        foreach (var path in new[] { IdeaProposalPath, PrdProposalPath, SrsProposalPath, SddProposalPath, ReviewProposalPath, ApprovalProposalPath })
             if (File.Exists(path))
                 File.Delete(path);
+        if (Directory.Exists(SpecsDir))
+            Directory.Delete(SpecsDir, recursive: true);
     }
 
     private static void WriteIdeaProposal(string json) => WriteProposal(IdeaProposalPath, json);
     private static void WritePrdProposal(string json) => WriteProposal(PrdProposalPath, json);
     private static void WriteSrsProposal(string json) => WriteProposal(SrsProposalPath, json);
     private static void WriteSddProposal(string json) => WriteProposal(SddProposalPath, json);
+    private static void WriteApprovalProposal(string json) => WriteProposal(ApprovalProposalPath, json);
     private static void WriteReviewProposal(string json) => WriteProposal(ReviewProposalPath, json);
 
     private static void WriteProposal(string path, string json)
@@ -139,6 +147,23 @@ public class SpecificationFlowTests : IDisposable
             SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
         return digest!;
     }
+
+    /// <summary>
+    /// Drives the run all the way to <c>awaiting_approval</c>/<c>approve</c> (a READY review
+    /// verdict) and returns the bundle digest an approval decision must carry to pass.
+    /// </summary>
+    private static string AdvanceToApprove()
+    {
+        AdvanceToReview();
+        WriteReviewProposal(ValidReadyReviewJson);
+        SpecificationTasks.Review(Cmd("review"));
+        return SpecificationStore.BundleDigest();
+    }
+
+    private static string ValidApprovalJson(string decision, string bundleDigest) =>
+        $$"""
+        {"decision":"{{decision}}","bundleDigest":"{{bundleDigest}}","rationale":"reviewed and it looks solid","approvedBy":"reviewer@example.com","decidedAt":"2026-01-01T00:00:00Z"}
+        """;
 
     // --- (a) happy path -----------------------------------------------------------------
 
@@ -314,9 +339,12 @@ public class SpecificationFlowTests : IDisposable
     [Fact]
     public void Start_SemRunEmProgresso_ReiniciaDoDiscoverEDescartaAceitosAnteriores()
     {
-        AdvanceToReview();
-        WriteReviewProposal(ValidReadyReviewJson);
-        SpecificationTasks.Review(Cmd("review")); // run reaches "awaiting_approval" (not in_progress)
+        // "awaiting_approval"/"approve" is now resumable (see
+        // Start_ComRunAguardandoAprovacao_RetomaEmiteApprovePromptEmVezDeReiniciar) — a
+        // genuinely non-resumable run needs to actually finish (approve → publish → completed).
+        var bundleDigest = AdvanceToApprove();
+        WriteApprovalProposal(ValidApprovalJson("approved", bundleDigest));
+        SpecificationTasks.Approve(Cmd("approve")); // run reaches "completed" (not resumable)
 
         var result = SpecificationTasks.Start(); // no run in progress → genuinely new run
 
@@ -582,5 +610,135 @@ public class SpecificationFlowTests : IDisposable
         Assert.Equal("recascade limit reached", SpecificationStore.LoadRun().TerminalReason);
         // Still parked at "review" — the third FAIL was rejected before it could route anywhere.
         Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+    }
+
+    // --- (e) approve phase: retry-in-place, stale digest, revise routing, publish ---------
+
+    [Fact]
+    public void Approve_SemPropostaLegivel_ReemiteComMensagemDeArquivoAusente()
+    {
+        AdvanceToApprove(); // no approval.proposal.json written
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Contains("\"value\":\"approve\"", result);
+        Assert.Contains(ApprovalProposalPath, result);
+        Assert.Equal("approve", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("awaiting_approval", SpecificationStore.LoadRun().Status);
+    }
+
+    [Fact]
+    public void Approve_DecisaoDesconhecida_MantemEmApproveEReportaCodigoEstavel()
+    {
+        var bundleDigest = AdvanceToApprove();
+        WriteApprovalProposal(ValidApprovalJson("maybe", bundleDigest));
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Contains("\"value\":\"approve\"", result);
+        Assert.Contains("APPROVAL_DECISION_INVALID", result);
+        Assert.Equal("approve", SpecificationStore.LoadRun().Phase);
+    }
+
+    [Fact]
+    public void Approve_BundleDigestDesatualizado_EhRejeitadoComErroClaro()
+    {
+        // Acceptance: approval against a stale digest is rejected. Preview the bundle, then
+        // mutate the chain (re-accept the SDD) — the OLD digest carried by the decision no
+        // longer matches the current accepted chain.
+        var staleDigest = AdvanceToApprove();
+        var (sdd, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        // Re-accept the SDD with genuinely different content (not a byte-identical rewrite) —
+        // the chain must actually move for the bundle digest to change.
+        var mutatedSdd = sdd! with { Adrs = [sdd.Adrs[0] with { Rationale = "Simplicity, revisited" }] };
+        SpecificationStore.WriteAccepted(
+            SpecificationStore.Phases.Sdd, mutatedSdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        var freshDigest = SpecificationStore.BundleDigest();
+        Assert.NotEqual(staleDigest, freshDigest); // the chain really did move
+
+        WriteApprovalProposal(ValidApprovalJson("approved", staleDigest));
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Contains("\"value\":\"approve\"", result);
+        Assert.Contains("APPROVAL_BUNDLE_DIGEST_STALE", result);
+        Assert.Equal("approve", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("awaiting_approval", SpecificationStore.LoadRun().Status);
+    }
+
+    [Fact]
+    public void Approve_DecisaoRevise_RoteiaParaReviewSemConsumirRecascade()
+    {
+        var bundleDigest = AdvanceToApprove();
+        WriteApprovalProposal(ValidApprovalJson("revise", bundleDigest));
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Contains("\"value\":\"review\"", result);
+        Assert.Equal("review", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("in_progress", SpecificationStore.LoadRun().Status);
+        Assert.False(SpecificationStore.LoadRun().Counters.ContainsKey("recascades"));
+
+        // The reviewer can then submit a fresh verdict from "review" as normal.
+        WriteReviewProposal(ValidReadyReviewJson);
+        var reviewResult = SpecificationTasks.Review(Cmd("review"));
+        Assert.Equal("stop", reviewResult);
+        Assert.Equal("awaiting_approval", SpecificationStore.LoadRun().Status);
+    }
+
+    [Fact]
+    public void Approve_DecisaoAprovada_PublicaOBundleEEncerraComoCompleted()
+    {
+        var bundleDigest = AdvanceToApprove();
+        WriteApprovalProposal(ValidApprovalJson("approved", bundleDigest));
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Equal("stop", result);
+        Assert.Equal("completed", SpecificationStore.LoadRun().Status);
+        Assert.Equal("stop", SpecificationStore.LoadRun().Phase);
+
+        var activeDir = Path.Combine(SpecsDir, "active");
+        Assert.True(File.Exists(Path.Combine(activeDir, "00-prd.md")));
+        Assert.True(File.Exists(Path.Combine(activeDir, "10-software-requirements-specification.md")));
+        Assert.True(File.Exists(Path.Combine(activeDir, "20-software-design-document.md")));
+        Assert.True(File.Exists(Path.Combine(activeDir, "30-readiness-handoff.md")));
+    }
+
+    [Fact]
+    public void Approve_PublicacaoBloqueadaPorArquivoDesconhecido_EncerraComoPublishBlocked()
+    {
+        var activeDir = Path.Combine(SpecsDir, "active");
+        Directory.CreateDirectory(activeDir);
+        File.WriteAllText(Path.Combine(activeDir, "rogue.txt"), "not mine");
+
+        var bundleDigest = AdvanceToApprove();
+        WriteApprovalProposal(ValidApprovalJson("approved", bundleDigest));
+
+        var result = SpecificationTasks.Approve(Cmd("approve"));
+
+        Assert.Equal("stop", result);
+        Assert.Equal("publish_blocked", SpecificationStore.LoadRun().Status);
+        Assert.NotNull(SpecificationStore.LoadRun().TerminalReason);
+        Assert.False(File.Exists(Path.Combine(activeDir, "00-prd.md")));
+    }
+
+    [Fact]
+    public void Start_ComRunAguardandoAprovacao_RetomaEmiteApprovePromptEmVezDeReiniciar()
+    {
+        var bundleDigest = AdvanceToApprove();
+
+        var result = SpecificationTasks.Start(); // simulates a kill + restart while awaiting approval
+
+        Assert.Contains("\"value\":\"approve\"", result);
+        Assert.Contains(ApprovalProposalPath, result);
+        Assert.Contains(bundleDigest, result);
+        Assert.Equal("approve", SpecificationStore.LoadRun().Phase);
+        Assert.Equal("awaiting_approval", SpecificationStore.LoadRun().Status);
+        // The already-accepted readiness bundle survives the resume.
+        var (verdict, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
+        Assert.NotNull(verdict);
     }
 }

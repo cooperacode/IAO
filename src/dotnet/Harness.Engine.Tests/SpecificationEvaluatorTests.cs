@@ -623,4 +623,86 @@ public class SpecificationEvaluatorTests
         var violation = Assert.Single(result.Violations, v => v.Code == "READINESS_REQUIREMENT_NOT_SLICED");
         Assert.Contains("RF-002", violation.Message);
     }
+
+    // ---- ApprovalEvaluator ----
+
+    private static ApprovalDecision ValidApproval(string bundleDigest) => new(
+        "approved", bundleDigest, "looks solid, ready to publish", "reviewer@example.com", DateTimeOffset.UtcNow);
+
+    [Fact]
+    public void EvaluateApproval_DecisaoValidaComDigestAtual_Passa()
+    {
+        var result = SpecificationEvaluator.EvaluateApproval(ValidApproval("sha256:bundle"), "sha256:bundle");
+
+        Assert.True(result.Passed);
+        Assert.Empty(result.Violations);
+    }
+
+    [Fact]
+    public void EvaluateApproval_DecisaoDesconhecida_EhRejeitadaComCodigoEstavel()
+    {
+        var decision = ValidApproval("sha256:bundle") with { Decision = "maybe" };
+
+        var result = SpecificationEvaluator.EvaluateApproval(decision, "sha256:bundle");
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "APPROVAL_DECISION_INVALID");
+    }
+
+    [Fact]
+    public void EvaluateApproval_BundleDigestDesatualizado_EhRejeitadoComCodigoEstavel()
+    {
+        // The decision carries the OLD digest it was previewed against, but the accepted chain
+        // moved on (some accepted document was re-accepted) — the current digest is different.
+        var result = SpecificationEvaluator.EvaluateApproval(ValidApproval("sha256:old-preview"), "sha256:new-current");
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "APPROVAL_BUNDLE_DIGEST_STALE");
+    }
+
+    [Fact]
+    public void EvaluateApproval_DigestAtualVazio_EhRejeitadoComoDesatualizado()
+    {
+        // An empty current digest means the bundle isn't actually complete yet — no decision
+        // can be bound to a bundle that doesn't exist.
+        var result = SpecificationEvaluator.EvaluateApproval(ValidApproval("sha256:bundle"), "");
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "APPROVAL_BUNDLE_DIGEST_STALE");
+    }
+
+    [Fact]
+    public void EvaluateApproval_RationaleAusente_EhRejeitadoComCodigoEstavel()
+    {
+        var decision = ValidApproval("sha256:bundle") with { Rationale = "   " };
+
+        var result = SpecificationEvaluator.EvaluateApproval(decision, "sha256:bundle");
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "APPROVAL_RATIONALE_MISSING");
+    }
+
+    [Fact]
+    public void EvaluateApproval_DecisaoRevise_TambemExigeDigestERationale()
+    {
+        var decision = new ApprovalDecision("revise", "sha256:bundle", "needs another pass on the SRS", "reviewer@example.com", DateTimeOffset.UtcNow);
+
+        var result = SpecificationEvaluator.EvaluateApproval(decision, "sha256:bundle");
+
+        Assert.True(result.Passed);
+    }
+
+    [Fact]
+    public void EvaluateApproval_TodasAsViolacoesJuntas_SaoRetornadasDeUmaVez()
+    {
+        var decision = new ApprovalDecision("maybe", "sha256:stale", "", "reviewer@example.com", DateTimeOffset.UtcNow);
+
+        var result = SpecificationEvaluator.EvaluateApproval(decision, "sha256:current");
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("APPROVAL_DECISION_INVALID", codes);
+        Assert.Contains("APPROVAL_BUNDLE_DIGEST_STALE", codes);
+        Assert.Contains("APPROVAL_RATIONALE_MISSING", codes);
+    }
 }

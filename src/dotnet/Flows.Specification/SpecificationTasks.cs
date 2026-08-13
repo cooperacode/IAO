@@ -40,7 +40,10 @@ public static partial class SpecificationTasks
     {
         var run = SpecificationStore.LoadRun();
 
-        if (run.Status == "in_progress" && run.Phase is "discover" or "product" or "analysis" or "design" or "review")
+        var resumable = (run.Status == "in_progress" && run.Phase is "discover" or "product" or "analysis" or "design" or "review")
+            || (run.Status == "awaiting_approval" && run.Phase == "approve");
+
+        if (resumable)
         {
             HarnessLog.Info($"[spec] run in progress detected (phase={run.Phase}); resuming.");
             return run.Phase switch
@@ -49,6 +52,7 @@ public static partial class SpecificationTasks
                 "analysis" => AnalysisPrompt(),
                 "design" => DesignPrompt(),
                 "review" => ReviewPrompt(),
+                "approve" => ApprovePrompt(),
                 _ => DiscoverPrompt(),
             };
         }
@@ -259,5 +263,77 @@ public static partial class SpecificationTasks
             "design" => DesignPrompt(),
             _ => ReviewRetryPrompt([$"READINESS_VERDICT_INVALID: unroutable verdict '{verdict.Verdict}'"]),
         };
+    }
+
+    /// <summary>
+    /// Validates the approval decision proposal with
+    /// <see cref="SpecificationEvaluator.EvaluateApproval"/> against the current bundle digest
+    /// (<see cref="SpecificationStore.BundleDigest"/>). On structural failure, retries
+    /// <c>approve</c> in place (same command, violations reported) — same as every other phase.
+    ///
+    /// On a structurally valid <c>"revise"</c> decision: there is no field on
+    /// <see cref="ApprovalDecision"/> naming which phase to revise — a deliberate
+    /// simplification for this feature routes every revise back to <c>review</c> (not
+    /// consuming a review recascade slot; that budget belongs to review's own
+    /// <c>FAIL:*</c> routing). The reviewer can then issue a fresh verdict — including a
+    /// <c>FAIL:*</c> one — from there, reusing the recascade machinery instead of a second one.
+    ///
+    /// On a structurally valid <c>"approved"</c> decision: reads the four accepted documents
+    /// that make up the publishable bundle (prd/srs/sdd/readiness — idea is not part of the
+    /// published bundle) and runs <see cref="SpecificationPublisher.Publish"/>. A successful
+    /// publish completes the run; a blocked publish (or an unexpectedly missing accepted
+    /// document) stops at the <c>publish_blocked</c> terminal status (blueprint 0004 §2) with
+    /// the reason recorded for a human to act on.
+    /// </summary>
+    public static string Approve(Envelope? envelope)
+    {
+        var decision = SpecificationStore.ReadProposal(
+            SpecificationStore.Phases.Approval, SpecificationJsonContext.Default.ApprovalDecision);
+        if (decision is null)
+            return ApproveRetryPrompt([
+                $"no readable approval proposal was found at '{ApprovalProposalPath}' (missing or not valid JSON)."
+            ]);
+
+        var evaluation = SpecificationEvaluator.EvaluateApproval(decision, SpecificationStore.BundleDigest());
+        if (!evaluation.Passed)
+            return ApproveRetryPrompt(evaluation.Violations.Select(v => $"{v.Code}: {v.Message}"));
+
+        var run = SpecificationStore.LoadRun();
+
+        if (decision.Decision == "revise")
+        {
+            SpecificationStore.SaveRun(run with { Status = "in_progress", Phase = "review" });
+            HarnessLog.Info("[spec] approval revise; routing back to review.");
+            return ReviewPrompt();
+        }
+
+        // decision.Decision == "approved" (EvaluateApproval already restricted the allowed set).
+        var (prd, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+        var (srs, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        var (sdd, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        var (readiness, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
+
+        if (prd is null || srs is null || sdd is null || readiness is null)
+        {
+            SpecificationStore.SaveRun(run with { Status = "publish_blocked", TerminalReason = "one or more accepted documents (prd/srs/sdd/readiness) are missing; cannot publish." });
+            HarnessLog.Error("[spec] approval approved but an accepted document is missing; publish blocked.");
+            return "stop";
+        }
+
+        var publish = SpecificationPublisher.Publish(prd, srs, sdd, readiness);
+        if (!publish.Success)
+        {
+            SpecificationStore.SaveRun(run with { Status = "publish_blocked", TerminalReason = publish.Error });
+            HarnessLog.Error($"[spec] publish blocked: {publish.Error}");
+            return "stop";
+        }
+
+        SpecificationStore.SaveRun(run with { Status = "completed", Phase = "stop" });
+        HarnessLog.Info("[spec] approval approved; bundle published to specs/active/; run completed.");
+        return "stop";
     }
 }

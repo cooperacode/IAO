@@ -18,6 +18,7 @@ public static partial class SpecificationTasks
     private const string SrsProposalPath = ".harness/specification/active/srs.proposal.json";
     private const string SddProposalPath = ".harness/specification/active/sdd.proposal.json";
     private const string ReviewProposalPath = ".harness/specification/active/review.proposal.json";
+    private const string ApprovalProposalPath = ".harness/specification/active/approval.proposal.json";
 
     private const string IdeaShape =
         """{"schema":"iao/idea/v1","title":"...","problem":"...","users":["..."],"desiredOutcomes":["..."],"constraints":["..."],"openQuestions":[{"id":"OQ-1","question":"...","blocking":false}]}""";
@@ -33,6 +34,9 @@ public static partial class SpecificationTasks
 
     private const string ReviewShape =
         """{"verdict":"READY","slices":[{"id":"SL-1","classification":"...","goal":"...","inScope":["..."],"outOfScope":["..."],"observableOutcome":"...","requirementIds":["RF-1"],"adrIds":["ADR-1"],"dependsOn":[],"contracts":["..."],"happyPath":"...","failurePath":"...","acceptanceCriterion":"...","suggestedTarget":"...","suggestedVerificationStrategy":"..."}],"conflicts":[],"residuals":[]}""";
+
+    private const string ApprovalShape =
+        """{"decision":"approved","bundleDigest":"sha256:...","rationale":"...","approvedBy":"...","decidedAt":"2026-01-01T00:00:00Z"}""";
 
     // --- discover ---------------------------------------------------------
 
@@ -250,4 +254,82 @@ public static partial class SpecificationTasks
             `review` without arguments for another harness-controlled attempt.
             """,
             output: new Envelope(EnvelopeType.Command, "review", []));
+
+    // --- approve ------------------------------------------------------------------
+
+    private static string BundlePreview()
+    {
+        var (prd, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Prd, SpecificationJsonContext.Default.PrdDocument);
+        var (srs, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        var (sdd, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sdd, SpecificationJsonContext.Default.SoftwareDesignDocument);
+        var (readiness, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
+
+        return $"""
+            ## Preview — bundle to be published to specs/active/
+
+            - **PRD vision:** {prd?.Vision ?? "(missing)"} — {prd?.Goals.Length ?? 0} goal(s), {prd?.SuccessMetrics.Length ?? 0} success metric(s)
+            - **SRS:** {srs?.FunctionalRequirements.Length ?? 0} functional + {srs?.QualityRequirements.Length ?? 0} quality requirement(s), {srs?.AcceptanceCriteria.Length ?? 0} acceptance criteria
+            - **SDD:** {sdd?.Adrs.Length ?? 0} ADR(s), {sdd?.Controls.Length ?? 0} control(s)
+            - **Readiness:** verdict '{readiness?.Verdict ?? "(missing)"}', {readiness?.Slices.Length ?? 0} slice(s)
+            """;
+    }
+
+    private static string ApprovePrompt()
+    {
+        var bundleDigest = SpecificationStore.BundleDigest();
+
+        return PromptFormatter.Format(
+            input: $"""
+            Review the bundle for this Specification run before publication (blueprint 0004 §5
+            ApprovalEvaluator, §6 Publicação segura).
+
+            {BundlePreview()}
+
+            The current bundle digest is '{bundleDigest}'.
+
+            Write a JSON OBJECT to the file '{ApprovalProposalPath}' (a real file, written with
+            your file-write tool — NOT escaped or embedded inside the envelope you send back)
+            with this shape: {ApprovalShape}
+            `decision` must be exactly "approved" or "revise". `bundleDigest` must be set to
+            exactly '{bundleDigest}' — it is re-checked against the CURRENT accepted chain at
+            evaluation time, so if any accepted document changes after this preview, resend with
+            the freshly reported digest instead of the one shown here. `rationale` must state a
+            real reason, not a placeholder.
+
+            If `decision` is "approved": the four accepted documents (PRD, SRS, SDD, readiness)
+            are rendered and published to 'specs/active/' as 00-prd.md,
+            10-software-requirements-specification.md, 20-software-design-document.md and
+            30-readiness-handoff.md, and the run completes.
+
+            If `decision` is "revise": the run routes back to the review phase so a fresh
+            readiness verdict — including a FAIL:* one, if a deeper phase needs rework — can be
+            issued.
+
+            Return `approve` without arguments when done; the harness will validate the file and
+            act on the decision, or re-request `approve` with the reported violations.
+            """,
+            output: new Envelope(EnvelopeType.Command, "approve", []));
+    }
+
+    private static string ApproveRetryPrompt(IEnumerable<string> violations)
+    {
+        var bundleDigest = SpecificationStore.BundleDigest();
+
+        return PromptFormatter.Format(
+            input: $"""
+            The approval proposal at '{ApprovalProposalPath}' did not pass ApprovalEvaluator:
+            {string.Join("\n", violations.Select(v => $"- {v}"))}
+
+            The current bundle digest is '{bundleDigest}'. Rewrite the file at the exact same
+            path with this shape: {ApprovalShape}
+            `decision` must be exactly "approved" or "revise", `bundleDigest` must be set to
+            exactly '{bundleDigest}', and `rationale` must state a real reason. Return `approve`
+            without arguments for another harness-controlled attempt.
+            """,
+            output: new Envelope(EnvelopeType.Command, "approve", []));
+    }
 }

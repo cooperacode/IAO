@@ -221,6 +221,21 @@ public sealed record ApprovalDecision(
     DateTimeOffset DecidedAt);
 
 /// <summary>
+/// <see cref="SpecificationPublisher"/>'s own ownership ledger for <c>specs/active/</c>
+/// (blueprint 0004 §6: "substituir apenas um bundle anteriormente possuído pelo flow").
+/// Persisted under <c>.harness/specification/active/</c> — deliberately outside
+/// <c>specs/active/</c> itself, so the record of "which files did I last write" survives
+/// independently of whatever the destination directory currently contains. A publish reads
+/// the previous manifest to decide what it's allowed to overwrite, then writes a new one
+/// strictly after every document file has been staged, digested and copied in.
+/// </summary>
+public sealed record PublishManifest(
+    string[] OwnedFiles,
+    Dictionary<string, string> FileDigests,
+    string ManifestDigest,
+    DateTimeOffset PublishedAt);
+
+/// <summary>
 /// Run state persisted across invocations, mirroring <c>Harness.Engine.HarnessState</c> for
 /// this flow's own state machine (§2 status values; §4 StateStore bullet: "step, status,
 /// phase, counters, trace label e razão terminal"). Top-level type (not nested) so it stays

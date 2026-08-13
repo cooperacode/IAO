@@ -33,5 +33,6 @@ namespace Flows.Specification;
 [JsonSerializable(typeof(ReadinessSlice))]
 [JsonSerializable(typeof(ReadinessVerdict))]
 [JsonSerializable(typeof(ApprovalDecision))]
+[JsonSerializable(typeof(PublishManifest))]
 [JsonSerializable(typeof(RunState))]
 public partial class SpecificationJsonContext : JsonSerializerContext;
