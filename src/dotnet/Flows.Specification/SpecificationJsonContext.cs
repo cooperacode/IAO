@@ -35,4 +35,5 @@ namespace Flows.Specification;
 [JsonSerializable(typeof(ApprovalDecision))]
 [JsonSerializable(typeof(PublishManifest))]
 [JsonSerializable(typeof(RunState))]
+[JsonSerializable(typeof(SourceBundle))]
 public partial class SpecificationJsonContext : JsonSerializerContext;

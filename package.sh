@@ -50,8 +50,9 @@ cd "$DIR"
 ENGINES=(dotnet python rust go)
 RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)
 IDES=(claude copilot devin codex)
-# On this branch the packaged project is just the development flow.
-FLOWS=(development)
+# FLOWS is derived once ENGINE is known (see below, right after engine validation) —
+# `specification` only exists on the dotnet engine today (no python/rust/go port), so it's
+# only added to the list when packaging that engine.
 
 ENGINE=""
 RID=""
@@ -102,23 +103,27 @@ contains() { local x; for x in "${@:2}"; do [[ "$x" == "$1" ]] && return 0; done
 
 # ---- per-flow metadata ----
 project_for() { case "$1" in
-  development) echo "src/dotnet/Flows.Development/Flows.Development.csproj";;
+  development)   echo "src/dotnet/Flows.Development/Flows.Development.csproj";;
+  specification) echo "src/dotnet/Flows.Specification/Flows.Specification.csproj";;
 esac; }
 assembly_for() { case "$1" in
-  development) echo "Flows.Development";;
+  development)   echo "Flows.Development";;
+  specification) echo "Flows.Specification";;
 esac; }
 wrapper_for() { case "$1" in
-  development) echo "run-development.sh";;
+  development)   echo "run-development.sh";;
+  specification) echo "run-specification.sh";;
 esac; }
 # Each engine owns the wrapper installed at the package root. Keeping these templates
 # beside their implementation avoids executable entry points at the repository root.
 wrapper_source_for() {
   local engine="$1" flow="$2"
   case "$engine:$flow" in
-    dotnet:development) echo "src/dotnet/run-development.sh";;
-    python:development) echo "src/python/run-development-py.sh";;
-    rust:development) echo "src/rust/run-development-rs.sh";;
-    go:development) echo "src/go/run-development-go.sh";;
+    dotnet:development)   echo "src/dotnet/run-development.sh";;
+    dotnet:specification) echo "src/dotnet/run-specification.sh";;
+    python:development)   echo "src/python/run-development-py.sh";;
+    rust:development)     echo "src/rust/run-development-rs.sh";;
+    go:development)       echo "src/go/run-development-go.sh";;
   esac
 }
 # --engine python only: name of the package under src/python/ that implements the flow.
@@ -135,10 +140,14 @@ go_bin_for() { case "$1" in
 esac; }
 # adapter per IDE+flow → "SRC<TAB>REL" (REL = path expected by the IDE inside the package)
 adapter_for() { case "$1:$2" in
-  claude:development)  printf '%s\t%s\n' ".claude/agents/development.agent.md"    ".claude/agents/development.agent.md";;
-  copilot:development) printf '%s\t%s\n' ".github/prompts/development.prompt.md"  ".github/prompts/development.prompt.md";;
-  devin:development)   printf '%s\t%s\n' ".devin/workflows/development.md"        ".devin/workflows/development.md";;
-  codex:development)   printf '%s\t%s\n' ".codex/agents/development.toml"         ".codex/agents/development.toml";;
+  claude:development)    printf '%s\t%s\n' ".claude/agents/development.agent.md"      ".claude/agents/development.agent.md";;
+  claude:specification)  printf '%s\t%s\n' ".claude/agents/specification.agent.md"    ".claude/agents/specification.agent.md";;
+  copilot:development)   printf '%s\t%s\n' ".github/prompts/development.prompt.md"    ".github/prompts/development.prompt.md";;
+  copilot:specification) printf '%s\t%s\n' ".github/prompts/specification.prompt.md"  ".github/prompts/specification.prompt.md";;
+  devin:development)     printf '%s\t%s\n' ".devin/workflows/development.md"          ".devin/workflows/development.md";;
+  devin:specification)   printf '%s\t%s\n' ".devin/workflows/specification.md"        ".devin/workflows/specification.md";;
+  codex:development)     printf '%s\t%s\n' ".codex/agents/development.toml"           ".codex/agents/development.toml";;
+  codex:specification)   printf '%s\t%s\n' ".codex/agents/specification.toml"         ".codex/agents/specification.toml";;
 esac; }
 
 # ---- interactive selection when missing ----
@@ -170,6 +179,14 @@ elif [[ -n "$RID" ]]; then
   RID=""
 fi
 contains "$IDE" "${IDES[@]}" || { echo "invalid IDE: '$IDE' (use: ${IDES[*]})" >&2; exit 1; }
+
+# Every engine packages `development`. `specification` only exists on the dotnet engine
+# today — including it unconditionally would make packaging any other engine fail on a flow
+# it doesn't implement (the wrapper/adapter existence check right below validates every
+# entry in FLOWS up front, before any build work starts).
+FLOWS=(development)
+[[ "$ENGINE" == "dotnet" ]] && FLOWS+=(specification)
+
 [[ -n "$VERSION" ]] || { echo "empty version" >&2; exit 1; }
 SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
 [[ "$VERSION" =~ $SEMVER_RE ]] || {
@@ -231,6 +248,15 @@ chmod +x "$OUT/.harness/run.sh"
 cp -R .harness/skills "$OUT/.harness/skills"
 find "$OUT/.harness/skills" -name "__pycache__" -type d -prune -exec rm -rf {} +
 cp harness.json "$OUT/harness.json"   # harness variable config (ceilings, docs)
+cp harness.schema.json "$OUT/harness.schema.json"   # harness.json's own "$schema" points here
+if contains specification "${FLOWS[@]}"; then
+  # Specification publishes its bundle to specs/active/ — point the packaged Development's
+  # docsFolder there by default so a downstream user who runs both flows gets the handoff
+  # for free, without extra configuration. Only rewritten when specification is actually
+  # bundled (dotnet engine); other engines keep the flat "specs" default.
+  sed -i.bak 's/"docsFolder": *"specs"/"docsFolder": "specs\/active"/' "$OUT/harness.json"
+  rm -f "$OUT/harness.json.bak"
+fi
 printf '%s\n' "$VERSION" > "$OUT/VERSION"
 
 # .harness/scripts/ — dependency of .harness/skills/session-report/generate_report.py.
@@ -378,39 +404,63 @@ EOF
 done
 
 # ---- IDE approval config (wrappers run with no per-command prompt) ----
+# Wrapper base names actually included in this package (one per FLOWS entry) — feeds both
+# blocks below so a multi-flow dotnet package (development + specification) gets every
+# wrapper pre-approved, not just the first one.
+WRAPPER_BASES=()
+for _flow in "${FLOWS[@]}"; do
+  _w="$(wrapper_for "$_flow")"
+  WRAPPER_BASES+=("${_w%.sh}")
+done
+
 CONFROW=""
 case "$IDE" in
   claude)
     # permission allowlist: the agent drives the wrappers without asking for approval on each step
     mkdir -p "$OUT/.claude"
-    cat > "$OUT/.claude/settings.json" <<'EOF'
-{
-  "permissions": {
-    "allow": [
-      "Bash(./run-development.sh *)",
-      "Bash(.harness/run-development.cmd *)",
-      "Bash(chmod +x *)"
-    ]
-  }
-}
-EOF
+    ALLOW_VALUES=()
+    for _base in "${WRAPPER_BASES[@]}"; do
+      ALLOW_VALUES+=("Bash(./$_base.sh *)" "Bash(.harness/$_base.cmd *)")
+    done
+    ALLOW_VALUES+=("Bash(chmod +x *)")
+    {
+      echo '{'
+      echo '  "permissions": {'
+      echo '    "allow": ['
+      _last=$((${#ALLOW_VALUES[@]} - 1))
+      for _i in "${!ALLOW_VALUES[@]}"; do
+        if [[ $_i -eq $_last ]]; then
+          printf '      "%s"\n' "${ALLOW_VALUES[$_i]}"
+        else
+          printf '      "%s",\n' "${ALLOW_VALUES[$_i]}"
+        fi
+      done
+      echo '    ]'
+      echo '  }'
+      echo '}'
+    } > "$OUT/.claude/settings.json"
     CONFROW="| \`.claude/settings.json\` | allowlist: wrappers run with no approval prompt |
 "
     ;;
   copilot)
     # terminal auto-approve in agent mode (VS Code asks for a one-time confirmation
-    # to honor auto-approve coming from workspace settings)
+    # to honor auto-approve coming from workspace settings). Written with a placeholder
+    # token instead of direct variable interpolation so the heredoc can stay single-quoted
+    # (byte-literal, no bash backslash processing that would corrupt the regex escaping).
     mkdir -p "$OUT/.vscode"
     cat > "$OUT/.vscode/settings.json" <<'EOF'
 {
   "chat.tools.terminal.autoApprove": {
-    "/^\.\\/(run-development)\\.sh\\b/": true,
-    "/^\\.harness[\\\\/]run-development\\.cmd\\b/": true,
-    "/^bash +run-development\\.sh\\b/": true,
+    "/^\.\\/(__WRAPPER_ALT__)\\.sh\\b/": true,
+    "/^\\.harness[\\\\/](__WRAPPER_ALT__)\\.cmd\\b/": true,
+    "/^bash +(__WRAPPER_ALT__)\\.sh\\b/": true,
     "/^chmod \\+x /": true
   }
 }
 EOF
+    WRAPPER_ALT="$(IFS='|'; echo "${WRAPPER_BASES[*]}")"
+    sed -i.bak "s#__WRAPPER_ALT__#$WRAPPER_ALT#g" "$OUT/.vscode/settings.json"
+    rm -f "$OUT/.vscode/settings.json.bak"
     CONFROW="| \`.vscode/settings.json\` | terminal auto-approve: wrappers run with no prompt |
 "
     ;;
@@ -424,23 +474,47 @@ esac
 
 # ---- per-IDE start instructions ----
 DEV_REL="$(adapter_for "$IDE" development | cut -f2)"
+HAS_SPEC=false
+contains specification "${FLOWS[@]}" && HAS_SPEC=true
+SPEC_REL=""
+$HAS_SPEC && SPEC_REL="$(adapter_for "$IDE" specification | cut -f2)"
+
 case "$IDE" in
-  claude)  START="1. Open **this folder** in Claude Code.
-2. **Development:** \`/agents\` → **development** and ask *\"Develop: <project goal>\"*. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass.";;
-  copilot) START="1. Open **this folder** in VS Code with GitHub Copilot in **agent mode**.
-2. **Development:** select the **development** prompt file (\`.github/prompts/development.prompt.md\`) and ask *\"Develop: <project goal>\"*. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass.";;
-  devin)   START="1. Open **this folder** as a workspace in Devin Desktop (the workflows are already under \`.devin/workflows/\`).
-2. **Development:** invoke \`/development\` and ask *\"Develop: <project goal>\"*. Devin drives \`./run-development.sh\`, one feature at a time, until they all pass.";;
-  codex)   START="1. Open **this folder** in Codex. For the wrapper to run without per-command approval, start with \`codex --ask-for-approval never --sandbox workspace-write\` (Codex doesn't read workspace approval config).
-2. **Development:** ask *\"Use the custom development agent to develop: <project goal>\"*. The agent at \`.codex/agents/development.toml\` drives \`./run-development.sh\`, one feature at a time, until they all pass.";;
+  claude)
+    START="1. Open **this folder** in Claude Code.
+2. **Development:** \`/agents\` → **development** and ask *\"Develop: <project goal>\"*. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass."
+    $HAS_SPEC && START="$START
+3. **Specification:** \`/agents\` → **specification** and ask it to frame your idea (point it at a sources folder with product docs/transcripts/notes if you have one). The agent drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
+    ;;
+  copilot)
+    START="1. Open **this folder** in VS Code with GitHub Copilot in **agent mode**.
+2. **Development:** select the **development** prompt file (\`.github/prompts/development.prompt.md\`) and ask *\"Develop: <project goal>\"*. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass."
+    $HAS_SPEC && START="$START
+3. **Specification:** select the **specification** prompt file (\`.github/prompts/specification.prompt.md\`) and ask it to frame your idea. The agent drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
+    ;;
+  devin)
+    START="1. Open **this folder** as a workspace in Devin Desktop (the workflows are already under \`.devin/workflows/\`).
+2. **Development:** invoke \`/development\` and ask *\"Develop: <project goal>\"*. Devin drives \`./run-development.sh\`, one feature at a time, until they all pass."
+    $HAS_SPEC && START="$START
+3. **Specification:** invoke \`/specification\` and ask it to frame your idea. Devin drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
+    ;;
+  codex)
+    START="1. Open **this folder** in Codex. For the wrapper to run without per-command approval, start with \`codex --ask-for-approval never --sandbox workspace-write\` (Codex doesn't read workspace approval config).
+2. **Development:** ask *\"Use the custom development agent to develop: <project goal>\"*. The agent at \`.codex/agents/development.toml\` drives \`./run-development.sh\`, one feature at a time, until they all pass."
+    $HAS_SPEC && START="$START
+3. **Specification:** ask *\"Use the custom specification agent to frame: <your idea>\"*. The agent at \`.codex/agents/specification.toml\` drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
+    ;;
 esac
 
 WINROW=""
 if { [[ "$ENGINE" == "dotnet" ]] && [[ "$RID" == win-* ]]; } \
   || [[ "$ENGINE" == "python" ]] \
   || { [[ "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && [[ "$WINEXT" == ".exe" ]]; }; then
-  WINROW="| \`.harness/run-development.cmd\` | execution wrapper on Windows |
+  for _flow in "${FLOWS[@]}"; do
+    _w="$(wrapper_for "$_flow")"
+    WINROW="$WINROW| \`.harness/${_w%.sh}.cmd\` | execution wrapper on Windows ($_flow) |
 "
+  done
 fi
 
 FALLBACK_NOTE=""
@@ -458,9 +532,16 @@ fi
 
 if [[ "$ENGINE" == "dotnet" ]]; then
   TITLE_META="$RID · v$VERSION · IDE: $IDE · engine: dotnet (Native AOT)"
-  ENGINE_INTRO="Self-contained package with the development flow as a native binary (no .NET runtime),
+  if $HAS_SPEC; then
+    ENGINE_INTRO="Self-contained package with the development and specification flows as native
+binaries (no .NET runtime), plus the skills and the matching IDE adapters."
+    ENGINE_ROW="| \`.harness/bin/Flows.Development$WINEXT\` | native binary of the development flow |
+| \`.harness/bin/Flows.Specification$WINEXT\` | native binary of the specification flow |"
+  else
+    ENGINE_INTRO="Self-contained package with the development flow as a native binary (no .NET runtime),
 plus the skills and the matching IDE adapter."
-  ENGINE_ROW="| \`.harness/bin/Flows.Development$WINEXT\` | native binary of the development flow |"
+    ENGINE_ROW="| \`.harness/bin/Flows.Development$WINEXT\` | native binary of the development flow |"
+  fi
 elif [[ "$ENGINE" == "rust" ]]; then
   TITLE_META="$HOSTRID · v$VERSION · IDE: $IDE · engine: rust (native)"
   ENGINE_INTRO="Self-contained package with the development flow as a native Rust binary (compiled via
@@ -484,12 +565,32 @@ this one doesn't embed a self-contained binary."
   ENGINE_ROW="| \`.harness/bin/engine/\` | Python engine — \`harness_engine/\` + \`flows_development/\` (source, requires python3/python in PATH) |"
 fi
 
+SPEC_BLURB=""
+QUICK_TEST_SPEC=""
+WRAPPER_ROW="| \`run-development.sh\` | execution wrapper (development) |"
+ADAPTER_ROWS="| \`$DEV_REL\` | development adapter for the chosen IDE |"
+if $HAS_SPEC; then
+  SPEC_BLURB=" Specification takes an idea (plus an optional sources folder of product
+docs/transcripts/notes) through PRD/SRS/SDD/readiness/approval and publishes to
+\`specs/active/\`, which Development can then read as its brief — snapshots go to
+\`last-specification.*\`, so the two flows never collide."
+  QUICK_TEST_SPEC="
+
+\`\`\`bash
+./run-specification.sh '{ \"type\": \"text\", \"value\": \"start\" }'
+\`\`\`"
+  WRAPPER_ROW="| \`run-development.sh\` | execution wrapper (development) |
+| \`run-specification.sh\` | execution wrapper (specification) |"
+  ADAPTER_ROWS="| \`$DEV_REL\` | development adapter for the chosen IDE |
+| \`$SPEC_REL\` | specification adapter for the chosen IDE |"
+fi
+
 cat > "$OUT/.harness/START-HERE.md" <<EOF
 # Flows — package ($TITLE_META)
 
 $ENGINE_INTRO Development builds the project
 feature by feature and saves snapshots to \`last-development.*\` so it doesn't collide with
-other flows in the workspace.
+other flows in the workspace.$SPEC_BLURB
 $FALLBACK_NOTE
 ## Getting started
 
@@ -500,7 +601,7 @@ $START
 \`\`\`bash
 ./run-development.sh '{ "type": "text", "value": "start" }'
 \`\`\`
-The binary should print an \`<input>\`/\`<response>\` block to stdout (or \`stop\`).
+The binary should print an \`<input>\`/\`<response>\` block to stdout (or \`stop\`).$QUICK_TEST_SPEC
 
 ## Contents
 
@@ -510,8 +611,9 @@ $ENGINE_ROW
 | \`.harness/skills/\` | skills injected at runtime |
 | \`.harness/scripts/\` | driver usage/correlate — dependency of the cost report (\`.harness/skills/session-report\`) |
 | \`harness.json\` | harness config: step/cost/time ceilings and docs folder |
-| \`run-development.sh\` | execution wrapper |
-$WINROW| \`$DEV_REL\` | development adapter for the chosen IDE |
+| \`harness.schema.json\` | editor validation/autocomplete for \`harness.json\` (ignored by the harness itself) |
+$WRAPPER_ROW
+$WINROW$ADAPTER_ROWS
 $CONFROW
 EOF
 

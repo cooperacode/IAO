@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://cooperacode.club/iao/harness.schema.json",
+  "title": "IAO harness.json",
+  "description": "Fixed harness variables, read once per process from the repo root. Optional: a missing or invalid file/field falls back to the built-in default for that field. Consumed identically by every port (.NET/HarnessConfig, Go/harness_config.go, Python/harness_config.py, Rust/harness_config.rs). Does NOT contain the verify command, target directory or run identity (those live in .harness/run_config.json) and does NOT contain flow-local constants such as the Development flow's MaxFeatures/StepsPerFeature/MaxReplans, which are hardcoded in code, not externalized here.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema file, for editor validation/autocomplete only. Ignored by every harness parser."
+    },
+    "maxSteps": {
+      "type": "integer",
+      "default": 12,
+      "minimum": 1,
+      "description": "Global maximum number of harness turns. The Development flow overrides this with its own larger step budget (MaxFeatures * StepsPerFeature + 8, currently 88) for its feature loop; this value mainly governs the generic host and other flows. Non-positive values fall back to the default (12)."
+    },
+    "maxInstructionChars": {
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "description": "Maximum size (characters) of an instruction emitted to the driver. 0 disables this guard. Use it to prevent oversized prompts from consuming the context window."
+    },
+    "docsMaxChars": {
+      "type": "integer",
+      "default": 40000,
+      "minimum": 1,
+      "description": "Maximum number of characters read from the documents folder (the initializer's brief). Non-positive values fall back to the default (40000). Prefer splitting large documents over raising this."
+    },
+    "docsFolder": {
+      "type": "string",
+      "default": "specs",
+      "minLength": 1,
+      "description": "Folder (relative or absolute) containing the brief files read by `start`. Supported source files are Markdown and plain text. Blank/whitespace falls back to the default (\"specs\")."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "default": 600000,
+      "minimum": 1,
+      "maximum": 600000,
+      "description": "Per-task execution timeout, in milliseconds. Non-positive values fall back to the default (600000 = 10 minutes). Clamped to a hard ceiling of 600000ms regardless of source — a workspace-controlled file cannot disable or exceed this guard. Can be overridden per-invocation by the parent process via the HARNESS_TIMEOUT_MS environment variable (not by the driver, since the env var lives outside the working directory the supervised agent controls)."
+    },
+    "contextResetMode": {
+      "type": "string",
+      "enum": ["adaptive", "per-feature", "never"],
+      "default": "adaptive",
+      "description": "Policy for requesting a clean driver context between features. \"adaptive\": reset when reported usage crosses contextResetThreshold (recommended when the driver reports contextUsage/HARNESS_CONTEXT_USAGE_JSON). \"per-feature\": always start each feature in a clean context. \"never\": keep one continuous session. Any other value falls back to the default (\"adaptive\")."
+    },
+    "contextResetThreshold": {
+      "type": "number",
+      "default": 0.7,
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "Usage ratio (0, 1] that triggers an adaptive context reset when contextResetMode is \"adaptive\". 0.7 means 70% of the reported context window. Out-of-range values fall back to the default (0.7); the effective value is always clamped to [0.1, 1.0]."
+    },
+    "contextFallbackFeatures": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "description": "Number of feature boundaries used as a deterministic fallback reset cadence when no context-usage telemetry is available. Non-positive values fall back to the default (1)."
+    }
+  }
+}

@@ -3,16 +3,19 @@ using Harness.Engine;
 namespace Flows.Specification;
 
 /// <summary>
-/// Long-running Specification flow (blueprint 0004 §2 "State machine"): idea → PRD → ... →
-/// approval → publish. This slice implements the happy-path prefix:
+/// Long-running Specification flow (blueprint 0004 §2 "State machine"): idea → PRD → SRS →
+/// SDD → readiness → approval → publish, end to end:
 ///
-/// start → discover → product → analysis → design → review → stop (awaiting_approval)
+/// start → discover → product → analysis → design → review → approve → publish/stop
 ///
-/// review's recascade routing (blueprint 0006 review state machine) can send the run back
-/// through product/analysis/design before it reaches review again — capped at two recascades
-/// per run (blueprint 0004 §2 budget note); a third failing verdict is a terminal
-/// <c>needs_human_decision</c>, not another retry. Later phases (approve, publish) are out of
-/// scope for this feature.
+/// <c>start</c> ingests "documentos em pasta de fontes" (blueprint 0004 §2) from
+/// <see cref="SourcesFolder"/> when present, so <c>discover</c> grounds the idea in real
+/// material instead of inventing one from a short phrase alone. review's recascade routing
+/// (blueprint 0006 review state machine) can send the run back through product/analysis/design
+/// before it reaches review again — capped at two recascades per run (blueprint 0004 §2 budget
+/// note); a third failing verdict is a terminal <c>needs_human_decision</c>, not another retry.
+/// approve either publishes (via <see cref="SpecificationPublisher"/>) and completes, or routes
+/// a "revise" decision back to review.
 ///
 /// Each task only performs effects and decides the NEXT command (the <c>output</c> Envelope);
 /// orchestration (dispatch, global guards, transport) lives in Harness.Engine, dispatched via
@@ -28,6 +31,25 @@ public static partial class SpecificationTasks
     /// como no flow histórico" (blueprint 0004 §2).
     /// </summary>
     public const int StepBudget = 18;
+
+    /// <summary>
+    /// Repo-relative, human-curated input directory for <c>start</c>'s "documentos em pasta
+    /// de fontes" (blueprint 0004 §2) — product docs, call transcripts, expert notes,
+    /// regulations, anything that should ground the idea instead of the driving model
+    /// inventing one from a short phrase alone. A sibling of
+    /// <c>SpecificationPublisher.DestinationDir</c> (<c>specs/active/</c>) under the same
+    /// <c>specs/</c> root — rather than a brand new top-level directory — so every directory
+    /// this flow owns (raw sources in, published bundle out) lives under one recognizable
+    /// place instead of two similarly-named ones (<c>specs/</c> vs. a new <c>specification/</c>).
+    /// Not derived from <c>HarnessConfig.DocsFolder</c> (Development's own input folder,
+    /// <c>specs/</c> by default, read FLAT/non-recursively) — wiring the two together is a
+    /// separate concern. <see cref="Harness.Engine.DocsReader"/> only lists files directly
+    /// inside the folder it's given (no recursion), so Development's own
+    /// <c>DocsReader.Read("specs")</c> never descends into <c>specs/sources/</c> or
+    /// <c>specs/active/</c> — both are invisible to it, by construction, without any special
+    /// exclusion logic needed.
+    /// </summary>
+    private const string SourcesFolder = "specs/sources";
 
     /// <summary>
     /// Emits the discover prompt for a fresh run, or resumes from the persisted phase
@@ -61,6 +83,21 @@ public static partial class SpecificationTasks
         // proposals/accepted artifacts must not leak into this one.
         SpecificationStore.Reset();
         SpecificationStore.SaveRun(new RunState(0, "in_progress", "discover", new(), null, null));
+
+        // "Ideia curta ou documentos em pasta de fontes" (blueprint 0004 §2): if the sources
+        // folder holds real material, ingest it now (once, deterministically, via the same
+        // DocsReader Development uses) and persist it so `discover` can ground the idea in it
+        // and record a real source/digest — not "driver" as a placeholder. No sources folder
+        // (or an empty one) simply means there's nothing to ingest; discover still works,
+        // grounded in whatever the human told the driving agent in conversation instead.
+        if (DocsReader.HasDocs(SourcesFolder))
+        {
+            var (content, files) = DocsReader.Read(SourcesFolder);
+            SpecificationStore.WriteAccepted(
+                SpecificationStore.Phases.Sources, new SourceBundle(files, content),
+                SpecificationJsonContext.Default.SourceBundle);
+        }
+
         return DiscoverPrompt();
     }
 
@@ -78,11 +115,19 @@ public static partial class SpecificationTasks
                 $"no readable idea proposal was found at '{IdeaProposalPath}' (missing or not valid JSON)."
             ]);
 
-        // Source-document ingestion is out of scope for this slice: a fixed provenance tag
-        // plus a digest of the idea's own canonical content satisfies IdeaEvaluator's
-        // "fonte e digest registrados" predicate without inventing new persistence.
-        var sourceDigest = SpecificationStore.DigestOf(idea, SpecificationJsonContext.Default.IdeaFrame);
-        var evaluation = SpecificationEvaluator.EvaluateIdea(idea, source: "driver", sourceDigest: sourceDigest);
+        // Real provenance when `start` ingested a sources bundle; falls back to a fixed tag
+        // plus a digest of the idea's own content when the run had no sources folder to draw
+        // from (§5 "fonte e digest registrados" — a predicate about provenance being
+        // RECORDED, not about a source folder being mandatory).
+        var (sources, sourcesDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+        var source = sources is { Files.Length: > 0 }
+            ? $"{SourcesFolder} ({sources.Files.Length} file(s)): {string.Join(", ", sources.Files)}"
+            : "driver";
+        var sourceDigest = sources is not null
+            ? sourcesDigest
+            : SpecificationStore.DigestOf(idea, SpecificationJsonContext.Default.IdeaFrame);
+        var evaluation = SpecificationEvaluator.EvaluateIdea(idea, source: source, sourceDigest: sourceDigest);
         if (!evaluation.Passed)
             return DiscoverRetryPrompt(evaluation.Violations.Select(v => $"{v.Code}: {v.Message}"));
 

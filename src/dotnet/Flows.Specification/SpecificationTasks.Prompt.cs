@@ -40,12 +40,34 @@ public static partial class SpecificationTasks
 
     // --- discover ---------------------------------------------------------
 
+    // Ingested once at `start` (see SpecificationTasks.SourcesFolder) and reattached on every
+    // discover/retry turn — same reason DevelopmentTasks.PlanRetryPrompt reattaches the brief:
+    // a driver that already dropped the source material from its context must not fall back
+    // to inventing an unrelated idea just because this is a retry, not the first turn.
+    private static string SourcesBlock()
+    {
+        var (sources, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+
+        if (sources is not { Files.Length: > 0 })
+            return """
+                No sources folder was found (or it was empty). Ask the human operator for the
+                idea, problem, users and constraints in this conversation, then frame it below.
+                """;
+
+        return $"""
+            <sources folder="{SourcesFolder}" files="{string.Join(", ", sources.Files)}">{PromptFormatter.Inline(sources.Content)}</sources>
+            """;
+    }
+
     private static string DiscoverPrompt() =>
         PromptFormatter.Format(
             input: $"""
             Frame the idea for this Specification run (blueprint 0004 §2/§3, discover phase).
 
-            Write a JSON OBJECT to the file '{IdeaProposalPath}' (a real file, written with your
+            {SourcesBlock()}Ground the idea in the material above when present — do not invent
+            facts it doesn't support, and prefer citing/summarizing it over guessing. Write a
+            JSON OBJECT to the file '{IdeaProposalPath}' (a real file, written with your
             file-write tool — NOT escaped or embedded inside the envelope you send back) with this
             shape: {IdeaShape}
             `schema` must be exactly "{SpecificationEvaluator.IdeaSchema}". Provide a title, a
@@ -62,7 +84,7 @@ public static partial class SpecificationTasks
     private static string DiscoverRetryPrompt(IEnumerable<string> violations) =>
         PromptFormatter.Format(
             input: $"""
-            The idea proposal at '{IdeaProposalPath}' did not pass IdeaEvaluator:
+            {SourcesBlock()}The idea proposal at '{IdeaProposalPath}' did not pass IdeaEvaluator:
             {string.Join("\n", violations.Select(v => $"- {v}"))}
 
             Rewrite the file at the exact same path with this shape: {IdeaShape}

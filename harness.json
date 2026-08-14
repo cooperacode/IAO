@@ -1,8 +1,9 @@
 {
+  "$schema": "./harness.schema.json",
   "maxSteps": 12,
   "maxInstructionChars": 0,
   "docsMaxChars": 10000000,
-  "docsFolder": "specs",
+  "docsFolder": "specs/active",
   "timeoutMs": 600000,
   "contextResetMode": "adaptive",
   "contextResetThreshold": 0.7,

@@ -39,6 +39,15 @@ public static class SpecificationStore
         public const string Review = "review";
         public const string Readiness = "readiness";
         public const string Approval = "approval";
+
+        /// <summary>
+        /// Not a documental gate like the others — no evaluator, no "proposal" counterpart.
+        /// <c>Start()</c> writes the ingested source material here (if any) once, up front;
+        /// <c>discover</c> reads it back to ground the idea proposal and to record a real
+        /// source/digest instead of a placeholder. Reuses the accepted-path plumbing purely
+        /// for its atomic-write/digest machinery.
+        /// </summary>
+        public const string Sources = "sources";
     }
 
     /// <summary>

@@ -23,6 +23,10 @@ public class SpecificationFlowTests : IDisposable
     // populate it (via SpecificationPublisher), created/deleted by them.
     private static readonly string SpecsDir = Path.Combine(Directory.GetCurrentDirectory(), "specs");
 
+    // Mirrors SpecificationTasks.SourcesFolder (private) — only the sources-ingestion tests
+    // populate it, created/deleted by them.
+    private static readonly string SourcesDir = Path.Combine(Directory.GetCurrentDirectory(), "specs", "sources");
+
     private const string ValidIdeaJson =
         """
         {"schema":"iao/idea/v1","title":"Task tracker","problem":"Teams lose track of work",
@@ -42,6 +46,8 @@ public class SpecificationFlowTests : IDisposable
         foreach (var path in new[] { IdeaProposalPath, PrdProposalPath, SrsProposalPath, SddProposalPath, ReviewProposalPath, ApprovalProposalPath })
             if (File.Exists(path))
                 File.Delete(path);
+        // SourcesDir ("specs/sources") is a child of SpecsDir ("specs") — one recursive
+        // delete clears both, sources included.
         if (Directory.Exists(SpecsDir))
             Directory.Delete(SpecsDir, recursive: true);
     }
@@ -791,5 +797,97 @@ public class SpecificationFlowTests : IDisposable
         var (verdict, _) = SpecificationStore.ReadAccepted(
             SpecificationStore.Phases.Readiness, SpecificationJsonContext.Default.ReadinessVerdict);
         Assert.NotNull(verdict);
+    }
+
+    // ---- source-document ingestion (blueprint 0004 §2: "ideia curta ou documentos em pasta
+    // de fontes") ------------------------------------------------------------------------
+
+    [Fact]
+    public void Start_SemPastaDeFontes_EmiteDiscoverSemFontesEIdeiaNasceSemAcervo()
+    {
+        var result = SpecificationTasks.Start();
+
+        Assert.Contains("\"value\":\"discover\"", result);
+        Assert.Contains("No sources folder was found", result);
+        var (sources, _) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+        Assert.Null(sources);
+    }
+
+    [Fact]
+    public void Start_ComPastaDeFontes_IngereEReinjetaConteudoNoPromptDeDiscover()
+    {
+        Directory.CreateDirectory(SourcesDir);
+        File.WriteAllText(Path.Combine(SourcesDir, "product-brief.md"), "# Product brief\nTeams lose track of work across too many spreadsheets.");
+        File.WriteAllText(Path.Combine(SourcesDir, "call-transcript.md"), "## Call with stakeholder\nWe need visibility into who owns what.");
+
+        var result = SpecificationTasks.Start();
+
+        Assert.Contains("\"value\":\"discover\"", result);
+        Assert.Contains("product-brief.md", result);
+        Assert.Contains("call-transcript.md", result);
+        Assert.Contains("Teams lose track of work", result);
+        Assert.Contains("visibility into who owns what", result);
+
+        var (sources, digest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+        Assert.NotNull(sources);
+        Assert.Equal(["call-transcript.md", "product-brief.md"], sources!.Files); // DocsReader orders alphabetically
+        Assert.NotNull(digest);
+    }
+
+    [Fact]
+    public void Discover_ComFontesIngeridas_RegistraFonteEDigestReaisNaoPlaceholder()
+    {
+        Directory.CreateDirectory(SourcesDir);
+        File.WriteAllText(Path.Combine(SourcesDir, "regulation.md"), "Tasks must be auditable for compliance.");
+        SpecificationTasks.Start();
+
+        WriteIdeaProposal(ValidIdeaJson);
+        var result = SpecificationTasks.Discover(Cmd("discover"));
+
+        Assert.Contains("\"value\":\"product\"", result); // idea passed IdeaEvaluator, including source/sourceDigest
+        var (_, ideaDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Idea, SpecificationJsonContext.Default.IdeaFrame);
+        Assert.NotNull(ideaDigest);
+    }
+
+    [Fact]
+    public void DiscoverRetryPrompt_ReanexaConteudoDeFontesAposFalha()
+    {
+        Directory.CreateDirectory(SourcesDir);
+        File.WriteAllText(Path.Combine(SourcesDir, "brief.md"), "Teams need a shared task board.");
+        SpecificationTasks.Start();
+
+        // Invalid: missing required fields (title/problem/users/desiredOutcomes) — must retry
+        // in place while still showing the ingested source material, not silently dropping it.
+        WriteIdeaProposal("""{"schema":"iao/idea/v1","title":"","problem":"","users":[],"desiredOutcomes":[],"constraints":[],"openQuestions":[]}""");
+
+        var result = SpecificationTasks.Discover(Cmd("discover"));
+
+        Assert.Contains("\"value\":\"discover\"", result);
+        Assert.Contains("brief.md", result);
+        Assert.Contains("Teams need a shared task board", result);
+    }
+
+    [Fact]
+    public void Start_FrescoAposRunAnterior_ReingereFontesEmVezDeReaproveitarAcervoAntigo()
+    {
+        Directory.CreateDirectory(SourcesDir);
+        File.WriteAllText(Path.Combine(SourcesDir, "brief.md"), "First run material.");
+        SpecificationTasks.Start();
+        WriteIdeaProposal(ValidIdeaJson);
+        SpecificationTasks.Discover(Cmd("discover")); // advances to product, "in_progress"
+
+        // A brand new run only starts once the previous one reached a terminal state — force
+        // that here the same way a completed/needs_human_decision run would, then change the
+        // sources on disk and start again.
+        SpecificationStore.SaveRun(SpecificationStore.LoadRun() with { Status = "completed", Phase = "stop" });
+        File.WriteAllText(Path.Combine(SourcesDir, "brief.md"), "Second run material, replacing the first.");
+
+        var result = SpecificationTasks.Start();
+
+        Assert.Contains("Second run material", result);
+        Assert.DoesNotContain("First run material", result);
     }
 }

@@ -248,3 +248,18 @@ public sealed record RunState(
     Dictionary<string, int> Counters,
     string? TraceLabel,
     string? TerminalReason);
+
+/// <summary>
+/// The raw source material ingested at <c>start</c> — "ideia curta ou documentos em pasta de
+/// fontes" (blueprint 0004 §2). Captured once, up front, so <c>discover</c> can ground the
+/// idea proposal in real material (product docs, call transcripts, expert notes,
+/// regulations — whatever a human curated into the sources folder) instead of the driving
+/// model inventing an idea from nothing. <see cref="Content"/> is the concatenated text
+/// <c>Harness.Engine.DocsReader.Read</c> returned (already capped at
+/// <c>HarnessConfig.DocsMaxChars</c>); <see cref="Files"/> is the list of filenames it came
+/// from, for citing provenance. Persisted (not just held in memory) so a retry after a
+/// context reset can reattach the same material instead of losing it.
+/// </summary>
+public sealed record SourceBundle(
+    string[] Files,
+    string Content);
