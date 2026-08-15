@@ -37,20 +37,20 @@ marked `validated: True` below:
   same trust level Claude already runs under here (`bypassPermissions`, also no sandbox), which
   is why it's the one used below rather than the narrower `--sandbox workspace-write`.
 
-Devin is `validated: False`: the `devin` terminal CLI isn't installed in the environment this
-was built in (only `devin-desktop`, the unrelated IDE launcher, was present) and there's no
-`DEVIN_API_KEY`/`COGNITION_API_KEY` to authenticate a real spike. The command below
-(`devin -p ... --permission-mode dangerous --respect-workspace-trust false`) is built strictly
-from public docs (docs.devin.ai/cli/reference/commands, .../permissions) — plausible, same
-shape as the other two, but nobody has actually run it end to end yet. `--respect-workspace-
-trust false` matters here specifically: docs.devin.ai's own note says non-interactive `-p` mode
-can't show the workspace-trust prompt and just fails in an untrusted directory, which is exactly
-what an unattended background run looks like the first time. There's also no `--json`/`--format
-json` for `-p` (that flag only exists on `models list`/`list`/`doctor`), so this driver's log
-stays plain text — one final response, not per-event NDJSON like Claude/Codex. Flip `validated`
-to `True` only after repeating the same kind of spike used for Codex (write a file, run a shell
-command, `git commit`, confirm none of it blocks on an approval prompt) against a real
-authenticated install.
+Devin is now `validated: True`: the `devin` terminal CLI (v3000.4.25, `devin --help`) was
+installed and authenticated (`devin auth status` → logged in) on a real machine, then spiked
+against a scratch git repo with the exact command below (`devin -p "<prompt>"
+--permission-mode dangerous --respect-workspace-trust false`) — same kind of spike used for
+Codex: the prompt asked it to write a file, run a shell command, and `git commit`. All three
+completed headlessly with exit code 0, nothing blocked on an approval prompt, and the commit
+landed in `git log`. `--respect-workspace-trust false` matters here specifically:
+docs.devin.ai's own note says non-interactive `-p` mode can't show the workspace-trust prompt
+and just fails in an untrusted directory, which is exactly what an unattended background run
+looks like the first time. There's also no `--json`/`--format json` for `-p` (that flag only
+exists on `models list`/`list`/`doctor`), so this driver's log stays plain text — one final
+response, not per-event NDJSON like Claude/Codex. Subagent delegation for the
+`=== NEW SESSION ===` marker still has no confirmed native equivalent for this driver (same
+caveat as Codex).
 """
 from __future__ import annotations
 
@@ -93,19 +93,17 @@ DRIVERS = {
     },
     "devin": {
         "label": "Devin CLI",
-        "validated": False,
+        "validated": True,
         "note": (
-            "Usaria `devin -p <corpo de .devin/workflows/<flow>.md, sem o frontmatter> "
+            "Usa `devin -p <corpo de .devin/workflows/<flow>.md, sem o frontmatter> "
             "--permission-mode dangerous --respect-workspace-trust false`. Sem flag de saída "
             "estruturada — `--format json`/`--json` só existem em `models list`/`list`/`doctor`, "
             "não em `-p`, então o log fica em texto plano (uma resposta final, sem NDJSON por "
-            "evento como Claude/Codex). NÃO validado: o binário `devin` (CLI de terminal, "
-            "separado do app Devin Desktop) não estava instalado no ambiente onde isso foi "
-            "construído, e não havia DEVIN_API_KEY/COGNITION_API_KEY para autenticar um teste "
-            "real. Comando montado só a partir da documentação pública — confirme com um "
-            "spike real (escrever arquivo, rodar shell, git commit, sem travar em aprovação) "
-            "antes de habilitar. Também não há delegação de subagente confirmada para o "
-            "`=== NEW SESSION ===`."
+            "evento como Claude/Codex). Validado manualmente contra uma instalação real "
+            "(devin 3000.4.25, autenticado): spike em repositório git descartável — escrita de "
+            "arquivo, execução de shell e `git commit` — completou de forma headless, sem travar "
+            "em prompt de aprovação, exit code 0. Assim como no Codex, não há delegação de "
+            "subagente confirmada para o `=== NEW SESSION ===`."
         ),
     },
 }
