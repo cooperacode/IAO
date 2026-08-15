@@ -279,7 +279,7 @@ and the deterministic fallback remains active.
 | State | What happens |
 |---|---|
 | `start` | Resumes by reconstructing bounded repository context if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `specs/` or interactively) |
-| `plan` | Writes up to `MaxFeatures = 10` features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`), then starts deterministic session setup |
+| `plan` | Writes up to `MaxFeatures` (harness.json `maxFeatures`, default 10) features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`), then starts deterministic session setup |
 | `bearings` | Internal compatibility command: captures the `progress.txt` tail and `git log`, then continues automatically |
 | `smoke` | Internal compatibility command: runs `./init.sh` with timeout and exit-code classification before selecting a feature |
 | `pick` | **Harness decision, no driver input.** Selects the highest-priority feature among the ones whose dependencies already passed |
@@ -300,9 +300,10 @@ turn. The resulting `implement` instruction carries the explicit clean-context
 marker, so a driver that supports the long-running-agent adapter can open a new
 session while recovering the feature context from persistent artifacts.
 
-**Budget** — `MaxFeatures = 10`, `StepsPerFeature = 8`,
-`StepBudget = 10 × 8 + 8 = 88`, passed to `HarnessHost.Run` as the effective
-`maxSteps` override for this flow.
+**Budget** — `MaxFeatures`, `StepsPerFeature` and `MaxReplans` are read from
+harness.json (`maxFeatures`, `stepsPerFeature`, `maxReplans`; defaults 10, 8, 2).
+`StepBudget = MaxFeatures × StepsPerFeature + 8` (88 by default) is passed to
+`HarnessHost.Run` as the effective `maxSteps` override for this flow.
 
 (`src/dotnet/Flows.Development/DevelopmentTasks.cs`,
 `DevelopmentTasks.Verify.cs`, `DevelopmentTasks.Handoff.cs`)

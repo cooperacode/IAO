@@ -21,21 +21,29 @@ use harness_engine::{
 use crate::{handoff, prompts, verify};
 use std::process::Command;
 
-// Local guards for this flow (harness.json's global ceiling, 12, is too short for a
-// loop). Few features + a per-feature step ceiling: bars the implement↔verify loop that
-// never closes.
-pub const MAX_FEATURES: usize = 10;
-pub const STEPS_PER_FEATURE: i32 = 8;
+// Local guards for this flow, externalized into harness.json (harness.json's global
+// max_steps ceiling, 12, is too short for a loop). Few features + a per-feature step
+// ceiling: bars the implement↔verify loop that never closes.
+pub fn max_features() -> usize {
+    harness_config::current().max_features as usize
+}
+pub fn steps_per_feature() -> i32 {
+    harness_config::current().steps_per_feature
+}
 // Ceiling on how many global plan revisions ("replan") a single run may apply — mirrors
 // .NET's DevelopmentTasks.MaxReplans. Once reached, both `replan` and the third-failure
 // escalation in `handle_verify_failure` stop offering the replan path (see both call sites
 // below): the driver keeps correcting locally via `fix_prompt` instead.
-pub const MAX_REPLANS: i32 = 2;
+pub fn max_replans() -> i32 {
+    harness_config::current().max_replans
+}
 
 // Effective step ceiling passed to harness_host (override of the global one): slack for
-// the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus
+// the worst case of max_features() features spending steps_per_feature() each, plus
 // start/plan and the boundaries.
-pub const STEP_BUDGET: i32 = MAX_FEATURES as i32 * STEPS_PER_FEATURE + 8;
+pub fn step_budget() -> i32 {
+    max_features() as i32 * steps_per_feature() + 8
+}
 
 // state_store::Data keys used by this module and by prompts.rs/handoff.rs — a const
 // instead of a repeated string literal, so a typo in any of these files becomes a
@@ -121,7 +129,7 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     // Feature ceiling: keeps the highest-priority ones (lowest number).
     let mut sorted = features;
     sorted.sort_by_key(|f| (f.priority, f.id));
-    let mut capped: Vec<_> = sorted.into_iter().take(MAX_FEATURES).collect();
+    let mut capped: Vec<_> = sorted.into_iter().take(max_features()).collect();
 
     // Sanitize depends_on: a surviving feature may depend on an id cut above, which would
     // block it forever (never "ready") with no way for the driver to know — the harness
@@ -165,8 +173,8 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 /// `feature_store::apply_revision` re-checks the invariants it alone enforces and performs
 /// the write.
 pub fn replan(_envelope: Option<&Envelope>) -> String {
-    if plan_revision_store::revision_count() >= MAX_REPLANS {
-        return stop(&format!("global replan limit ({MAX_REPLANS})"));
+    if plan_revision_store::revision_count() >= max_replans() {
+        return stop(&format!("global replan limit ({})", max_replans()));
     }
 
     let revision = match plan_revision_store::read_proposal() {
@@ -174,14 +182,14 @@ pub fn replan(_envelope: Option<&Envelope>) -> String {
         None => return prompts::replan_prompt("No readable replan proposal was found."),
     };
 
-    let remaining_steps = (STEP_BUDGET - state_store::load().step).max(0);
+    let remaining_steps = (step_budget() - state_store::load().step).max(0);
     let evaluation = plan_revision_evaluator::evaluate(
         &feature_store::load(),
         &revision,
         &plan_observation_store::load(),
-        MAX_FEATURES,
+        max_features(),
         remaining_steps,
-        STEPS_PER_FEATURE,
+        steps_per_feature(),
     );
     if !evaluation.passed() {
         let errors = evaluation
@@ -193,7 +201,7 @@ pub fn replan(_envelope: Option<&Envelope>) -> String {
         return prompts::replan_prompt(&format!("The deterministic plan evaluator rejected the proposal: {errors}"));
     }
 
-    let result = feature_store::apply_revision(&revision, MAX_FEATURES);
+    let result = feature_store::apply_revision(&revision, max_features());
     if !result.success {
         return prompts::replan_prompt(&format!("The proposed revision was rejected: {}", result.error));
     }
@@ -348,9 +356,10 @@ fn over_feature_budget() -> bool {
     let steps: i32 = state(FEATURE_STEPS_KEY).parse().unwrap_or(0) + 1;
     state_store::set(FEATURE_STEPS_KEY, &steps.to_string());
 
-    if steps > STEPS_PER_FEATURE {
+    if steps > steps_per_feature() {
+        let limit = steps_per_feature();
         harness_log::error(&format!(
-            "[dev] feature '{}' exceeded {STEPS_PER_FEATURE} steps; stopping.",
+            "[dev] feature '{}' exceeded {limit} steps; stopping.",
             state(CURRENT_FEATURE_TITLE_KEY)
         ));
         return true;
@@ -367,7 +376,7 @@ fn handle_verify_failure(failure: &str) -> String {
     let failures: i32 = state(VERIFY_FAILURES_KEY).parse().unwrap_or(0) + 1;
     state_store::set(VERIFY_FAILURES_KEY, &failures.to_string());
 
-    if failures < 3 || plan_revision_store::revision_count() >= MAX_REPLANS {
+    if failures < 3 || plan_revision_store::revision_count() >= max_replans() {
         return prompts::fix_prompt(Some(failure));
     }
 
@@ -739,8 +748,8 @@ mod tests {
 
         // id 1 (prioridade 1, a melhor) sobrevive ao corte; depende do id 2, cuja
         // priority (1000) is the worst of all — guaranteed to be cut by the cutoff at
-        // MAX_FEATURES. Os "extras" preenchem as vagas restantes.
-        let extras: String = (3..3 + MAX_FEATURES - 1)
+        // max_features(). Os "extras" preenchem as vagas restantes.
+        let extras: String = (3..3 + max_features() - 1)
             .map(|i| format!(r#"{{"id":{i},"title":"extra{i}","priority":{i}}}"#))
             .collect::<Vec<_>>()
             .join(",");
@@ -1087,7 +1096,7 @@ mod tests {
         let _iso = Isolated::new();
 
         plan_default();
-        for _ in 0..MAX_REPLANS {
+        for _ in 0..max_replans() {
             let approval = harness_engine::plan_revision_evaluator::PlanRevisionEvaluation {
                 verdict: harness_engine::plan_revision_evaluator::PlanRevisionVerdict::Approve,
                 errors: Vec::new(),
@@ -1114,7 +1123,7 @@ mod tests {
         let _iso = Isolated::new();
 
         advance_to_verify();
-        for _ in 0..MAX_REPLANS {
+        for _ in 0..max_replans() {
             let approval = harness_engine::plan_revision_evaluator::PlanRevisionEvaluation {
                 verdict: harness_engine::plan_revision_evaluator::PlanRevisionVerdict::Approve,
                 errors: Vec::new(),
@@ -1146,7 +1155,7 @@ mod tests {
 
         plan_default();
         bearings(Some(&cmd("bearings", vec!["ok"]))); // zera para 1
-        state_store::set(FEATURE_STEPS_KEY, &STEPS_PER_FEATURE.to_string()); // no limite
+        state_store::set(FEATURE_STEPS_KEY, &steps_per_feature().to_string()); // no limite
 
         let result = smoke(Some(&cmd("smoke", vec!["ok"]))); // next bump goes over
 

@@ -188,10 +188,11 @@ source, not an execution directory.
 | Go | `src/go/run-development-go.sh` | `src/go/run-checks-go.sh` |
 
 The `harness.json` file configures global limits such as `maxSteps`,
-`maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`. The timeout is
-always enabled: zero or negative values fall back to 10 minutes. A timeout stops the
-current invocation, but an explicit `start` can resume or restart the run; budget stops
-remain terminal across later invocations.
+`maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`, plus the
+Development flow's local guards `maxFeatures`, `stepsPerFeature`, and `maxReplans`
+(defaults 10, 8, and 2). The timeout is always enabled: zero or negative values fall
+back to 10 minutes. A timeout stops the current invocation, but an explicit `start`
+can resume or restart the run; budget stops remain terminal across later invocations.
 
 For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
 `HARNESS_VERIFY_CMD` can override the values returned by the initializer, keeping
@@ -252,7 +253,7 @@ Intended IDE-agent usage:
 Build a package (replace the engine and target as needed):
 
 ```bash
-./package.sh --engine python --ide codex
+./package.sh --engine python
 cd dist/flows-python-v1.0.0
 ./run-development.sh '{ "type": "text", "value": "start" }'
 ```

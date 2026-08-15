@@ -41,20 +41,29 @@ from harness_engine import (
 from harness_engine.envelope import Envelope
 from harness_engine.run_config_store import RunConfig
 
-# This flow's local guards (the global harness.json ceiling, 12, is too short for a loop).
-# Few features + a PER-FEATURE step ceiling: bars an implement<->verify loop that never closes.
-MAX_FEATURES = 10
-STEPS_PER_FEATURE = 8
+# This flow's local guards, externalized into harness.json (the global harness.json
+# max_steps ceiling, 12, is too short for a loop). Few features + a PER-FEATURE step
+# ceiling: bars an implement<->verify loop that never closes.
+def MAX_FEATURES() -> int:
+    return harness_config.current().max_features
+
+
+def STEPS_PER_FEATURE() -> int:
+    return harness_config.current().steps_per_feature
+
 
 # Ceiling on how many times the harness will accept a global plan revision within one run
 # (see `replan`/`_handle_verify_failure`) — a driver stuck oscillating between plans must
 # still terminate rather than loop forever.
-MAX_REPLANS = 2
+def MAX_REPLANS() -> int:
+    return harness_config.current().max_replans
+
 
 # Effective step ceiling passed to harness_host (override of the global one): slack for
-# the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus start/plan
-# and the boundaries.
-STEP_BUDGET = MAX_FEATURES * STEPS_PER_FEATURE + 8
+# the worst case of MAX_FEATURES() features spending STEPS_PER_FEATURE() each, plus
+# start/plan and the boundaries.
+def STEP_BUDGET() -> int:
+    return MAX_FEATURES() * STEPS_PER_FEATURE() + 8
 
 
 def _state(key: str) -> str:
@@ -109,7 +118,7 @@ def plan(envelope: Envelope | None) -> str:
         return prompts.plan_retry_prompt()  # didn't parse → re-request (corrective loop)
 
     # Feature ceiling: keeps the highest-priority ones (lowest number).
-    capped = sorted(features, key=lambda f: (f.priority, f.id))[:MAX_FEATURES]
+    capped = sorted(features, key=lambda f: (f.priority, f.id))[:MAX_FEATURES()]
 
     # Sanitizes depends_on: a surviving feature may depend on an id cut above, which would
     # block it forever (never "ready") with no way for the driver to know — the harness
@@ -144,22 +153,22 @@ def replan(envelope: Envelope | None) -> str:
     `plan`/`state_keys.PLAN_FILE_PATH`). Two independent gates must both clear: the
     deterministic evidence/invariant evaluator, then feature_store's hard domain
     invariants (passed features immutable, dependency graph valid) — either can reject."""
-    if plan_revision_store.revision_count() >= MAX_REPLANS:
-        return _stop(f"global replan limit ({MAX_REPLANS})")
+    if plan_revision_store.revision_count() >= MAX_REPLANS():
+        return _stop(f"global replan limit ({MAX_REPLANS()})")
 
     revision = plan_revision_store.read_proposal()
     if revision is None:
         return prompts.replan_prompt("No readable replan proposal was found.")
 
     evaluation = plan_revision_evaluator.evaluate(
-        feature_store.load(), revision, plan_observation_store.load(), MAX_FEATURES,
-        max(0, STEP_BUDGET - state_store.load().step), STEPS_PER_FEATURE,
+        feature_store.load(), revision, plan_observation_store.load(), MAX_FEATURES(),
+        max(0, STEP_BUDGET() - state_store.load().step), STEPS_PER_FEATURE(),
     )
     if not evaluation.passed:
         errors = " | ".join(f"{e.code}: {e.message}" for e in evaluation.errors)
         return prompts.replan_prompt(f"The deterministic plan evaluator rejected the proposal: {errors}")
 
-    result = feature_store.apply_revision(revision, MAX_FEATURES)
+    result = feature_store.apply_revision(revision, MAX_FEATURES())
     if not result.success:
         return prompts.replan_prompt(f"The proposed revision was rejected: {result.error}")
 
@@ -701,9 +710,9 @@ def _over_feature_budget() -> bool:
     steps = _int_or(_state(state_keys.FEATURE_STEPS), 0) + 1
     state_store.set(state_keys.FEATURE_STEPS, str(steps))
 
-    if steps > STEPS_PER_FEATURE:
+    if steps > STEPS_PER_FEATURE():
         harness_log.error(
-            f"[dev] feature '{_state(state_keys.CURRENT_FEATURE_TITLE)}' exceeded {STEPS_PER_FEATURE} "
+            f"[dev] feature '{_state(state_keys.CURRENT_FEATURE_TITLE)}' exceeded {STEPS_PER_FEATURE()} "
             "steps; stopping.",)
         return True
     return False
@@ -723,7 +732,7 @@ def _handle_verify_failure(failure: str) -> str:
     failures = _int_or(_state(state_keys.VERIFY_FAILURES), 0) + 1
     state_store.set(state_keys.VERIFY_FAILURES, str(failures))
 
-    if failures < 3 or plan_revision_store.revision_count() >= MAX_REPLANS:
+    if failures < 3 or plan_revision_store.revision_count() >= MAX_REPLANS():
         return prompts.fix_prompt(failure)
 
     try:

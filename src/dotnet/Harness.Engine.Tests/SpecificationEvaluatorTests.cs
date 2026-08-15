@@ -307,6 +307,48 @@ public class SpecificationEvaluatorTests
         Assert.Contains("SRS_DATA_RULE_REQUIREMENT_DANGLING", codes);
     }
 
+    // Regression coverage for the production crash this fixes: a DataRule (or any of the
+    // other free-text fields RenderSrs renders) with an empty/null value used to sail through
+    // evaluation, get accepted, and only blow up much later — as a NullReferenceException
+    // inside SpecificationRenderer.Escape — when `approve` tried to publish it. The evaluator
+    // is the gate that's supposed to catch structurally-invalid documents before acceptance
+    // (blueprint 0004 §5), so an empty required text field belongs here, not just behind
+    // Escape()'s defensive null check.
+    [Fact]
+    public void EvaluateSrs_RegraDeDadosSemTexto_EhRejeitada()
+    {
+        var srs = ValidSrs("sha256:prd") with
+        {
+            DataRules = [new DataRule("DR-001", ["RF-001"], null!)],
+        };
+
+        var result = SpecificationEvaluator.EvaluateSrs(srs, "sha256:prd", ["OBJ-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "SRS_DATA_RULE_TEXT_MISSING");
+    }
+
+    [Fact]
+    public void EvaluateSrs_CamposDeTextoVaziosEmOutrosRegistros_SaoRejeitados()
+    {
+        var srs = ValidSrs("sha256:prd") with
+        {
+            FunctionalRequirements = [new Requirement("RF-001", ["OBJ-001"], "  ", [], ["AC-001"])],
+            AcceptanceCriteria = [new AcceptanceCriterion("AC-001", ["RF-001"], "", "when", "then")],
+            Interfaces = [new InterfaceContract("IF-001", ["RF-001"], "name", "")],
+            Delivery = new DeliveryContract("", "strategy", true),
+        };
+
+        var result = SpecificationEvaluator.EvaluateSrs(srs, "sha256:prd", ["OBJ-001"]);
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("SRS_REQUIREMENT_STATEMENT_MISSING", codes);
+        Assert.Contains("SRS_ACCEPTANCE_CRITERION_TEXT_MISSING", codes);
+        Assert.Contains("SRS_INTERFACE_TEXT_MISSING", codes);
+        Assert.Contains("SRS_DELIVERY_TEXT_MISSING", codes);
+    }
+
     // ---- SddEvaluator ----
 
     private static SoftwareDesignDocument ValidSdd(string srsDigest) => new(

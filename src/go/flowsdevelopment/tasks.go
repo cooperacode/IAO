@@ -23,22 +23,21 @@ import (
 	engine "github.com/cooperacode/IAO/src/go/harnessengine"
 )
 
-const (
-	// MaxFeatures/StepsPerFeature are this flow's local guards (the global harness.json
-	// ceiling, 12, is too short for a loop). Few features + a PER-FEATURE step ceiling bars
-	// an implement<->verify loop that never closes.
-	MaxFeatures     = 10
-	StepsPerFeature = 8
-	// StepBudget is the effective step ceiling passed to harnessengine.Run (override of the
-	// global one): slack for the worst case of MaxFeatures features spending StepsPerFeature
-	// each, plus start/plan and the boundaries.
-	StepBudget = MaxFeatures*StepsPerFeature + 8
+// MaxFeatures/StepsPerFeature are this flow's local guards, externalized into harness.json
+// (the global harness.json maxSteps ceiling, 12, is too short for a loop). Few features + a
+// PER-FEATURE step ceiling bars an implement<->verify loop that never closes.
+func MaxFeatures() int     { return engine.CurrentConfig().MaxFeatures }
+func StepsPerFeature() int { return engine.CurrentConfig().StepsPerFeature }
 
-	// MaxReplans caps how many global plan revisions one run may apply — Replan() itself
-	// enforces this (via engine.PlanRevisionCount), and handleVerifyFailure stops escalating
-	// to a replan proposal once the cap is reached (falls back to the local fix loop).
-	MaxReplans = 2
-)
+// StepBudget is the effective step ceiling passed to harnessengine.Run (override of the
+// global one): slack for the worst case of MaxFeatures features spending StepsPerFeature
+// each, plus start/plan and the boundaries.
+func StepBudget() int { return MaxFeatures()*StepsPerFeature() + 8 }
+
+// MaxReplans caps how many global plan revisions one run may apply — Replan() itself
+// enforces this (via engine.PlanRevisionCount), and handleVerifyFailure stops escalating to
+// a replan proposal once the cap is reached (falls back to the local fix loop).
+func MaxReplans() int { return engine.CurrentConfig().MaxReplans }
 
 // State keys used by this flow's task functions (tasks.go/prompts.go/verify.go/handoff.go).
 const (
@@ -123,7 +122,7 @@ func Plan(envelope *engine.Envelope) string {
 	}
 
 	// Feature ceiling: keeps the highest-priority ones (lowest number).
-	capped := capFeatures(features, MaxFeatures)
+	capped := capFeatures(features, MaxFeatures())
 
 	// Sanitizes DependsOn: a surviving feature may depend on an id cut above, which would
 	// block it forever (never "ready") with no way for the driver to know — the harness
@@ -168,8 +167,8 @@ func Plan(envelope *engine.Envelope) string {
 // revision is accepted: PlanRevisionEvaluator judges evidence/invariants, then ApplyRevision
 // performs the actual replacement only if the evaluator approved it.
 func Replan(envelope *engine.Envelope) string {
-	if engine.PlanRevisionCount() >= MaxReplans {
-		return stopFlow(fmt.Sprintf("global replan limit (%d)", MaxReplans))
+	if engine.PlanRevisionCount() >= MaxReplans() {
+		return stopFlow(fmt.Sprintf("global replan limit (%d)", MaxReplans()))
 	}
 
 	revision := engine.ReadPlanRevisionProposal()
@@ -177,10 +176,10 @@ func Replan(envelope *engine.Envelope) string {
 		return ReplanPrompt("No readable replan proposal was found.")
 	}
 
-	remainingSteps := max(0, StepBudget-engine.LoadState().Step)
+	remainingSteps := max(0, StepBudget()-engine.LoadState().Step)
 	evaluation := engine.EvaluatePlanRevision(
-		engine.LoadFeatures(), *revision, engine.LoadPlanObservations(), MaxFeatures,
-		remainingSteps, StepsPerFeature)
+		engine.LoadFeatures(), *revision, engine.LoadPlanObservations(), MaxFeatures(),
+		remainingSteps, StepsPerFeature())
 	if !evaluation.Passed() {
 		parts := make([]string, len(evaluation.Errors))
 		for i, e := range evaluation.Errors {
@@ -189,7 +188,7 @@ func Replan(envelope *engine.Envelope) string {
 		return ReplanPrompt(fmt.Sprintf("The deterministic plan evaluator rejected the proposal: %s", strings.Join(parts, " | ")))
 	}
 
-	result := engine.ApplyRevision(*revision, MaxFeatures)
+	result := engine.ApplyRevision(*revision, MaxFeatures())
 	if !result.Success {
 		return ReplanPrompt(fmt.Sprintf("The proposed revision was rejected: %s", result.Error))
 	}
@@ -335,8 +334,8 @@ func overFeatureBudget() bool {
 	steps++
 	engine.SetState(featureStepsKey, strconv.Itoa(steps))
 
-	if steps > StepsPerFeature {
-		engine.LogError(fmt.Sprintf("[dev] feature '%s' exceeded %d steps; stopping.", state(currentFeatureTitleKey), StepsPerFeature))
+	if steps > StepsPerFeature() {
+		engine.LogError(fmt.Sprintf("[dev] feature '%s' exceeded %d steps; stopping.", state(currentFeatureTitleKey), StepsPerFeature()))
 		return true
 	}
 	return false
@@ -360,7 +359,7 @@ func handleVerifyFailure(failure string) string {
 	failures++
 	engine.SetState(verifyFailuresKey, strconv.Itoa(failures))
 
-	if failures < 3 || engine.PlanRevisionCount() >= MaxReplans {
+	if failures < 3 || engine.PlanRevisionCount() >= MaxReplans() {
 		return FixPrompt(failure)
 	}
 

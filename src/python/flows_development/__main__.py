@@ -45,7 +45,7 @@ def main(argv: list[str]) -> int:
         trace_snapshot_path=".harness/last-development.trace.jsonl",
         state_snapshot_path=".harness/last-development.state.json",
         validators=VALIDATORS,
-        max_steps=tasks.STEP_BUDGET,
+        max_steps=tasks.STEP_BUDGET(),
         should_reset_on_start=lambda: feature_store.pending_count() == 0,
     )
 

@@ -21,6 +21,16 @@ organized using categories such as `Added`, `Changed`, `Fixed`, and `Breaking`.
 
 ## [Unreleased]
 
+### Changed
+
+- `package.sh` no longer asks which IDE to package for (`--ide` is now a deprecated,
+  ignored no-op kept for backward compatibility): every generated package bundles the
+  adapter/prompt and approval config for all four supported IDEs (Claude Code, GitHub
+  Copilot, Devin, Codex), and `.harness/START-HERE.md` documents getting-started steps
+  for each of them.
+- `package.sh` gained a branded ASCII-logo banner and redesigned interactive menus
+  (colored, numbered, with per-option descriptions) for the engine/OS selection.
+
 ## [0.3.0] - 2026-08-05
 
 ### Fixed

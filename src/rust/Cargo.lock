@@ -144,6 +144,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "flows_specification"
+version = "0.5.0"
+dependencies = [
+ "chrono",
+ "harness_engine",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"

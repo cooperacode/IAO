@@ -164,8 +164,22 @@ public static class SpecificationRenderer
     // Backslash-escapes the Markdown special characters that free-text PRD fields could
     // contain, so a title/description with e.g. "*bold*" or "[link](x)" in it renders as
     // literal text instead of being interpreted as Markdown syntax.
-    private static string Escape(string text)
+    //
+    // `text` is declared non-nullable, but System.Text.Json happily assigns null to a
+    // non-nullable reference-typed record property when the source JSON has that field as
+    // `null` (or omits it) — nullable reference types are compile-time-only and are not
+    // enforced by deserialization. An accepted document with e.g. a DataRule whose "rule" is
+    // null therefore reaches this method at render/publish time, well past the evaluator gate.
+    // The evaluators should reject that kind of document before it is ever accepted (see
+    // SpecificationEvaluator.EvaluateSrs's *_TEXT_MISSING checks), but this is the last line of
+    // defense: a renderer must never take down the whole harness turn over one empty field in
+    // an otherwise-valid document, so treat a null the same as an empty string instead of
+    // letting `text.Length` throw a NullReferenceException.
+    private static string Escape(string? text)
     {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
         var sb = new StringBuilder(text.Length);
         foreach (var c in text)
         {

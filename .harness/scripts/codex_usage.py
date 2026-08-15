@@ -34,8 +34,8 @@ from typing import Iterable
 UNKNOWN_MODEL = "<unknown>"
 # Source: model pages at https://developers.openai.com/api/docs/models/*
 # (gpt-5.4, gpt-5.4-pro, gpt-5.5, gpt-5.6-sol/terra/luna), checked on
-# 2026-07-22: "prompts with >272K input tokens are priced at 2x input and
-# 1.5x output". The pricing table does not show this number explicitly.
+# 2026-08-14: prompts with >272K input tokens are priced at 2x input and
+# 1.5x output where specified by the model.
 LONG_CONTEXT_THRESHOLD = 272_000
 
 
@@ -50,7 +50,7 @@ class ModelPrice:
 # ---------------------------------------------------------------------------
 # PRICING TABLE -- USD per 1,000,000 tokens.
 # Source: https://developers.openai.com/api/docs/pricing, checked on
-# 2026-07-20. Update whenever OpenAI changes prices.
+# 2026-08-14. Update whenever OpenAI changes prices.
 #
 # For sessions authenticated via ChatGPT, this is an API-like estimate, not
 # an actual billed-cost reconciliation. Models with no public pricing are
@@ -60,8 +60,8 @@ PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
     "standard": {
         "short": {
             "gpt-5.6-sol": ModelPrice(5.00, 0.50, 30.00, 6.25),
-            "gpt-5.6-terra": ModelPrice(2.50, 0.25, 15.00, 3.125),
-            "gpt-5.6-luna": ModelPrice(1.00, 0.10, 6.00, 1.25),
+            "gpt-5.6-terra": ModelPrice(2.00, 0.20, 12.00, 2.50),
+            "gpt-5.6-luna": ModelPrice(0.20, 0.02, 1.20, 0.25),
             "gpt-5.5": ModelPrice(5.00, 0.50, 30.00),
             "gpt-5.5-pro": ModelPrice(30.00, None, 180.00),
             "gpt-5.4": ModelPrice(2.50, 0.25, 15.00),
@@ -73,8 +73,8 @@ PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
         },
         "long": {
             "gpt-5.6-sol": ModelPrice(10.00, 1.00, 45.00, 12.50),
-            "gpt-5.6-terra": ModelPrice(5.00, 0.50, 22.50, 6.25),
-            "gpt-5.6-luna": ModelPrice(2.00, 0.20, 9.00, 2.50),
+            "gpt-5.6-terra": ModelPrice(4.00, 0.40, 18.00, 5.00),
+            "gpt-5.6-luna": ModelPrice(0.40, 0.04, 1.80, 0.50),
             "gpt-5.5": ModelPrice(10.00, 1.00, 45.00),
             "gpt-5.5-pro": ModelPrice(60.00, None, 270.00),
             "gpt-5.4": ModelPrice(5.00, 0.50, 22.50),
@@ -84,8 +84,8 @@ PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
     "batch": {
         "short": {
             "gpt-5.6-sol": ModelPrice(2.50, 0.25, 15.00, 3.125),
-            "gpt-5.6-terra": ModelPrice(1.25, 0.125, 7.50, 1.5625),
-            "gpt-5.6-luna": ModelPrice(0.50, 0.05, 3.00, 0.625),
+            "gpt-5.6-terra": ModelPrice(1.00, 0.10, 6.00, 1.25),
+            "gpt-5.6-luna": ModelPrice(0.10, 0.01, 0.60, 0.125),
             "gpt-5.5": ModelPrice(2.50, 0.25, 15.00),
             "gpt-5.5-pro": ModelPrice(15.00, None, 90.00),
             "gpt-5.4": ModelPrice(1.25, 0.13, 7.50),
@@ -95,8 +95,8 @@ PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
         },
         "long": {
             "gpt-5.6-sol": ModelPrice(5.00, 0.50, 22.50, 6.25),
-            "gpt-5.6-terra": ModelPrice(2.50, 0.25, 11.25, 3.125),
-            "gpt-5.6-luna": ModelPrice(1.00, 0.10, 4.50, 1.25),
+            "gpt-5.6-terra": ModelPrice(2.00, 0.20, 9.00, 2.50),
+            "gpt-5.6-luna": ModelPrice(0.20, 0.02, 0.90, 0.25),
             "gpt-5.5": ModelPrice(5.00, 0.50, 22.50),
             "gpt-5.4": ModelPrice(2.50, 0.25, 11.25),
             "gpt-5.4-pro": ModelPrice(30.00, None, 135.00),
@@ -105,8 +105,8 @@ PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
     "flex": {
         "short": {
             "gpt-5.6-sol": ModelPrice(2.50, 0.25, 15.00, 3.125),
-            "gpt-5.6-terra": ModelPrice(1.25, 0.125, 7.50, 1.5625),
-            "gpt-5.6-luna": ModelPrice(0.50, 0.05, 3.00, 0.625),
+            "gpt-5.6-terra": ModelPrice(1.00, 0.10, 6.00, 1.25),
+            "gpt-5.6-luna": ModelPrice(0.10, 0.01, 0.60, 0.125),
             "gpt-5.5": ModelPrice(2.50, 0.25, 15.00),
             "gpt-5.5-pro": ModelPrice(15.00, None, 90.00),
             "gpt-5.4": ModelPrice(1.25, 0.13, 7.50),
@@ -116,21 +116,28 @@ PRICING: dict[str, dict[str, dict[str, ModelPrice]]] = {
         },
         "long": {
             "gpt-5.6-sol": ModelPrice(5.00, 0.50, 22.50, 6.25),
-            "gpt-5.6-terra": ModelPrice(2.50, 0.25, 11.25, 3.125),
-            "gpt-5.6-luna": ModelPrice(1.00, 0.10, 4.50, 1.25),
+            "gpt-5.6-terra": ModelPrice(2.00, 0.20, 9.00, 2.50),
+            "gpt-5.6-luna": ModelPrice(0.20, 0.02, 0.90, 0.25),
             "gpt-5.5": ModelPrice(5.00, 0.50, 22.50),
             "gpt-5.4": ModelPrice(2.50, 0.25, 11.25),
         },
     },
+    # OpenAI renamed Priority processing to Fast mode on 2026-07-30;
+    # keep this key for CLI/backward compatibility.
     "priority": {
         "short": {
             "gpt-5.6-sol": ModelPrice(10.00, 1.00, 60.00, 12.50),
-            "gpt-5.6-terra": ModelPrice(5.00, 0.50, 30.00, 6.25),
-            "gpt-5.6-luna": ModelPrice(2.00, 0.20, 12.00, 2.50),
+            "gpt-5.6-terra": ModelPrice(4.00, 0.40, 24.00, 5.00),
+            "gpt-5.6-luna": ModelPrice(0.40, 0.04, 2.40, 0.50),
             "gpt-5.5": ModelPrice(12.50, 1.25, 75.00),
             "gpt-5.4": ModelPrice(5.00, 0.50, 30.00),
             "gpt-5.4-mini": ModelPrice(1.50, 0.15, 9.00),
             "gpt-5.3-codex": ModelPrice(3.50, 0.35, 28.00),
+        },
+        "long": {
+            "gpt-5.6-sol": ModelPrice(20.00, 2.00, 90.00, 25.00),
+            "gpt-5.6-terra": ModelPrice(8.00, 0.80, 36.00, 10.00),
+            "gpt-5.6-luna": ModelPrice(0.80, 0.08, 3.60, 1.00),
         },
     },
 }

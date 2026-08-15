@@ -39,7 +39,7 @@ func main() {
 	// ShouldResetOnStart: a "start" also arrives on the per-feature hard reset (a fresh
 	// session reopening a run in progress) — it's only a genuinely new run when there's no
 	// pending feature.
-	maxSteps := StepBudget
+	maxSteps := StepBudget()
 	shouldResetOnStart := func() bool { return engine.PendingFeatureCount() == 0 }
 
 	code := engine.Run(args, tasks, engine.RunOptions{

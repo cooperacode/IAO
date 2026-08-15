@@ -42,6 +42,15 @@ pub struct HarnessConfig {
     pub context_reset_threshold: f64,
     #[serde(rename = "contextFallbackFeatures", default)]
     pub context_fallback_features: i32,
+    // max_features/steps_per_feature/max_replans are the Development flow's local guards:
+    // few features + a per-feature step ceiling bars an implement<->verify loop that never
+    // closes; max_replans caps how many global plan revisions one run may apply.
+    #[serde(rename = "maxFeatures", default)]
+    pub max_features: i32,
+    #[serde(rename = "stepsPerFeature", default)]
+    pub steps_per_feature: i32,
+    #[serde(rename = "maxReplans", default)]
+    pub max_replans: i32,
 }
 
 // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
@@ -57,6 +66,9 @@ pub fn default_config() -> HarnessConfig {
         context_reset_mode: "adaptive".to_string(),
         context_reset_threshold: 0.70,
         context_fallback_features: 1,
+        max_features: 10,
+        steps_per_feature: 8,
+        max_replans: 2,
     }
 }
 
@@ -166,6 +178,21 @@ fn normalize(config: HarnessConfig) -> HarnessConfig {
         } else {
             default.context_fallback_features
         },
+        max_features: if config.max_features > 0 {
+            config.max_features
+        } else {
+            default.max_features
+        },
+        steps_per_feature: if config.steps_per_feature > 0 {
+            config.steps_per_feature
+        } else {
+            default.steps_per_feature
+        },
+        max_replans: if config.max_replans > 0 {
+            config.max_replans
+        } else {
+            default.max_replans
+        },
     }
 }
 
@@ -214,6 +241,42 @@ mod tests {
         assert_eq!(config.max_instruction_chars, 0);
         assert_eq!(config.docs_folder, "specs");
         assert_eq!(config.timeout_ms, 10 * 60_000);
+        assert_eq!(config.max_features, 10);
+        assert_eq!(config.steps_per_feature, 8);
+        assert_eq!(config.max_replans, 2);
+    }
+
+    #[test]
+    fn load_com_guardas_do_development_le_e_normaliza() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+
+        std::fs::write(
+            "harness.json",
+            r#"{"maxFeatures":5,"stepsPerFeature":4,"maxReplans":1}"#,
+        )
+        .unwrap();
+
+        let config = load();
+        assert_eq!(config.max_features, 5);
+        assert_eq!(config.steps_per_feature, 4);
+        assert_eq!(config.max_replans, 1);
+
+        // Non-positive values fall back to the default — same tolerance as the rest of the
+        // config: it's optional input, it can't bring down the run.
+        std::fs::write(
+            "harness.json",
+            r#"{"maxFeatures":0,"stepsPerFeature":-1,"maxReplans":0}"#,
+        )
+        .unwrap();
+
+        let fallback = load();
+        assert_eq!(fallback.max_features, default_config().max_features);
+        assert_eq!(
+            fallback.steps_per_feature,
+            default_config().steps_per_feature
+        );
+        assert_eq!(fallback.max_replans, default_config().max_replans);
     }
 
     #[test]

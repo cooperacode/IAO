@@ -22,6 +22,12 @@ type HarnessConfig struct {
 	ContextResetMode        string  `json:"contextResetMode"`
 	ContextResetThreshold   float64 `json:"contextResetThreshold"`
 	ContextFallbackFeatures int     `json:"contextFallbackFeatures"`
+	// MaxFeatures/StepsPerFeature/MaxReplans are the Development flow's local guards: few
+	// features + a per-feature step ceiling bars an implement<->verify loop that never
+	// closes; MaxReplans caps how many global plan revisions one run may apply.
+	MaxFeatures     int `json:"maxFeatures"`
+	StepsPerFeature int `json:"stepsPerFeature"`
+	MaxReplans      int `json:"maxReplans"`
 }
 
 const harnessConfigPath = "harness.json"
@@ -52,6 +58,9 @@ func DefaultHarnessConfig() HarnessConfig {
 		ContextResetMode:        "adaptive",
 		ContextResetThreshold:   0.70,
 		ContextFallbackFeatures: 1,
+		MaxFeatures:             10,
+		StepsPerFeature:         8,
+		MaxReplans:              2,
 	}
 }
 
@@ -155,6 +164,15 @@ func normalizeConfig(config HarnessConfig) HarnessConfig {
 	}
 	if config.ContextFallbackFeatures <= 0 {
 		config.ContextFallbackFeatures = def.ContextFallbackFeatures
+	}
+	if config.MaxFeatures <= 0 {
+		config.MaxFeatures = def.MaxFeatures
+	}
+	if config.StepsPerFeature <= 0 {
+		config.StepsPerFeature = def.StepsPerFeature
+	}
+	if config.MaxReplans <= 0 {
+		config.MaxReplans = def.MaxReplans
 	}
 
 	return config

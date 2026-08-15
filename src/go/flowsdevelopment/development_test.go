@@ -582,7 +582,7 @@ func TestPerFeatureGuard_ExceedingCeiling_Stops(t *testing.T) {
 	targetDir, _ := isolate(t)
 	planWith(targetDir)
 	Bearings(cmd("bearings", "ok")) // resets to 1
-	engine.SetState(featureStepsKey, fmt.Sprintf("%d", StepsPerFeature))
+	engine.SetState(featureStepsKey, fmt.Sprintf("%d", StepsPerFeature()))
 
 	result := Smoke(cmd("smoke", "ok")) // next bump exceeds
 
@@ -629,7 +629,7 @@ func TestPlan_CappingMaxFeatures_RemovesDependencyOnCutId(t *testing.T) {
 	// is the worst of all — guaranteed to be cut by the MaxFeatures cap. The "extras" fill
 	// the remaining slots with intermediate priorities.
 	var extras strings.Builder
-	for i := 3; i < 3+MaxFeatures-1; i++ {
+	for i := 3; i < 3+MaxFeatures()-1; i++ {
 		if extras.Len() > 0 {
 			extras.WriteString(",")
 		}

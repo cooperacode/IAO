@@ -158,6 +158,28 @@ public class SpecificationRendererTests
         Assert.Contains("## Data Rules\n_None._", rendered);
     }
 
+    // Regression test for a real production crash: a `DataRule.Rule` that was `null` at
+    // runtime (System.Text.Json assigns null to a non-nullable string property when the
+    // source JSON has that field as `null`, since nullable reference types are not enforced
+    // by deserialization) reached RenderSrs during `approve`/publish and threw a
+    // NullReferenceException inside Escape(), which the harness recorded as a "fault" and then
+    // refused every subsequent turn for that run. The evaluator should reject a document like
+    // this before it is ever accepted (see SpecificationEvaluatorTests' *_TEXT_MISSING cases),
+    // but the renderer itself must never crash the whole harness turn over one empty field —
+    // this asserts the null is rendered as empty text instead of thrown.
+    [Fact]
+    public void RenderSrs_CampoDeTextoNulo_NaoLancaExcecao()
+    {
+        var srs = SampleSrs() with
+        {
+            DataRules = [new DataRule("DR-001", ["RF-001"], null!)],
+        };
+
+        var rendered = SpecificationRenderer.RenderSrs(srs);
+
+        Assert.Contains("**DR-001**", rendered);
+    }
+
     // ---- RenderSdd (20-software-design-document.md) ----
 
     private static SoftwareDesignDocument SampleSdd() => new(

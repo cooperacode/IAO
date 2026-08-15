@@ -9,20 +9,21 @@ namespace Flows.Development;
 public static partial class DevelopmentTasks
 {
     /// <summary>
-    /// Local guards for this flow (harness.json's global ceiling, 12, is too short for a
-    /// loop). Few features + a per-feature step ceiling: bars the implement↔verify loop
-    /// that never closes.
+    /// Local guards for this flow, externalized into harness.json (maxFeatures,
+    /// stepsPerFeature, maxReplans — harness.json's global maxSteps ceiling, 12, is too
+    /// short for a loop). Few features + a per-feature step ceiling: bars the
+    /// implement↔verify loop that never closes.
     /// </summary>
-    public const int MaxFeatures = 10;
-    public const int StepsPerFeature = 8;
-    public const int MaxReplans = 2;
+    public static int MaxFeatures => HarnessConfig.Current.MaxFeatures;
+    public static int StepsPerFeature => HarnessConfig.Current.StepsPerFeature;
+    public static int MaxReplans => HarnessConfig.Current.MaxReplans;
 
     /// <summary>
     /// Effective step ceiling passed to HarnessHost (override of the global one): slack for
     /// the worst case of MaxFeatures features spending StepsPerFeature each, plus
     /// start/plan and the boundaries.
     /// </summary>
-    public const int StepBudget = MaxFeatures * StepsPerFeature + 8;
+    public static int StepBudget => MaxFeatures * StepsPerFeature + 8;
 
     /// <summary>
     /// StateStore.Data keys used by this flow's partial files (Handoff/Prompt/Verify) — a

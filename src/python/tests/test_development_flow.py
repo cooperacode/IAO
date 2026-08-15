@@ -430,7 +430,7 @@ def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
 def test_guarda_por_feature_ao_exceder_o_teto_encerra():
     _plan()
     tasks.bearings(_cmd("bearings", "ok"))  # zera para 1
-    state_store.set("feature_steps", str(tasks.STEPS_PER_FEATURE))  # no limite
+    state_store.set("feature_steps", str(tasks.STEPS_PER_FEATURE()))  # no limite
 
     result = tasks.smoke(_cmd("smoke", "ok"))  # próximo bump ultrapassa
 
@@ -465,7 +465,7 @@ def test_plan_corte_max_features_remove_dependencia_para_id_cortado():
     # "extras" preenchem as vagas restantes com prioridades intermediárias.
     extras = ",".join(
         f'{{"id":{i},"title":"extra{i}","priority":{i}}}'
-        for i in range(3, 3 + tasks.MAX_FEATURES - 1)
+        for i in range(3, 3 + tasks.MAX_FEATURES() - 1)
     )
     json_text = (
         '[{"id":1,"title":"sobrevivente","priority":1,"dependsOn":[2]},'

@@ -55,19 +55,19 @@ jobs:
           VERSION="$(<VERSION)"
           mkdir -p release
 
-          ./package.sh --engine dotnet --os linux-x64 --ide codex --version "$VERSION"
+          ./package.sh --engine dotnet --os linux-x64 --version "$VERSION"
           tar -czf "release/flows-dotnet-linux-x64-v${VERSION}.tar.gz" \
             -C dist "flows-linux-x64-v${VERSION}"
 
-          ./package.sh --engine python --ide codex --version "$VERSION"
+          ./package.sh --engine python --version "$VERSION"
           tar -czf "release/flows-python-v${VERSION}.tar.gz" \
             -C dist "flows-python-v${VERSION}"
 
-          ./package.sh --engine rust --ide codex --version "$VERSION"
+          ./package.sh --engine rust --version "$VERSION"
           tar -czf "release/flows-rust-linux-x64-v${VERSION}.tar.gz" \
             -C dist "flows-rust-linux-x64-v${VERSION}"
 
-          ./package.sh --engine go --ide codex --version "$VERSION"
+          ./package.sh --engine go --version "$VERSION"
           tar -czf "release/flows-go-linux-x64-v${VERSION}.tar.gz" \
             -C dist "flows-go-linux-x64-v${VERSION}"
 

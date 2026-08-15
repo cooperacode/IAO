@@ -163,6 +163,9 @@ public static class SpecificationEvaluator
 
         foreach (var requirement in requirements)
         {
+            if (string.IsNullOrWhiteSpace(requirement.Statement))
+                violations.Add(new EvaluationViolation("SRS_REQUIREMENT_STATEMENT_MISSING", $"requirement '{requirement.Id}' has no statement"));
+
             if (requirement.AcceptanceIds.Length == 0)
                 violations.Add(new EvaluationViolation("SRS_REQUIREMENT_WITHOUT_ACCEPTANCE", $"requirement '{requirement.Id}' has no acceptance criterion"));
 
@@ -176,19 +179,37 @@ public static class SpecificationEvaluator
         }
 
         foreach (var criterion in srs.AcceptanceCriteria)
+        {
+            if (string.IsNullOrWhiteSpace(criterion.Given) || string.IsNullOrWhiteSpace(criterion.When) || string.IsNullOrWhiteSpace(criterion.Then))
+                violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_CRITERION_TEXT_MISSING", $"acceptance criterion '{criterion.Id}' has an empty given/when/then"));
+
             foreach (var requirementId in criterion.RequirementIds)
                 if (!requirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_CRITERION_REQUIREMENT_DANGLING", $"acceptance criterion '{criterion.Id}' references unknown requirement '{requirementId}'"));
+        }
 
         foreach (var iface in srs.Interfaces)
+        {
+            if (string.IsNullOrWhiteSpace(iface.Name) || string.IsNullOrWhiteSpace(iface.Description))
+                violations.Add(new EvaluationViolation("SRS_INTERFACE_TEXT_MISSING", $"interface '{iface.Id}' has an empty name or description"));
+
             foreach (var requirementId in iface.RequirementIds)
                 if (!requirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SRS_INTERFACE_REQUIREMENT_DANGLING", $"interface '{iface.Id}' references unknown requirement '{requirementId}'"));
+        }
 
         foreach (var rule in srs.DataRules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Rule))
+                violations.Add(new EvaluationViolation("SRS_DATA_RULE_TEXT_MISSING", $"data rule '{rule.Id}' has no rule text"));
+
             foreach (var requirementId in rule.RequirementIds)
                 if (!requirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SRS_DATA_RULE_REQUIREMENT_DANGLING", $"data rule '{rule.Id}' references unknown requirement '{requirementId}'"));
+        }
+
+        if (string.IsNullOrWhiteSpace(srs.Delivery.Target) || string.IsNullOrWhiteSpace(srs.Delivery.VerificationStrategy))
+            violations.Add(new EvaluationViolation("SRS_DELIVERY_TEXT_MISSING", "delivery contract has an empty target or verification strategy"));
 
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
     }

@@ -54,7 +54,7 @@ fn main() {
         ".harness/last-development.trace.jsonl",
         ".harness/last-development.state.json",
         Some(&validators),
-        Some(tasks::STEP_BUDGET),
+        Some(tasks::step_budget()),
         Some(should_reset_on_start),
     );
 
