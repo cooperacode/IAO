@@ -36,12 +36,14 @@ USAGE_SCRIPT = {
     "claude": SCRIPTS_DIR / "claude_usage.py",
     "codex": SCRIPTS_DIR / "codex_usage.py",
     "copilot": SCRIPTS_DIR / "copilot_usage.py",
+    "kimi": SCRIPTS_DIR / "kimi_usage.py",
 }
 CORRELATE_SCRIPT = SCRIPTS_DIR / "harness_cost_correlate.py"
 DRIVER_LABEL = {
     "claude": "Claude Code",
     "codex": "Codex CLI",
     "copilot": "GitHub Copilot",
+    "kimi": "Kimi Code CLI",
 }
 TOKEN_FIELDS = (
     "input_tokens",

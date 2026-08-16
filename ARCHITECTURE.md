@@ -22,7 +22,7 @@ the selected one as `run-development.sh` in the generated package — same
 ## The pattern in one paragraph
 
 The harness never calls a model. An IDE agent (the *driver* — Copilot, Devin,
-Claude Code, Codex) runs the harness binary, reads the next instruction from
+Claude Code, Codex, Kimi Code CLI) runs the harness binary, reads the next instruction from
 `stdout`, does the actual work with its own tools, and writes back a JSON
 envelope. The harness — deterministic, compiled code — decides the next state,
 validates the response against the command's contract, persists state to disk,
@@ -59,7 +59,7 @@ once per turn; the harness is single-shot per process.
 | Envelope | JSON contract between driver and harness | `src/dotnet/Harness.Engine/Envelope.cs` |
 | DevelopmentTasks | Domain-specific state machine | `src/dotnet/Flows.Development/DevelopmentTasks*.cs` |
 | Stores | `.harness/` persistence | `StateStore.cs`, `RunConfigStore.cs`, `FeatureStore.cs`, `Trace.cs` |
-| IDE agent | Driver running the runner and responding in JSON | Codex, Claude Code, Copilot, Devin adapters |
+| IDE agent | Driver running the runner and responding in JSON | Codex, Claude Code, Copilot, Devin, Kimi Code CLI adapters |
 | Project code | Target repository changed and verified | `target_dir/*` |
 
 **Related patterns:** State Machine (explicit, deterministic state sequence),
@@ -320,8 +320,9 @@ binary and, from there, to the repository being changed.
   to the inbox, runs the wrapper with no arguments, and assumes a clean context
   per feature. Equivalent adapters exist for other drivers:
   `.claude/agents/development.agent.md` (Claude Code),
-  `.github/prompts/development.prompt.md` (GitHub Copilot), and
-  `.devin/workflows/development.md` (Devin) — same protocol, different driver.
+  `.github/prompts/development.prompt.md` (GitHub Copilot),
+  `.devin/workflows/development.md` (Devin), and
+  `.kimi/agents/development.md` (Kimi Code CLI) — same protocol, different driver.
 - **`.harness/inbox.json`** — file transport. Avoids escaped JSON on the
   command line (one forgotten quote can hang a shell before the program even
   runs) and keeps `stdout` exclusive to control.

@@ -62,7 +62,7 @@ cd "$DIR"
 ENGINES=(dotnet python rust go)
 RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)
 # Every package bundles all of these — this list is now for iteration only, never selection.
-IDES=(claude copilot devin codex)
+IDES=(claude copilot devin codex kimi)
 # FLOWS is derived once ENGINE is known (see below, right after engine validation) —
 # `specification` only exists on the dotnet engine today (no python/rust/go port), so it's
 # only added to the list when packaging that engine.
@@ -275,6 +275,8 @@ adapter_for() { case "$1:$2" in
   devin:specification)   printf '%s\t%s\n' ".devin/workflows/specification.md"        ".devin/workflows/specification.md";;
   codex:development)     printf '%s\t%s\n' ".codex/agents/development.toml"           ".codex/agents/development.toml";;
   codex:specification)   printf '%s\t%s\n' ".codex/agents/specification.toml"         ".codex/agents/specification.toml";;
+  kimi:development)      printf '%s\t%s\n' ".kimi/agents/development.md"              ".kimi/agents/development.md";;
+  kimi:specification)    printf '%s\t%s\n' ".kimi/agents/specification.md"            ".kimi/agents/specification.md";;
 esac; }
 # Human-readable label per IDE, used in menus/docs.
 ide_label() { case "$1" in
@@ -282,6 +284,7 @@ ide_label() { case "$1" in
   copilot) echo "GitHub Copilot";;
   devin)   echo "Devin";;
   codex)   echo "Codex";;
+  kimi)    echo "Kimi Code CLI";;
 esac; }
 
 # ---- interactive selection when missing ----
@@ -611,6 +614,11 @@ EOF
     codex)
       # Codex doesn't read workspace approval config; the instruction goes in START-HERE
       ;;
+    kimi)
+      # No known workspace-level trust/approval config file for Kimi Code CLI; non-interactive
+      # `-p` mode has no approval channel to begin with (see .harness/gui/drivers.py). The
+      # launch instruction goes in START-HERE, like Codex.
+      ;;
   esac
 done
 
@@ -622,12 +630,14 @@ DEV_REL_claude="$(adapter_for claude development | cut -f2)"
 DEV_REL_copilot="$(adapter_for copilot development | cut -f2)"
 DEV_REL_devin="$(adapter_for devin development | cut -f2)"
 DEV_REL_codex="$(adapter_for codex development | cut -f2)"
-SPEC_REL_claude=""; SPEC_REL_copilot=""; SPEC_REL_devin=""; SPEC_REL_codex=""
+DEV_REL_kimi="$(adapter_for kimi development | cut -f2)"
+SPEC_REL_claude=""; SPEC_REL_copilot=""; SPEC_REL_devin=""; SPEC_REL_codex=""; SPEC_REL_kimi=""
 if $HAS_SPEC; then
   SPEC_REL_claude="$(adapter_for claude specification | cut -f2)"
   SPEC_REL_copilot="$(adapter_for copilot specification | cut -f2)"
   SPEC_REL_devin="$(adapter_for devin specification | cut -f2)"
   SPEC_REL_codex="$(adapter_for codex specification | cut -f2)"
+  SPEC_REL_kimi="$(adapter_for kimi specification | cut -f2)"
 fi
 
 START="Pick whichever IDE agent is on this machine — every adapter below is already in the package, no rebuild needed to switch.
@@ -661,6 +671,14 @@ START="$START
 2. **Development:** ask *\"Use the custom development agent to develop: <project goal>\"*. The agent at \`.codex/agents/development.toml\` drives \`./run-development.sh\`, one feature at a time, until they all pass."
 $HAS_SPEC && START="$START
 3. **Specification:** ask *\"Use the custom specification agent to frame: <your idea>\"*. The agent at \`.codex/agents/specification.toml\` drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
+
+START="$START
+
+### Kimi Code CLI
+1. Open **this folder** in a terminal (\`kimi\` reads the workspace from the current directory). Launch each run with \`--agent-file\` pointing at the adapter below — non-interactive \`-p\` mode needs no extra approval flag.
+2. **Development:** \`kimi -p \"Develop: <project goal>\" --agent-file .kimi/agents/development.md\`. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass."
+$HAS_SPEC && START="$START
+3. **Specification:** \`kimi -p \"Frame: <your idea>\" --agent-file .kimi/agents/specification.md\`. The agent drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
 
 WINROW=""
 if { [[ "$ENGINE" == "dotnet" ]] && [[ "$RID" == win-* ]]; } \
@@ -727,7 +745,8 @@ WRAPPER_ROW="| \`run-development.sh\` | execution wrapper (development) |"
 ADAPTER_ROWS="| \`$DEV_REL_claude\` | development adapter — Claude Code |
 | \`$DEV_REL_copilot\` | development adapter — GitHub Copilot |
 | \`$DEV_REL_devin\` | development adapter — Devin |
-| \`$DEV_REL_codex\` | development adapter — Codex |"
+| \`$DEV_REL_codex\` | development adapter — Codex |
+| \`$DEV_REL_kimi\` | development adapter — Kimi Code CLI |"
 if $HAS_SPEC; then
   SPEC_BLURB=" Specification takes an idea (plus an optional sources folder of product
 docs/transcripts/notes) through PRD/SRS/SDD/readiness/approval and publishes to
@@ -744,7 +763,8 @@ docs/transcripts/notes) through PRD/SRS/SDD/readiness/approval and publishes to
 | \`$SPEC_REL_claude\` | specification adapter — Claude Code |
 | \`$SPEC_REL_copilot\` | specification adapter — GitHub Copilot |
 | \`$SPEC_REL_devin\` | specification adapter — Devin |
-| \`$SPEC_REL_codex\` | specification adapter — Codex |"
+| \`$SPEC_REL_codex\` | specification adapter — Codex |
+| \`$SPEC_REL_kimi\` | specification adapter — Kimi Code CLI |"
 fi
 
 GUI_ROW=""

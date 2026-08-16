@@ -51,6 +51,35 @@ exists on `models list`/`list`/`doctor`), so this driver's log stays plain text 
 response, not per-event NDJSON like Claude/Codex. Subagent delegation for the
 `=== NEW SESSION ===` marker still has no confirmed native equivalent for this driver (same
 caveat as Codex).
+
+Kimi Code CLI (`kimi`, Moonshot AI) has a real `--agent-file <path>` flag — confirmed via
+`kimi --help` (v0.36.1) — that natively loads a Markdown agent definition and applies it as the
+session's system prompt, the same resolution shape as Claude's `--agent <flow>` rather than
+Codex/Devin's read-the-file-and-forward-its-body workaround. So this module only reads
+`.kimi/agents/<flow>.md` for an existence check; it never opens or forwards its content — Kimi
+does that itself. The actual `-p` prompt is the same short "start the harness protocol" text
+used for Claude. `--output-format stream-json` (confirmed in `--help`) gives NDJSON parity with
+Claude/Codex.
+
+No permission-mode flag is passed: a real spike found `-p`/`--prompt` rejects both `--auto`
+("Cannot combine --prompt with --auto") and `--yolo` ("Cannot combine --prompt with --yolo"),
+v0.36.1 — non-interactive print mode has no interactive approval channel to bypass in the first
+place, so bare `-p` is the correct shape (unlike Claude/Codex/Devin, which each need an explicit
+bypass flag for their own interactive-by-default modes).
+
+Kimi is now `validated: True`: after a provider/default model was configured on this machine
+(`kimi provider catalog add ...` → `kimi provider list` showed `managed:kimi-code`,
+`default_model = "kimi-code/kimi-for-coding"` in `config.toml`), the spike was repeated twice —
+once with the bare command shape (no `--agent-file`) and once with the exact `_kimi_command`
+argv, `--agent-file` pointed at the real `.kimi/agents/development.md`. Both runs, against
+scratch git repos, asked it to write a file, run a shell command, and `git commit`; both
+completed headlessly with exit code 0, nothing blocked on an approval prompt, and the commit
+landed in `git log`. The `--agent-file` run also confirmed the persona/task split works as
+intended: the file's harness-protocol prose set context, but the `-p` prompt's concrete task is
+what actually got executed. The `stream-json` log showed real per-tool-call events (`Write`,
+`Bash`), same NDJSON shape as Claude/Codex. Subagent delegation for the `=== NEW SESSION ===`
+marker still has no confirmed native equivalent for this driver (same caveat as Codex/Devin) —
+`.kimi/agents/*.md` keeps the in-context-reset fallback wording.
 """
 from __future__ import annotations
 
@@ -64,6 +93,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CODEX_AGENTS_DIR = REPO_ROOT / ".codex" / "agents"
 DEVIN_WORKFLOWS_DIR = REPO_ROOT / ".devin" / "workflows"
+KIMI_AGENTS_DIR = REPO_ROOT / ".kimi" / "agents"
 REVISION_REQUEST_PATH = REPO_ROOT / ".harness" / "specification" / "revisions" / "request.json"
 
 # argv[0] to look up on PATH per driver — used by binary_available() so the GUI can tell a
@@ -71,7 +101,7 @@ REVISION_REQUEST_PATH = REPO_ROOT / ".harness" / "specification" / "revisions" /
 # simply isn't installed on *this* machine (e.g. a package built with --with-gui but no Codex
 # CLI on the target host). "devin" here is the separate headless terminal CLI — deliberately
 # not "devin-desktop", which is just the IDE window launcher and would give a false positive.
-_BINARY_NAMES = {"claude": "claude", "codex": "codex", "devin": "devin"}
+_BINARY_NAMES = {"claude": "claude", "codex": "codex", "devin": "devin", "kimi": "kimi"}
 
 DRIVERS = {
     "claude": {
@@ -104,6 +134,29 @@ DRIVERS = {
             "arquivo, execução de shell e `git commit` — completou de forma headless, sem travar "
             "em prompt de aprovação, exit code 0. Assim como no Codex, não há delegação de "
             "subagente confirmada para o `=== NEW SESSION ===`."
+        ),
+    },
+    "kimi": {
+        "label": "Kimi Code CLI",
+        "validated": True,
+        "note": (
+            "Usa `kimi -p <prompt curto> --agent-file .kimi/agents/<flow>.md --output-format "
+            "stream-json`. `--agent-file` é nativo (confirmado via `kimi --help`, v0.36.1) — o "
+            "próprio Kimi lê e aplica o arquivo como system prompt da sessão, sem este módulo "
+            "precisar ler/repassar o conteúdo (diferente de Codex/Devin). SEM flag de "
+            "permissão: um spike real mostrou que `-p`/`--prompt` rejeita tanto `--auto` "
+            "quanto `--yolo` (\"Cannot combine --prompt with --auto/--yolo\", v0.36.1) — o "
+            "modo não-interativo não tem canal de aprovação para dar bypass, logo `-p` puro já "
+            "é o shape certo. Validado manualmente após configurar um provider/modelo padrão "
+            "(`kimi provider catalog add`, `default_model` em `~/.kimi-code/config.toml`): "
+            "spike em dois repositórios git descartáveis — um com o shape simples, outro com "
+            "`--agent-file` apontando para o `.kimi/agents/development.md` real — escrita de "
+            "arquivo, execução de shell e `git commit`, ambos completaram de forma headless, "
+            "sem travar em aprovação, exit code 0. O log em `--output-format stream-json` "
+            "mostrou eventos reais por tool call (`Write`, `Bash`), mesma granularidade de "
+            "Claude/Codex. Não há delegação de subagente confirmada para o `=== NEW SESSION "
+            "===` (campo `subagents` do frontmatter existe na doc, mas não foi testado na "
+            "prática) — mesma ressalva do Codex/Devin."
         ),
     },
 }
@@ -153,7 +206,7 @@ def _model_args(driver: str, model: str | None) -> list[str]:
     value = (model or "").strip()
     if not value:
         return []
-    if driver in ("claude", "codex"):
+    if driver in ("claude", "codex", "kimi"):
         return ["--model", value]
     return []
 
@@ -281,10 +334,44 @@ def _devin_command(flow: str, model: str | None = None) -> list[str]:
     ]
 
 
+def _kimi_prompt(flow: str) -> str:
+    return (
+        f"Start the harness protocol now for the '{flow}' flow and continue turn by turn — "
+        "writing the envelope to .harness/inbox.json, running the wrapper script with no "
+        "arguments, acting on <input>, and repeating — entirely on your own, without asking for "
+        "confirmation, until stdout is exactly 'stop'."
+    ) + _revision_context(flow)
+
+
+def _kimi_command(flow: str, model: str | None = None) -> list[str]:
+    agent_file = KIMI_AGENTS_DIR / f"{flow}.md"
+    if not agent_file.is_file():
+        raise ValueError(f"missing Kimi agent definition: {agent_file}")
+    return [
+        "kimi",
+        *_model_args("kimi", model),
+        "-p",
+        _kimi_prompt(flow),
+        # Native agent resolution (confirmed via `kimi --help`, v0.36.1) — Kimi itself reads
+        # and applies this file as the session's system prompt, so this module never opens
+        # it (unlike Codex/Devin's read-and-forward workaround).
+        "--agent-file",
+        str(agent_file),
+        # No permission-mode flag here on purpose: a real spike showed the CLI rejects both
+        # `--auto` ("Cannot combine --prompt with --auto") and `--yolo` ("Cannot combine
+        # --prompt with --yolo") when `-p`/`--prompt` is present (v0.36.1) — non-interactive
+        # print mode has no approval channel to bypass in the first place, so neither flag is
+        # accepted alongside it.
+        "--output-format",
+        "stream-json",
+    ]
+
+
 _BUILDERS = {
     "claude": _claude_command,
     "codex": _codex_command,
     "devin": _devin_command,
+    "kimi": _kimi_command,
 }
 
 

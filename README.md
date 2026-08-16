@@ -106,8 +106,8 @@ diagram, with the file that implements each component.
   backlog, including dependency edges between features), `ArtifactStore`
   (named text artifacts — e.g. the persisted brief, `brief.md`), and `Trace`
   (one line per turn); `Inbox` is the file-based transport for the envelope.
-- **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, or another driver
-  able to run the runner, read `stdout`, and respond in JSON.
+- **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, Kimi Code CLI, or another
+  driver able to run the runner, read `stdout`, and respond in JSON.
 - **Project code**: the target repository, changed by the agent one feature at
   a time and verified — automatically through `verify-feature.sh` or the
   configured `verify_cmd`; the agent is only asked to repair a failed setup.
@@ -224,6 +224,7 @@ The included adapters call that packaged wrapper by default:
 | Claude Code | `.claude/agents/development.agent.md` |
 | GitHub Copilot | `.github/prompts/development.prompt.md` |
 | Devin | `.devin/workflows/development.md` |
+| Kimi Code CLI | `.kimi/agents/development.md` |
 
 Every package uses the same `.harness/inbox.json` protocol. Each port keeps its
 original `run-checks*.sh` parity gate in the corresponding language directory.
@@ -282,8 +283,8 @@ src/go/run-checks-go.sh
   the better operational choice.
 - **Rust port**: compatible implementation with no separate runtime or SDK
   dependency — the release binary is already native.
-- **IDE adapters**: Codex, Claude Code, GitHub Copilot, and Devin using the
-  same runner and inbox protocol.
+- **IDE adapters**: Codex, Claude Code, GitHub Copilot, Devin, and Kimi Code CLI
+  using the same runner and inbox protocol.
 
 ## Related Patterns
 

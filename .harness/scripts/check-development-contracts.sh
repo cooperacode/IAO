@@ -23,6 +23,7 @@ adapters=(
   .codex/agents/development.toml
   .github/prompts/development.prompt.md
   .devin/workflows/development.md
+  .kimi/agents/development.md
 )
 prompts=(
   src/dotnet/Flows.Development/DevelopmentTasks.Prompt.cs
