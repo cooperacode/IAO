@@ -49,6 +49,11 @@ FILE_SOURCES = {
 SPECIFICATION_DIR = HARNESS_DIR / "specification" / "active"
 SPECIFICATION_RUN_JSON = SPECIFICATION_DIR / "run.json"
 PUBLISHED_DOCUMENTS_DIR = REPO_ROOT / "specs" / "active"
+
+# Standalone HTML reports written by .harness/skills/session-report/generate_report.py
+# (usage/cost per driver session) — a flat directory of self-contained files, one per run.
+REPORTS_DIR = REPO_ROOT / "report"
+REPORT_FILENAME_RE = re.compile(r"^session-report-(?P<driver>[a-z0-9]+)-(?P<stamp>\d{8}-\d{6})\.html$")
 SPECIFICATION_PHASES = [
     "start", "discover", "product", "analysis", "design", "review", "approve", "stop",
 ]
@@ -406,6 +411,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._serve_specification_documents()
             if path == "/api/published":
                 return self._serve_published_documents()
+            if path == "/api/reports":
+                return self._serve_reports_list()
+            if path.startswith("/api/reports/"):
+                name = unquote(path[len("/api/reports/"):])
+                return self._serve_report_file(name)
             if path == "/api/specification/revision":
                 return self._json(200, _revision_state())
             return self._json(404, {"error": "not found"})
@@ -624,6 +634,40 @@ class Handler(BaseHTTPRequestHandler):
                     "content": content,
                 })
         self._json(200, {"directory": "specs/active", "exists": PUBLISHED_DOCUMENTS_DIR.is_dir(), "files": files})
+
+    def _serve_reports_list(self) -> None:
+        files = []
+        if REPORTS_DIR.is_dir():
+            for path in REPORTS_DIR.glob("*.html"):
+                if not path.is_file():
+                    continue
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                match = REPORT_FILENAME_RE.match(path.name)
+                files.append({
+                    "name": path.name,
+                    "sizeBytes": stat.st_size,
+                    "modifiedAt": int(stat.st_mtime * 1000),
+                    "driver": match.group("driver") if match else None,
+                })
+            files.sort(key=lambda f: f["modifiedAt"], reverse=True)
+        self._json(200, {"directory": "report", "exists": REPORTS_DIR.is_dir(), "files": files})
+
+    def _serve_report_file(self, name: str) -> None:
+        # Flat directory, no subpaths — a name carrying a separator can only be an attempt to
+        # escape REPORTS_DIR (../.. or an absolute path), never a legitimate report filename.
+        if not name or "/" in name or "\\" in name:
+            return self._json(400, {"error": "invalid report filename"})
+        candidate_path = (REPORTS_DIR / name).resolve()
+        try:
+            candidate_path.relative_to(REPORTS_DIR.resolve())
+        except ValueError:
+            return self._json(404, {"error": "report not found"})
+        if candidate_path.suffix != ".html" or not candidate_path.is_file():
+            return self._json(404, {"error": "report not found"})
+        self._html(200, candidate_path.read_text(encoding="utf-8", errors="replace"))
 
     def _handle_specification_approve(self) -> None:
         status = process_manager.status("specification")

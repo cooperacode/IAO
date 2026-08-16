@@ -457,6 +457,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     .artifact-chat-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .artifact-chat-status { color: var(--muted); font-size: .76rem; }
     .document-toggle:disabled { opacity: .55; cursor: not-allowed; text-decoration: none; }
+    .artifact-badge-list { display: flex; flex-wrap: wrap; gap: 7px; }
+    .artifact-badge { display: inline-flex; align-items: center; padding: 4px 11px; border: 1px solid var(--accent-200); border-radius: 999px; background: var(--accent-100); color: var(--accent-700); font-family: var(--mono); font-size: .76rem; font-weight: 700; letter-spacing: .01em; line-height: 1.4; }
     .artifact-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
     .artifact-list-item { padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--soft); }
     .artifact-list-item > .artifact-section { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
@@ -537,12 +539,35 @@ document.addEventListener('DOMContentLoaded', async function() {
       const list = document.createElement("ul");
       list.className = "artifact-list";
       if (!value.length) { list.innerHTML = '<li class="artifact-list-item">Nenhum item informado.</li>'; return list; }
+      // Badges are for short, single-token values — ids like "RF-1"/"QR-3", filenames like
+      // "sdd.accepted.json" — where the token itself is the point. Prose reads worse as a
+      // pill than as text, so anything with whitespace or any real length falls through to
+      // the regular per-item box below, same as free-text arrays always looked.
+      const isBadgeItem = (item) => {
+        if (typeof item === "number" || typeof item === "boolean") return true;
+        if (typeof item !== "string") return false;
+        const trimmed = item.trim();
+        return trimmed.length > 0 && trimmed.length <= 60 && !/\s/.test(trimmed);
+      };
+      if (value.every((item) => item !== null && typeof item !== "object" && isBadgeItem(item))) {
+        const badges = document.createElement("div");
+        badges.className = "artifact-badge-list";
+        value.forEach((item) => {
+          const badge = document.createElement("span");
+          badge.className = "artifact-badge";
+          badge.textContent = formatValue(item);
+          badges.appendChild(badge);
+        });
+        return badges;
+      }
       value.forEach((item, index) => {
         const li = document.createElement("li"); li.className = "artifact-list-item";
         if (item && typeof item === "object") {
           li.appendChild(renderObject(item, `${label || "Item"} ${index + 1}`, false, path.concat(index), false));
-          li.appendChild(actionButtons(path.concat(index), true));
-        } else { const valueWrap = document.createElement("div"); valueWrap.textContent = formatValue(item); valueWrap.appendChild(actionButtons(path.concat(index), true)); li.appendChild(valueWrap); }
+        } else {
+          const valueWrap = document.createElement("div"); valueWrap.textContent = formatValue(item); li.appendChild(valueWrap);
+        }
+        li.appendChild(actionButtons(path.concat(index), true));
         list.appendChild(li);
       });
       return list;
@@ -730,6 +755,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     .published-content-meta { margin: 0 0 20px; color: var(--muted); font-size: .75rem; }
     .published-content-text { margin: 0; color: var(--ink); font: .88rem/1.7 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
     .published-empty { padding: 28px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; }
+    .reports-reader { position: fixed; inset: 0; z-index: 2100; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); }
+    .reports-reader[hidden] { display: none; }
+    .reports-reader-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 30px; border-bottom: 1px solid var(--line-strong); background: var(--card); }
+    .reports-reader-heading h1 { margin: 0 0 3px; font-size: 1.3rem; font-weight: 650; }
+    .reports-reader-heading p { margin: 0; color: var(--muted); font-size: .78rem; }
+    .reports-reader-layout { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); min-height: 0; flex: 1; }
+    .reports-file-list { min-height: 0; padding: 20px 14px; overflow-y: auto; border-right: 1px solid var(--line-strong); background: var(--sidebar); }
+    .reports-file-list-title { margin: 0 8px 10px; color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .reports-file-button { display: block; width: 100%; padding: 11px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+    .reports-file-button:hover, .reports-file-button.active { border-color: var(--accent-200); background: var(--accent-100); }
+    .reports-file-name { display: block; overflow: hidden; font-size: .82rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .reports-file-meta { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; }
+    .reports-content { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+    .reports-content-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 20px; border-bottom: 1px solid var(--line-strong); background: var(--card); }
+    .reports-content-toolbar strong { display: block; font-size: .86rem; }
+    .reports-content-meta { display: block; margin-top: 2px; color: var(--muted); font-size: .72rem; }
+    .reports-iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+    .reports-empty { padding: 28px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; margin: 20px; }
+    @media (max-width: 720px) {
+      .reports-reader-header { align-items: flex-start; padding: 16px 18px; flex-wrap: wrap; }
+      .reports-reader-layout { grid-template-columns: 1fr; }
+      .reports-file-list { max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line-strong); }
+      .reports-content-toolbar { flex-wrap: wrap; }
+    }
     .specification-subnav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--card); }
     .specification-subnav button { padding: 7px 12px; border: 0; border-radius: var(--radius-sm); color: var(--muted); background: transparent; cursor: pointer; font-size: .78rem; font-weight: 600; }
     .specification-subnav button:hover, .specification-subnav button.active { color: var(--accent); background: var(--accent-100); }
@@ -750,6 +799,31 @@ document.addEventListener('DOMContentLoaded', async function() {
     .driver-field-help { display: block; margin-top: 6px; color: var(--faint); font-size: .67rem; }
     .driver-selection-notes { margin-top: 12px; }
     .driver-selection-notes .field-note { margin: 0 0 5px; }
+    .driver-selection-notes .field-note.driver-note-collapsible { display: none; margin-top: 4px; }
+    .driver-selection-notes .field-note.driver-note-collapsible.driver-note-expanded { display: block; }
+    .driver-note-toggle { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 6px; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: .72rem; font-weight: 600; cursor: pointer; }
+    .driver-note-toggle:hover, .driver-note-toggle:focus-visible { text-decoration: underline; }
+    .driver-note-toggle-icon { flex: 0 0 auto; color: var(--accent); transition: transform .15s ease; }
+    .driver-note-toggle.driver-note-expanded .driver-note-toggle-icon { transform: rotate(90deg); }
+    .console-log.console-log-lines { display: flex; flex-direction: column; gap: 1px; padding: 7px; white-space: normal; }
+    .console-log-line { display: flex; align-items: flex-start; gap: 7px; padding: 3px 7px; border-radius: var(--radius-sm); cursor: pointer; }
+    .console-log-line:hover { background: var(--card); }
+    .console-log-line:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+    .console-log-line-icon { display: flex; flex: 0 0 auto; margin-top: 3px; }
+    .console-log-line-icon svg { display: block; width: 11px; height: 11px; }
+    .console-log-line-icon.info svg { color: var(--accent); }
+    .console-log-line-icon.warning svg { color: var(--yellow); }
+    .console-log-line-icon.error svg { color: var(--red); }
+    .console-log-line-text { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .console-log-line.expanded { background: var(--card); cursor: zoom-out; }
+    .console-log-line.expanded .console-log-line-text { white-space: pre-wrap; word-break: break-word; text-overflow: clip; }
+    .console-log-empty { padding: 4px 7px; color: var(--muted); }
+    .panel-heading-actions { display: flex; align-items: center; gap: 10px; }
+    .console-log-copy-button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--card); color: var(--muted); font: inherit; font-size: .72rem; font-weight: 600; cursor: pointer; }
+    .console-log-copy-button:hover { color: var(--accent); border-color: var(--accent-200); background: var(--accent-100); }
+    .console-log-copy-button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+    .console-log-copy-button svg { display: block; width: 12px; height: 12px; }
+    .console-log-copy-button.copied { color: var(--green); border-color: var(--green); background: var(--green-soft); }
     .process-status-card { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 18px; background: var(--card); }
     .process-status-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
     .process-status-top .active-badge { margin-top: -4px; }
@@ -872,6 +946,106 @@ document.addEventListener('DOMContentLoaded', async function() {
     subnav.querySelector('[data-specification-section="results"]').addEventListener("click", openPublished);
   }
 
+  // ---------------------------------------------------------------------------------
+  // Reports: full-screen reader (same pattern as "Resultados" above) listing the
+  // standalone HTML files under report/ (written by
+  // .harness/skills/session-report/generate_report.py) and rendering the selected one
+  // in an iframe — those files are complete self-contained documents with their own
+  // charts/JS, so showing them rendered (not as raw text) is what makes them useful.
+  const reportsReader = document.createElement("section");
+  reportsReader.className = "reports-reader";
+  reportsReader.hidden = true;
+  reportsReader.setAttribute("aria-labelledby", "reports-reader-title");
+  reportsReader.innerHTML = `
+    <header class="reports-reader-header">
+      <div class="reports-reader-heading">
+        <h1 id="reports-reader-title">Relatórios</h1>
+        <p>Relatórios de uso e custo gerados em <code>report/</code></p>
+      </div>
+      <button type="button" class="ghost-button" data-reports-close>Fechar</button>
+    </header>
+    <div class="reports-reader-layout">
+      <aside class="reports-file-list">
+        <p class="reports-file-list-title">Arquivos</p>
+        <div id="reports-file-list-body"></div>
+      </aside>
+      <main class="reports-content" id="reports-content"></main>
+    </div>
+  `;
+  document.body.appendChild(reportsReader);
+
+  const reportsFiles = document.getElementById("reports-file-list-body");
+  const reportsContent = document.getElementById("reports-content");
+  let reportsData = [];
+  let selectedReportName = null;
+  const closeReports = () => { reportsReader.hidden = true; document.body.style.overflow = ""; };
+
+  function renderReportFile(file) {
+    if (!file) {
+      reportsContent.innerHTML = '<div class="reports-empty">Nenhum relatório encontrado em <code>report/</code>. Gere um com <code>.harness/skills/session-report/generate_report.py --driver claude</code> (ou codex/copilot/kimi).</div>';
+      return;
+    }
+    const src = `/api/reports/${encodeURIComponent(file.name)}`;
+    reportsContent.innerHTML = `
+      <div class="reports-content-toolbar">
+        <div>
+          <strong>${escapePublished(file.name)}</strong>
+          <span class="reports-content-meta">${file.driver ? escapePublished(file.driver) + " · " : ""}${formatPublishedBytes(file.sizeBytes)} · ${escapePublished(formatPublishedDate(file.modifiedAt))}</span>
+        </div>
+        <a class="ghost-button" href="${src}" target="_blank" rel="noopener">Abrir em nova aba</a>
+      </div>
+      <iframe class="reports-iframe" src="${src}" title="${escapePublished(file.name)}"></iframe>
+    `;
+  }
+
+  function renderReportFiles() {
+    if (!reportsData.length) {
+      reportsFiles.innerHTML = '<div class="reports-empty">Nenhum relatório ainda.</div>';
+      renderReportFile(null);
+      return;
+    }
+    reportsFiles.innerHTML = reportsData.map((file) => `<button type="button" class="reports-file-button ${file.name === selectedReportName ? "active" : ""}" data-report-name="${escapePublished(file.name)}"><span class="reports-file-name">${escapePublished(file.name)}</span><span class="reports-file-meta">${file.driver ? escapePublished(file.driver) + " · " : ""}${formatPublishedBytes(file.sizeBytes)} · ${escapePublished(formatPublishedDate(file.modifiedAt))}</span></button>`).join("");
+    reportsFiles.querySelectorAll("[data-report-name]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedReportName = button.dataset.reportName;
+        renderReportFiles();
+        renderReportFile(reportsData.find((file) => file.name === selectedReportName));
+      });
+    });
+    renderReportFile(reportsData.find((file) => file.name === selectedReportName) || reportsData[0]);
+  }
+
+  async function openReports() {
+    reportsReader.hidden = false;
+    document.body.style.overflow = "hidden";
+    reportsContent.innerHTML = '<div class="reports-empty">Carregando relatórios…</div>';
+    try {
+      const response = await fetch(`/api/reports?_=${Date.now()}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      reportsData = data.files || [];
+      selectedReportName = reportsData[0]?.name || null;
+      renderReportFiles();
+    } catch (error) {
+      reportsFiles.innerHTML = "";
+      reportsContent.innerHTML = `<div class="reports-empty">Não foi possível carregar os relatórios: ${escapePublished(error.message || String(error))}</div>`;
+    }
+  }
+
+  reportsReader.querySelector("[data-reports-close]").addEventListener("click", closeReports);
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !reportsReader.hidden) closeReports(); });
+
+  const sidebarNav = document.querySelector(".nav");
+  if (sidebarNav && !document.getElementById("nav-reports")) {
+    const reportsNav = document.createElement("button");
+    reportsNav.type = "button";
+    reportsNav.id = "nav-reports";
+    reportsNav.className = "nav-item";
+    reportsNav.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path><path d="M14 3v5h5"></path><path d="M8.5 13.5h7M8.5 17h4.5"></path></svg><span>Relatórios</span>';
+    reportsNav.addEventListener("click", openReports);
+    sidebarNav.appendChild(reportsNav);
+  }
+
   const modelControls = {};
   function ensureModelControl(flow) {
     const driverSelect = document.getElementById(`driver-select-${flow}`);
@@ -943,7 +1117,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     notes.className = "driver-selection-notes";
     const driverNote = document.getElementById(`driver-note-${flow}`);
     const wrapperNote = document.getElementById(`wrapper-note-${flow}`);
-    if (driverNote) notes.append(driverNote);
+    if (driverNote) {
+      driverNote.classList.add("driver-note-collapsible");
+      const driverNoteToggle = document.createElement("button");
+      driverNoteToggle.type = "button";
+      driverNoteToggle.className = "driver-note-toggle";
+      driverNoteToggle.setAttribute("aria-expanded", "false");
+      driverNoteToggle.setAttribute("aria-controls", driverNote.id);
+      driverNoteToggle.innerHTML = '<svg class="driver-note-toggle-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 1.5 L7 5 L2.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Saiba mais...</span>';
+      driverNoteToggle.addEventListener("click", () => {
+        const expanded = driverNote.classList.toggle("driver-note-expanded");
+        driverNoteToggle.classList.toggle("driver-note-expanded", expanded);
+        driverNoteToggle.setAttribute("aria-expanded", String(expanded));
+        driverNoteToggle.querySelector("span").textContent = expanded ? "Ocultar detalhes" : "Saiba mais...";
+      });
+      notes.append(driverNoteToggle, driverNote);
+    }
     if (wrapperNote) notes.append(wrapperNote);
     selection.append(fieldGrid, notes);
     const status = document.createElement("aside");
@@ -964,6 +1153,179 @@ document.addEventListener('DOMContentLoaded', async function() {
     grid.replaceWith(layout);
   }
   ["specification", "development"].forEach(redesignDriverControl);
+
+  // ---------------------------------------------------------------------------------
+  // Console log: reformat the raw streamed text (NDJSON driver events + plain stderr
+  // lines) into one no-wrap row per line, each tagged with an info/warning/error icon
+  // and expandable on click. The base dashboard above still owns the actual polling —
+  // it keeps doing `box.textContent += chunk` on the same <pre> — so this attaches a
+  // MutationObserver instead of touching that logic, and re-renders from the element's
+  // current textContent every time it changes. Rendered rows always carry their own
+  // trailing "\n" as a real text node (not inside the visible label) so `.textContent`
+  // on the box keeps reconstructing byte-for-byte to what the base script wrote — that
+  // is what keeps its next `+=` building on the right string instead of DOM markup.
+  function enableConsoleLogLines(flow) {
+    const box = document.getElementById(`console-log-${flow}`);
+    if (!box || box.dataset.logLinesReady) return;
+    box.dataset.logLinesReady = "1";
+    const IDLE_TEXT = "Nenhum processo em execução. Inicie um driver acima.";
+    const MAX_LINES = 2000;
+    const ICONS = {
+      info: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="5.2" r="0.9" fill="currentColor"/><line x1="8" y1="7.4" x2="8" y2="11.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+      warning: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2 L14.3 13.2 L1.7 13.2 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><line x1="8" y1="6.3" x2="8" y2="9.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor"/></svg>',
+      error: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><line x1="5.6" y1="5.6" x2="10.4" y2="10.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="10.4" y1="5.6" x2="5.6" y2="10.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+    };
+
+    function classify(line) {
+      const trimmed = line.trim();
+      if (!trimmed) return "info";
+      if (trimmed[0] === "{") {
+        try {
+          const evt = JSON.parse(trimmed);
+          const exitCode = evt.item?.exit_code ?? evt.exit_code;
+          if (evt.is_error === true) return "error";
+          if (typeof exitCode === "number" && exitCode !== 0) return "error";
+          const signals = [evt.type, evt.item?.type, evt.item?.status, evt.status, evt.level]
+            .filter(Boolean).join(" ").toLowerCase();
+          if (/error|fail|exception/.test(signals)) return "error";
+          if (/warn/.test(signals)) return "warning";
+          return "info";
+        } catch (_) { /* not a JSON event line — fall through to plain-text heuristics */ }
+      }
+      if (/\b(error|erro|exception|traceback|failed|falhou)\b/i.test(trimmed)) return "error";
+      if (/\b(warn(ing)?|aviso|atenção)\b/i.test(trimmed)) return "warning";
+      return "info";
+    }
+
+    function buildRow(text, expanded) {
+      const kind = classify(text);
+      const row = document.createElement("div");
+      row.className = expanded ? "console-log-line expanded" : "console-log-line";
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const icon = document.createElement("span");
+      icon.className = `console-log-line-icon ${kind}`;
+      icon.innerHTML = ICONS[kind];
+      const label = document.createElement("span");
+      label.className = "console-log-line-text";
+      label.textContent = text;
+      row.append(icon, label);
+      const toggle = () => {
+        const next = row.classList.toggle("expanded");
+        row.setAttribute("aria-expanded", String(next));
+      };
+      row.addEventListener("click", toggle);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); }
+      });
+      return row;
+    }
+
+    function render(raw) {
+      const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 12;
+      const expanded = new Set();
+      box.querySelectorAll(".console-log-line.expanded > .console-log-line-text")
+        .forEach((el) => expanded.add(el.textContent));
+      box.innerHTML = "";
+      if (!raw || raw.trim() === IDLE_TEXT) {
+        const empty = document.createElement("div");
+        empty.className = "console-log-empty";
+        empty.textContent = IDLE_TEXT;
+        box.append(empty);
+        box.dataset.lastRendered = raw || "";
+        return;
+      }
+      const endsWithNewline = raw.endsWith("\n");
+      const lines = (endsWithNewline ? raw.slice(0, -1) : raw).split("\n");
+      const visibleFrom = Math.max(0, lines.length - MAX_LINES);
+      const frag = document.createDocumentFragment();
+      if (visibleFrom > 0) {
+        // Older lines stop getting a row (bounds DOM size on very long sessions), but their
+        // exact text stays in a hidden node — box.textContent, which "Copiar log" reads,
+        // always reconstructs the *complete* history, never just what is currently on screen.
+        const older = document.createElement("span");
+        older.hidden = true;
+        older.textContent = lines.slice(0, visibleFrom).join("\n") + "\n";
+        frag.append(older);
+        const notice = document.createElement("div");
+        notice.className = "console-log-empty";
+        notice.textContent = `… ${visibleFrom} linha(s) mais antigas ocultas (incluídas ao copiar) …`;
+        frag.append(notice);
+      }
+      lines.slice(visibleFrom).forEach((line) => {
+        frag.append(buildRow(line, expanded.has(line)));
+        frag.append(document.createTextNode("\n"));
+      });
+      if (!endsWithNewline) frag.lastChild?.remove();
+      box.append(frag);
+      box.dataset.lastRendered = raw;
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    }
+
+    render(box.textContent);
+    new MutationObserver(() => {
+      const raw = box.textContent;
+      if (raw === box.dataset.lastRendered) return;
+      render(raw);
+    }).observe(box, { childList: true });
+  }
+  ["specification", "development"].forEach(enableConsoleLogLines);
+
+  // Adds a "Copiar log" button to the console panel heading. Reads box.textContent at
+  // click time — which, thanks to enableConsoleLogLines() above keeping every line (even
+  // hidden ones) represented as real text nodes, always holds the complete raw log, not
+  // just the portion currently rendered as rows.
+  function enableConsoleLogCopy(flow) {
+    const box = document.getElementById(`console-log-${flow}`);
+    const meta = document.getElementById(`console-meta-${flow}`);
+    const heading = meta?.closest(".panel-heading");
+    if (!box || !meta || !heading || heading.dataset.copyReady) return;
+    heading.dataset.copyReady = "1";
+    const actions = document.createElement("div");
+    actions.className = "panel-heading-actions";
+    meta.replaceWith(actions);
+    actions.append(meta);
+    const ICON_COPY = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.3 10.3V3.7A1.4 1.4 0 0 1 4.7 2.3h6.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+    const ICON_CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5 L6.5 12 L13 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "console-log-copy-button";
+    button.innerHTML = `${ICON_COPY}<span>Copiar log</span>`;
+    let resetTimer = null;
+    function setState(ok, message) {
+      clearTimeout(resetTimer);
+      button.classList.toggle("copied", ok === true);
+      button.innerHTML = `${ok ? ICON_CHECK : ICON_COPY}<span>${message}</span>`;
+      resetTimer = setTimeout(() => {
+        button.classList.remove("copied");
+        button.innerHTML = `${ICON_COPY}<span>Copiar log</span>`;
+      }, 1700);
+    }
+    button.addEventListener("click", async () => {
+      const text = box.textContent || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        setState(true, "Copiado!");
+        return;
+      } catch (_) { /* clipboard API unavailable (file://, insecure context…) — fall back below */ }
+      try {
+        const helper = document.createElement("textarea");
+        helper.value = text;
+        helper.setAttribute("readonly", "");
+        helper.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none;";
+        document.body.appendChild(helper);
+        helper.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(helper);
+        setState(ok, ok ? "Copiado!" : "Falha ao copiar");
+      } catch (_) {
+        setState(false, "Falha ao copiar");
+      }
+    });
+    actions.append(button);
+  }
+  ["specification", "development"].forEach(enableConsoleLogCopy);
 
   function ensureDevelopmentPipeline() {
     const view = document.getElementById("view-development");
