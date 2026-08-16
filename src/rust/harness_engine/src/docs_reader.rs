@@ -71,7 +71,9 @@ pub fn read(folder: &str) -> (String, Vec<String>) {
         content.push_str("\n\n");
 
         if content.len() > max_chars {
-            harness_log::error(&format!("[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {name}."));
+            harness_log::error(&format!(
+                "[DocsReader] content exceeded {max_chars} bytes (UTF-8); truncating at {name}."
+            ));
             content = truncate_utf8_bytes(&content, max_chars);
             break;
         }

@@ -71,7 +71,27 @@ public static class SpecificationPublisher
 
         var features = readiness.Slices.Select((slice, index) =>
         {
-            var references = slice.RequirementIds.Concat(slice.AdrIds).Distinct().ToArray();
+            var requirementIds = slice.RequirementIds.ToHashSet(StringComparer.Ordinal);
+            var acceptanceCriteria = srs.AcceptanceCriteria
+                .Where(item => item.RequirementIds.Any(requirementIds.Contains))
+                .ToArray();
+            var interfaces = srs.Interfaces
+                .Where(item => item.RequirementIds.Any(requirementIds.Contains))
+                .ToArray();
+            var dataRules = srs.DataRules
+                .Where(item => item.RequirementIds.Any(requirementIds.Contains))
+                .ToArray();
+            var controls = sdd.Controls
+                .Where(item => item.RequirementIds.Any(requirementIds.Contains))
+                .ToArray();
+            var references = slice.RequirementIds
+                .Concat(slice.AdrIds)
+                .Concat(acceptanceCriteria.Select(item => item.Id))
+                .Concat(interfaces.Select(item => item.Id))
+                .Concat(dataRules.Select(item => item.Id))
+                .Concat(controls.Select(item => item.Id))
+                .Distinct()
+                .ToArray();
             var requirementText = slice.RequirementIds
                 .Select(id => requirements.TryGetValue(id, out var requirement)
                     ? $"{id}: {requirement.Statement}"
@@ -82,13 +102,20 @@ public static class SpecificationPublisher
                     ? $"{id}: {adr.Title}. Decision: {adr.Decision}. Rationale: {adr.Rationale}"
                     : id)
                 .ToArray();
+            var acceptanceText = new[] { slice.AcceptanceCriterion }
+                .Concat(acceptanceCriteria.Select(item =>
+                    $"{item.Id}: Given {item.Given}. When {item.When}. Then {item.Then}"))
+                .ToArray();
+            var relatedContractText = interfaces.Select(item => $"{item.Id}: {item.Name}. {item.Description}")
+                .Concat(dataRules.Select(item => $"{item.Id}: {item.Rule}"))
+                .Concat(controls.Select(item => $"{item.Id}: {item.Name}. {item.Description}"));
             var description = $"{slice.Goal}. Observable outcome: {slice.ObservableOutcome}. "
                 + $"Happy path: {slice.HappyPath}. Failure path: {slice.FailurePath}.";
             var context = new ImplementationContext(
                 Requirements: requirementText,
-                Constraints: slice.OutOfScope.Select(value => $"out of scope: {value}").Concat(slice.Contracts).ToArray(),
+                Constraints: slice.OutOfScope.Select(value => $"out of scope: {value}").Concat(slice.Contracts).Concat(relatedContractText).ToArray(),
                 Files: [slice.SuggestedTarget],
-                Acceptance: [slice.AcceptanceCriterion],
+                Acceptance: acceptanceText,
                 Decisions: decisionText);
             return new Feature(
                 index + 1,

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Regression coverage for a real production crash in the .NET port that this Go port mirrors:
 // a DataRule with an empty/null "rule" used to sail through SRS evaluation, get accepted, and
@@ -14,8 +17,8 @@ import "testing"
 
 func validSrsDocument() SRS {
 	return SRS{
-		Schema:     "iao/srs/v1",
-		PrdDigest:  "sha256:prd",
+		Schema:    "iao/srs/v1",
+		PrdDigest: "sha256:prd",
 		FunctionalRequirements: []Req{
 			{Id: "RF-001", GoalIds: []string{"OBJ-001"}, Statement: "does the thing", AcceptanceIds: []string{"AC-001"}},
 		},
@@ -90,5 +93,53 @@ func TestRenderSrs_RegraDeDadosComTextoVazio_NaoEntraEmPanico(t *testing.T) {
 	rendered := renderSRS(document)
 	if rendered == "" {
 		t.Fatal("expected non-empty rendered output")
+	}
+}
+
+func validSddDocument() SDD {
+	return SDD{
+		Schema:    "iao/sdd/v1",
+		SrsDigest: "sha256:srs",
+		Adrs: []ADR{{
+			Id: "ADR-1", Title: "title", Decision: "decision", Rationale: "rationale",
+			RequirementIds: []string{"RF-001"},
+		}},
+		Controls: []Control{{
+			Id: "IC-1", Name: "control", Description: "description",
+			RequirementIds: []string{"RF-001"},
+		}},
+	}
+}
+
+func TestValidateSdd_SourceBackedDesign_Passa(t *testing.T) {
+	document := validSddDocument()
+	document.SourceDigest = "sha256:sources"
+	document.SourceFiles = []string{"architecture.md", "tree.txt"}
+	document.DesignContent = "## Architecture\n\n```mermaid\ngraph TD\n```\n\n```text\napp/\n```"
+
+	violations := validateSddWithSources(document, "sha256:srs", []string{"RF-001"}, "sha256:sources", document.SourceFiles)
+	if len(violations) != 0 {
+		t.Fatalf("expected no violations, got %+v", violations)
+	}
+}
+
+func TestValidateSdd_SourceBackedDesign_SemConteudoEhRejeitado(t *testing.T) {
+	document := validSddDocument()
+	document.SourceDigest = "sha256:sources"
+	document.SourceFiles = []string{"architecture.md"}
+
+	violations := validateSddWithSources(document, "sha256:srs", []string{"RF-001"}, "sha256:sources", document.SourceFiles)
+	if !hasCode(violations, "SDD_DESIGN_CONTENT_MISSING") {
+		t.Fatalf("expected SDD_DESIGN_CONTENT_MISSING, got %+v", violations)
+	}
+}
+
+func TestRenderSdd_PreservaMarkdownDeDesign(t *testing.T) {
+	document := validSddDocument()
+	document.DesignContent = "## Architecture\n\n```mermaid\ngraph TD\n```\n\n```text\napp/\n```"
+
+	rendered := renderSDD(document)
+	if !strings.Contains(rendered, "```mermaid\ngraph TD\n```") || !strings.Contains(rendered, "app/") {
+		t.Fatalf("expected raw design content in rendered SDD, got %q", rendered)
 	}
 }

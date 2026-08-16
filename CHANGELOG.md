@@ -37,6 +37,12 @@ organized using categories such as `Added`, `Changed`, `Fixed`, and `Breaking`.
   matched to Moonshot's raw API model prices by context-window/name
   correspondence; one model alias (`kimi-code/k3-256k`) has no confident match
   and is left unpriced.
+- `.harness/scripts/kimi_context_usage.py`: emits the `iao.context.v1` contract
+  (`HARNESS_CONTEXT_USAGE_JSON`) for Kimi's adaptive context-reset policy, read
+  from `wire.jsonl`'s `llm.request.maxTokens` (the model's real configured
+  context window, unlike Claude's env-var-default fallback) paired with the
+  matching `usage.record`'s input total. Wired into a new "Driver telemetry"
+  section in `.kimi/agents/{development,specification}.md`.
 
 ### Changed
 

@@ -2,7 +2,10 @@
 //! per call, wiring `store` (persistence), `evaluator` (validation), `renderer`/`publisher`
 //! (publication) and `prompts` (driver-facing text) together.
 
-use crate::evaluator::{validate_approval, validate_development_readiness, validate_idea, validate_prd, validate_readiness, validate_sdd, validate_srs};
+use crate::evaluator::{
+    validate_approval, validate_development_readiness, validate_idea, validate_prd,
+    validate_readiness, validate_sdd_with_sources, validate_srs,
+};
 use crate::prompts::{
     analysis_prompt, analysis_retry_prompt, approve_prompt, approve_retry_prompt, design_prompt,
     design_retry_prompt, discover_prompt, discover_retry_prompt, product_prompt,
@@ -65,7 +68,11 @@ pub(crate) fn discover(_: Option<&Envelope>) -> String {
         .filter_map(|f| f.as_str().map(String::from))
         .collect();
     let source = if !files.is_empty() {
-        format!("{SOURCES_FOLDER} ({} file(s)): {}", files.len(), files.join(", "))
+        format!(
+            "{SOURCES_FOLDER} ({} file(s)): {}",
+            files.len(),
+            files.join(", ")
+        )
     } else {
         "driver".to_string()
     };
@@ -137,7 +144,22 @@ pub(crate) fn design(_: Option<&Envelope>) -> String {
         return design_retry_prompt(&["missing accepted SRS.".to_string()]);
     };
     let requirements = requirement_ids_of(&s);
-    let errors = validate_sdd(&v, &digest(&s), &requirements);
+    let sources = read("sources.accepted.json");
+    let source_files = sources
+        .as_ref()
+        .and_then(|value| value["files"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|file| file.as_str().map(String::from))
+        .collect::<Vec<_>>();
+    let source_digest = sources.as_ref().map(digest).unwrap_or_default();
+    let errors = validate_sdd_with_sources(
+        &v,
+        &digest(&s),
+        &requirements,
+        &source_digest,
+        &source_files,
+    );
     if !errors.is_empty() {
         return design_retry_prompt(&errors);
     }
@@ -180,7 +202,9 @@ pub(crate) fn review(_: Option<&Envelope>) -> String {
         "product" => product_prompt(),
         "analysis" => analysis_prompt(),
         "design" => design_prompt(),
-        _ => review_retry_prompt(&[format!("READINESS_VERDICT_INVALID: unroutable verdict '{verdict}'")]),
+        _ => review_retry_prompt(&[format!(
+            "READINESS_VERDICT_INVALID: unroutable verdict '{verdict}'"
+        )]),
     }
 }
 
@@ -214,7 +238,9 @@ pub(crate) fn approve(_: Option<&Envelope>) -> String {
         save_status(
             run_state,
             "publish_blocked",
-            Some("one or more accepted documents (prd/srs/sdd/readiness) are missing; cannot publish."),
+            Some(
+                "one or more accepted documents (prd/srs/sdd/readiness) are missing; cannot publish.",
+            ),
         );
         return "stop".into();
     };

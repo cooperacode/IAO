@@ -1,3 +1,4 @@
+using System.Text;
 using Harness.Engine;
 namespace Flows.Development;
 
@@ -19,6 +20,8 @@ public static partial class DevelopmentTasks
     private const string FeaturesShape =
         """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]""";
 
+    private const string DesignDocumentFileName = "20-software-design-document.md";
+
     // Reinjects the current feature's bounded inline context into implement/fix prompts.
     private static string FeatureContextBlock(Feature feature)
     {
@@ -37,6 +40,60 @@ public static partial class DevelopmentTasks
             {implementationContext}
 
             """;
+    }
+
+    /// <summary>
+    /// Rehydrates the published design document for every fresh implementation session.
+    /// The feature list carries the feature-specific scope, while this durable source keeps
+    /// architecture, diagrams, folder trees, and cross-feature decisions available after a
+    /// context reset (including the Specification handoff path, which skips the initializer).
+    /// </summary>
+    private static string DesignContextBlock()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(DocsFolder, DesignDocumentFileName),
+            Path.Combine(DocsFolder, "active", DesignDocumentFileName),
+            Path.Combine("specs", "active", DesignDocumentFileName),
+        }.Distinct(StringComparer.Ordinal);
+
+        foreach (var candidate in candidates)
+        {
+            var path = PathResolver.Resolve(candidate);
+            if (!File.Exists(path))
+                continue;
+
+            try
+            {
+                var content = File.ReadAllText(path);
+                if (string.IsNullOrWhiteSpace(content))
+                    continue;
+
+                var maxBytes = HarnessConfig.Current.DocsMaxChars;
+                if (Encoding.UTF8.GetByteCount(content) > maxBytes)
+                {
+                    HarnessLog.Error(
+                        $"[dev] design document exceeded {maxBytes} bytes (UTF-8); truncating implementation context.");
+                    content = TruncateUtf8Bytes(content, maxBytes)
+                        + "\n\n[design context truncated at the configured docsMaxChars limit]";
+                }
+
+                var source = Path.GetRelativePath(Directory.GetCurrentDirectory(), path);
+                return $"""
+                    <design-context source="{source}">
+                    {PromptFormatter.Inline(content)}
+                    </design-context>
+
+                    """;
+            }
+            catch (Exception ex)
+            {
+                HarnessLog.Error($"[dev] failed to read design document '{candidate}': {ex.Message}");
+                continue;
+            }
+        }
+
+        return "";
     }
 
     // --- session 0: initializer -----------------------------------------
@@ -186,6 +243,9 @@ public static partial class DevelopmentTasks
             Follow `dev-implement` for this feature:
             Feature #{feature.Id} (priority {feature.Priority}): {feature.Title}
             {FeatureContextBlock(feature)}
+            {DesignContextBlock()}
+            Treat the design context as architectural guidance for this feature. Do not expand
+            the feature's scope to implement unrelated work from the document.
             Target directory: {RunConfigStore.Load().TargetDir}
 
             Return `implement` without arguments when done. The harness derives the summary from Git.
@@ -241,7 +301,7 @@ public static partial class DevelopmentTasks
             input: $"""
             Verification FAILED on feature #{State(CurrentFeatureIdKey)}
             ({State(CurrentFeatureTitleKey)}).
-            {featureContext}{failure}Follow `dev-implement` to fix only this
+            {featureContext}{DesignContextBlock()}{failure}Follow `dev-implement` to fix only this
             feature. Return `implement` without arguments; the harness derives the new summary
             from Git.
             """,

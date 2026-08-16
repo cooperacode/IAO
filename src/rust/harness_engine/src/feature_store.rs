@@ -40,12 +40,19 @@ pub struct ImplementationContext {
 
 impl ImplementationContext {
     pub fn is_empty(&self) -> bool {
-        self.requirements.is_empty() && self.decisions.is_empty() && self.constraints.is_empty() && self.files.is_empty() && self.acceptance.is_empty()
+        self.requirements.is_empty()
+            && self.decisions.is_empty()
+            && self.constraints.is_empty()
+            && self.files.is_empty()
+            && self.acceptance.is_empty()
     }
 
     pub fn prompt_text(&self) -> String {
         fn format_items(label: &str, values: &[String]) -> String {
-            let values = values.iter().map(|value| value.replace("\r\n", "\\n").replace('\n', "\\n")).collect::<Vec<_>>();
+            let values = values
+                .iter()
+                .map(|value| value.replace("\r\n", "\\n").replace('\n', "\\n"))
+                .collect::<Vec<_>>();
             format!("{label}: {}", values.join("; "))
         }
         [
@@ -54,7 +61,8 @@ impl ImplementationContext {
             format_items("constraints", &self.constraints),
             format_items("files", &self.files),
             format_items("acceptance", &self.acceptance),
-        ].join("\\n")
+        ]
+        .join("\\n")
     }
 }
 
@@ -65,16 +73,20 @@ enum RawImplementationContext {
     Legacy(String),
 }
 
-fn deserialize_implementation_context<'de, D>(deserializer: D) -> Result<ImplementationContext, D::Error>
+fn deserialize_implementation_context<'de, D>(
+    deserializer: D,
+) -> Result<ImplementationContext, D::Error>
 where
     D: Deserializer<'de>,
 {
     match Option::<RawImplementationContext>::deserialize(deserializer)? {
         Some(RawImplementationContext::Structured(context)) => Ok(context),
-        Some(RawImplementationContext::Legacy(value)) if !value.trim().is_empty() => Ok(ImplementationContext {
-            requirements: vec![value],
-            ..Default::default()
-        }),
+        Some(RawImplementationContext::Legacy(value)) if !value.trim().is_empty() => {
+            Ok(ImplementationContext {
+                requirements: vec![value],
+                ..Default::default()
+            })
+        }
         _ => Ok(ImplementationContext::default()),
     }
 }
@@ -97,7 +109,11 @@ pub struct Feature {
     pub description: String,
     #[serde(default)]
     pub references: Vec<String>,
-    #[serde(rename = "implementationContext", default, deserialize_with = "deserialize_implementation_context")]
+    #[serde(
+        rename = "implementationContext",
+        default,
+        deserialize_with = "deserialize_implementation_context"
+    )]
     pub implementation_context: ImplementationContext,
 }
 
@@ -114,7 +130,9 @@ pub fn parse_development_plan(json: &str) -> Vec<Feature> {
         Ok(value) => value,
         Err(_) => return Vec::new(),
     };
-    let Some(features) = value.get("features") else { return Vec::new(); };
+    let Some(features) = value.get("features") else {
+        return Vec::new();
+    };
     parse(&serde_json::to_string(features).unwrap_or_default())
 }
 
@@ -132,7 +150,11 @@ struct RawFeature {
     description: String,
     #[serde(default)]
     references: Vec<String>,
-    #[serde(rename = "implementationContext", default, deserialize_with = "deserialize_implementation_context")]
+    #[serde(
+        rename = "implementationContext",
+        default,
+        deserialize_with = "deserialize_implementation_context"
+    )]
     implementation_context: ImplementationContext,
 }
 
@@ -176,7 +198,9 @@ pub fn parse(json: &str) -> Vec<Feature> {
     let explicit: Vec<i32> = parsed.iter().filter(|f| f.id > 0).map(|f| f.id).collect();
     let explicit_set: HashSet<i32> = explicit.iter().copied().collect();
     if explicit.len() != explicit_set.len() {
-        harness_log::error("[FeatureStore] failed to parse features: duplicate explicit feature id");
+        harness_log::error(
+            "[FeatureStore] failed to parse features: duplicate explicit feature id",
+        );
         return Vec::new();
     }
     let mut used = explicit_set;
@@ -185,18 +209,31 @@ pub fn parse(json: &str) -> Vec<Feature> {
         .into_iter()
         .enumerate()
         .map(|(_i, f)| {
-            if f.title.trim().is_empty() || f.priority <= 0 { return None; }
-            let id = if f.id > 0 { f.id } else { while used.contains(&next_id) { next_id += 1; } used.insert(next_id); let id = next_id; next_id += 1; id };
+            if f.title.trim().is_empty() || f.priority <= 0 {
+                return None;
+            }
+            let id = if f.id > 0 {
+                f.id
+            } else {
+                while used.contains(&next_id) {
+                    next_id += 1;
+                }
+                used.insert(next_id);
+                let id = next_id;
+                next_id += 1;
+                id
+            };
             Some(Feature {
-            id,
-            title: f.title,
-            priority: f.priority,
-            passes: false,
-            depends_on: unique_i32(f.depends_on),
-            description: truncate_description(&f.description),
-            references: unique_strings(f.references),
-            implementation_context: truncate_implementation_context(&f.implementation_context),
-        })})
+                id,
+                title: f.title,
+                priority: f.priority,
+                passes: false,
+                depends_on: unique_i32(f.depends_on),
+                description: truncate_description(&f.description),
+                references: unique_strings(f.references),
+                implementation_context: truncate_implementation_context(&f.implementation_context),
+            })
+        })
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default();
 
@@ -215,7 +252,10 @@ fn unique_i32(values: Vec<i32>) -> Vec<i32> {
 
 fn unique_strings(values: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
-    values.into_iter().filter(|v| !v.trim().is_empty() && seen.insert(v.clone())).collect()
+    values
+        .into_iter()
+        .filter(|v| !v.trim().is_empty() && seen.insert(v.clone()))
+        .collect()
 }
 
 // Cuts down to DESCRIPTION_MAX_CHARS characters — never throws, never rejects the whole
@@ -233,8 +273,12 @@ fn truncate_implementation_context(context: &ImplementationContext) -> Implement
     let mut take = |values: &[String]| {
         let mut result = Vec::new();
         for value in values {
-            if remaining == 0 { break; }
-            if value.trim().is_empty() { continue; }
+            if remaining == 0 {
+                break;
+            }
+            if value.trim().is_empty() {
+                continue;
+            }
             let taken: String = value.chars().take(remaining).collect();
             remaining -= taken.chars().count();
             result.push(taken);
@@ -464,7 +508,9 @@ pub fn apply_revision(revision: &PlanRevision, max_features: usize) -> PlanRevis
         return PlanRevisionResult::rejected("the revised plan must contain features");
     }
     if revision.revised_features.len() > max_features {
-        return PlanRevisionResult::rejected(format!("the revised plan exceeds the {max_features}-feature limit"));
+        return PlanRevisionResult::rejected(format!(
+            "the revised plan exceeds the {max_features}-feature limit"
+        ));
     }
 
     let proposed = match normalize_revision_features(&revision.revised_features) {
@@ -480,10 +526,18 @@ pub fn apply_revision(revision: &PlanRevision, max_features: usize) -> PlanRevis
     let proposed_by_id: HashMap<i32, &Feature> = proposed.iter().map(|f| (f.id, f)).collect();
     for passed in current.iter().filter(|f| f.passes) {
         match proposed_by_id.get(&passed.id) {
-            None => return PlanRevisionResult::rejected(format!("passed feature #{} cannot be removed", passed.id)),
+            None => {
+                return PlanRevisionResult::rejected(format!(
+                    "passed feature #{} cannot be removed",
+                    passed.id
+                ));
+            }
             Some(retained) => {
                 if !same_definition(passed, retained) {
-                    return PlanRevisionResult::rejected(format!("passed feature #{} cannot be modified", passed.id));
+                    return PlanRevisionResult::rejected(format!(
+                        "passed feature #{} cannot be modified",
+                        passed.id
+                    ));
                 }
             }
         }
@@ -510,7 +564,10 @@ pub fn apply_revision(revision: &PlanRevision, max_features: usize) -> PlanRevis
 // already carry explicit positive ids. `None` if any id/title/priority is invalid or ids
 // collide.
 fn normalize_revision_features(features: &[Feature]) -> Option<Vec<Feature>> {
-    if features.iter().any(|f| f.id <= 0 || f.title.trim().is_empty() || f.priority <= 0) {
+    if features
+        .iter()
+        .any(|f| f.id <= 0 || f.title.trim().is_empty() || f.priority <= 0)
+    {
         return None;
     }
     let mut seen = HashSet::new();
@@ -700,14 +757,22 @@ mod tests {
 
         assert_eq!(features[0].description, "does Y");
         assert_eq!(features[0].references, vec!["RF-003".to_string()]);
-        assert_eq!(features[0].implementation_context.requirements, vec!["inline Y"]);
+        assert_eq!(
+            features[0].implementation_context.requirements,
+            vec!["inline Y"]
+        );
     }
 
     #[test]
     fn parse_development_plan_preserva_contexto_de_decisao() {
-        let features = parse_development_plan(r#"{"schema":"iao/development-plan/v1","features":[{"id":1,"title":"API","priority":1,"implementationContext":{"decisions":["ADR-2: use Postgres"]}}]}"#);
+        let features = parse_development_plan(
+            r#"{"schema":"iao/development-plan/v1","features":[{"id":1,"title":"API","priority":1,"implementationContext":{"decisions":["ADR-2: use Postgres"]}}]}"#,
+        );
 
-        assert_eq!(features[0].implementation_context.decisions, vec!["ADR-2: use Postgres"]);
+        assert_eq!(
+            features[0].implementation_context.decisions,
+            vec!["ADR-2: use Postgres"]
+        );
     }
 
     #[test]
@@ -720,7 +785,10 @@ mod tests {
             r#"[{{"id":1,"title":"X","priority":1,"description":"{long_description}"}}]"#
         ));
 
-        assert_eq!(features[0].description.chars().count(), DESCRIPTION_MAX_CHARS);
+        assert_eq!(
+            features[0].description.chars().count(),
+            DESCRIPTION_MAX_CHARS
+        );
     }
 
     #[test]
@@ -734,7 +802,9 @@ mod tests {
         ));
 
         assert_eq!(
-            features[0].implementation_context.requirements[0].chars().count(),
+            features[0].implementation_context.requirements[0]
+                .chars()
+                .count(),
             IMPLEMENTATION_CONTEXT_MAX_CHARS
         );
     }

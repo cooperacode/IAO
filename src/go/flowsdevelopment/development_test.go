@@ -50,6 +50,17 @@ func givenSpecsBrief(t *testing.T, specsDir, content string) {
 	}
 }
 
+func givenPublishedDesign(t *testing.T, content string) {
+	t.Helper()
+	path := filepath.Join("specs", "active", "20-software-design-document.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func cmd(value string, args ...string) *engine.Envelope {
 	e := engine.NewEnvelope(engine.EnvelopeType.Command, value, args)
 	return &e
@@ -351,6 +362,35 @@ func TestPick_ReturnsImplementWithFeatureDescriptionAndReferences(t *testing.T) 
 	}
 	if !strings.Contains(result, "<implementation-context>requirements: inline X") || strings.Contains(result, "<brief>") {
 		t.Fatalf("unexpected inline context: %s", result)
+	}
+}
+
+func TestPick_ReturnsImplementWithPublishedDesignContext(t *testing.T) {
+	targetDir, _ := isolate(t)
+	givenPublishedDesign(t, "# Software design\n\n```mermaid\nflowchart LR\n    Client --> API\n```\n\n```text\nsrc/\n  Domain/\n  Infrastructure/\n```")
+
+	result := planWith(targetDir)
+
+	if !strings.Contains(result, "<design-context source=") ||
+		!strings.Contains(result, "flowchart LR") ||
+		!strings.Contains(result, "src/\\n  Domain/\\n  Infrastructure/") ||
+		!strings.Contains(result, "Do not expand") {
+		t.Fatalf("unexpected design context: %s", result)
+	}
+}
+
+func TestFixPrompt_ReturnsPublishedDesignContextAfterFailure(t *testing.T) {
+	targetDir, _ := isolate(t)
+	givenPublishedDesign(t, "# Design\n\nUse the repository interfaces from the SDD.")
+	planWith(targetDir)
+	writeVerifyFeatureScript(t, targetDir, "#!/usr/bin/env bash\nset -e\necho 'FAIL: feature failed'\nexit 7\n")
+
+	result := Implement(cmd("implement", "done"))
+
+	if !strings.Contains(result, "<design-context source=") ||
+		!strings.Contains(result, "Use the repository interfaces from the SDD.") ||
+		!strings.Contains(result, "feature failed") {
+		t.Fatalf("unexpected fix prompt: %s", result)
 	}
 }
 

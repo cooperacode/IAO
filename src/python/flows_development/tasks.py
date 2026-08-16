@@ -109,7 +109,8 @@ def start() -> str:
 
     content, files = docs_reader.read(_docs_folder())
     # Persisted for auditability and compatibility; implementation sessions use the bounded
-    # context copied into each feature by the planner.
+    # context copied into each feature plus the published design document read from disk at
+    # every fresh implementation prompt.
     artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
     state_store.set("origem", "specs")
     return prompts.initializer_prompt(content, files)

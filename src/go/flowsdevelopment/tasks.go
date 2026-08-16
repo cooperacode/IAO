@@ -54,7 +54,8 @@ const (
 	verifyFailuresKey = "verify_failures"
 
 	// briefArtifactName is retained in the ArtifactStore (.harness/brief.md) for auditability
-	// and compatibility; implementation sessions use each feature's bounded context.
+	// and compatibility; implementation sessions use each feature's bounded context plus the
+	// published design document rehydrated from disk.
 	briefArtifactName = "brief"
 
 	// planFilePath is where the driver writes the raw (unescaped) feature-list JSON array
@@ -111,7 +112,8 @@ func Start() string {
 
 	content, files := engine.ReadDocs(docsFolder())
 	// Persisted for auditability and compatibility; implementation sessions use the bounded
-	// context copied into each feature by the planner.
+	// context copied into each feature plus the published design document read from disk at
+	// every fresh implementation prompt.
 	engine.WriteArtifact(briefArtifactName, content)
 	engine.SetState("origem", "specs")
 	return InitializerPrompt(content, files)

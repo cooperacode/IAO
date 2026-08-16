@@ -7,8 +7,17 @@ description: "draft the SDD proposal for a Specification run's design phase and 
 
 Write the design-phase proposal to `.harness/specification/active/sdd.proposal.json` — a real
 file, written with your file-write tool, in the exact shape the harness prompt shows you
-(`schema`, `srsDigest`, `adrs`, `controls`). Use `schema` exactly `"iao/sdd/v1"` and set
-`srsDigest` to the accepted SRS digest the prompt gives you.
+(`schema`, `srsDigest`, optional source provenance, `designContent`, `adrs`, `controls`). Use
+`schema` exactly `"iao/sdd/v1"` and set `srsDigest` to the accepted SRS digest the prompt gives
+you.
+
+When the prompt supplies an accepted source bundle, copy its `sourceDigest` and `sourceFiles`
+exactly and populate `designContent` with the detailed Markdown design. Preserve headings,
+tables, Mermaid diagrams, fenced code blocks and folder/file trees instead of reducing them to
+ADRs or controls. `designContent` must be a JSON string containing Markdown; do not put the
+top-level `# Software Design Document` heading in it because the renderer supplies that title.
+When no source bundle is supplied, `sourceDigest` and `sourceFiles` may be null, but retain any
+detailed design in `designContent`.
 
 ## What SddEvaluator checks
 

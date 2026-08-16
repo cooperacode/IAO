@@ -214,6 +214,30 @@ public class SpecificationRendererTests
     }
 
     [Fact]
+    public void RenderSdd_PreservaConteudoDetalhadoMarkdownSemEscapar()
+    {
+        var content = """
+            ## System context
+
+            ```mermaid
+            flowchart LR
+              Client --> API
+            ```
+
+            ```text
+            app/
+              src/
+            ```
+            """;
+        var rendered = SpecificationRenderer.RenderSdd(SampleSdd() with { DesignContent = content });
+
+        Assert.Contains(content, rendered);
+        Assert.Contains("```mermaid", rendered);
+        Assert.Contains("flowchart LR", rendered);
+        Assert.Contains("app/\n  src/", rendered);
+    }
+
+    [Fact]
     public void RenderSdd_EscapaCaracteresEspeciaisDeMarkdown()
     {
         var sdd = SampleSdd() with

@@ -39,12 +39,48 @@ func developmentPlanJSON(srs SRS, sdd SDD, readiness Verdict, rendered map[strin
 	}
 	features := make([]engine.Feature, 0, len(readiness.Slices))
 	for index, slice := range readiness.Slices {
+		requirementIDs := map[string]bool{}
+		for _, id := range slice.RequirementIds {
+			requirementIDs[id] = true
+		}
+		linked := func(ids []string) bool {
+			for _, id := range ids {
+				if requirementIDs[id] {
+					return true
+				}
+			}
+			return false
+		}
 		requirementText := []string{}
 		for _, id := range slice.RequirementIds {
 			if statement, ok := requirements[id]; ok {
 				requirementText = append(requirementText, id+": "+statement)
 			} else {
 				requirementText = append(requirementText, id)
+			}
+		}
+		acceptanceCriteria := []AC{}
+		for _, item := range srs.AcceptanceCriteria {
+			if linked(item.RequirementIds) {
+				acceptanceCriteria = append(acceptanceCriteria, item)
+			}
+		}
+		interfaces := []Iface{}
+		for _, item := range srs.Interfaces {
+			if linked(item.RequirementIds) {
+				interfaces = append(interfaces, item)
+			}
+		}
+		dataRules := []Rule{}
+		for _, item := range srs.DataRules {
+			if linked(item.RequirementIds) {
+				dataRules = append(dataRules, item)
+			}
+		}
+		controls := []Control{}
+		for _, item := range sdd.Controls {
+			if linked(item.RequirementIds) {
+				controls = append(controls, item)
 			}
 		}
 		decisionText := []string{}
@@ -63,6 +99,32 @@ func developmentPlanJSON(srs SRS, sdd SDD, readiness Verdict, rendered map[strin
 		}
 		references := append([]string{}, slice.RequirementIds...)
 		references = append(references, slice.AdrIds...)
+		for _, item := range acceptanceCriteria {
+			references = append(references, item.Id)
+		}
+		for _, item := range interfaces {
+			references = append(references, item.Id)
+		}
+		for _, item := range dataRules {
+			references = append(references, item.Id)
+		}
+		for _, item := range controls {
+			references = append(references, item.Id)
+		}
+		acceptanceText := []string{slice.AcceptanceCriterion}
+		for _, item := range acceptanceCriteria {
+			acceptanceText = append(acceptanceText, fmt.Sprintf("%s: Given %s. When %s. Then %s", item.Id, item.Given, item.When, item.Then))
+		}
+		relatedContractText := []string{}
+		for _, item := range interfaces {
+			relatedContractText = append(relatedContractText, fmt.Sprintf("%s: %s. %s", item.Id, item.Name, item.Description))
+		}
+		for _, item := range dataRules {
+			relatedContractText = append(relatedContractText, fmt.Sprintf("%s: %s", item.Id, item.Rule))
+		}
+		for _, item := range controls {
+			relatedContractText = append(relatedContractText, fmt.Sprintf("%s: %s. %s", item.Id, item.Name, item.Description))
+		}
 		features = append(features, engine.Feature{
 			Id: index + 1, Title: slice.Goal, Priority: index + 1, Passes: false,
 			DependsOn: dependsOn, Description: fmt.Sprintf("%s Observable outcome: %s. Happy path: %s. Failure path: %s.", slice.Goal, slice.ObservableOutcome, slice.HappyPath, slice.FailurePath),
@@ -70,8 +132,8 @@ func developmentPlanJSON(srs SRS, sdd SDD, readiness Verdict, rendered map[strin
 			ImplementationContext: engine.ImplementationContext{
 				Requirements: requirementText,
 				Decisions:    decisionText,
-				Constraints:  append(prefixValues("out of scope: ", slice.OutOfScope), slice.Contracts...),
-				Files:        []string{slice.SuggestedTarget}, Acceptance: []string{slice.AcceptanceCriterion},
+				Constraints:  append(append(prefixValues("out of scope: ", slice.OutOfScope), slice.Contracts...), relatedContractText...),
+				Files:        []string{slice.SuggestedTarget}, Acceptance: acceptanceText,
 			},
 		})
 	}
@@ -200,7 +262,12 @@ func renderSRS(document SRS) string {
 
 func renderSDD(document SDD) string {
 	var builder strings.Builder
-	builder.WriteString("# Software Design Document\n\n## Architecture Decision Records\n")
+	builder.WriteString("# Software Design Document\n\n")
+	if strings.TrimSpace(document.DesignContent) != "" {
+		builder.WriteString(strings.TrimRight(document.DesignContent, "\r\n"))
+		builder.WriteString("\n\n")
+	}
+	builder.WriteString("## Architecture Decision Records\n")
 	bullets(&builder, document.Adrs, func(item ADR) string {
 		return fmt.Sprintf("- **%s** [%s] %s: %s — rationale: %s", item.Id, joinIDs(item.RequirementIds), escapeMarkdown(item.Title), escapeMarkdown(item.Decision), escapeMarkdown(item.Rationale))
 	}, true)

@@ -37,7 +37,7 @@ const (
 	ideaShape     = `{"schema":"iao/idea/v1","title":"...","problem":"...","users":["..."],"desiredOutcomes":["..."],"constraints":["..."],"openQuestions":[{"id":"OQ-1","question":"...","blocking":false}]}`
 	prdShape      = `{"schema":"iao/prd/v1","ideaDigest":"sha256:...","vision":"...","goals":[{"id":"G-1","statement":"..."}],"successMetrics":[{"id":"M-1","goalId":"G-1","measure":"...","target":"..."}],"nonGoals":["..."],"scope":["..."],"risks":[{"id":"R-1","description":"...","mitigation":"...","severity":"..."}],"decisions":[{"id":"D-1","statement":"...","rationale":"..."}],"openQuestions":[]}`
 	srsShape      = `{"schema":"iao/srs/v1","prdDigest":"sha256:...","functionalRequirements":[{"id":"RF-1","goalIds":["G-1"],"statement":"...","dependsOn":[],"acceptanceIds":["AC-1"]}],"qualityRequirements":[],"acceptanceCriteria":[{"id":"AC-1","requirementIds":["RF-1"],"given":"...","when":"...","then":"..."}],"interfaces":[],"dataRules":[],"delivery":{"target":"...","verificationStrategy":"...","isBootstrap":true}}`
-	sddShape      = `{"schema":"iao/sdd/v1","srsDigest":"sha256:...","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}`
+	sddShape      = `{"schema":"iao/sdd/v1","srsDigest":"sha256:...","sourceDigest":"sha256:...","sourceFiles":["design.md"],"designContent":"Markdown body with headings, Mermaid diagrams, fenced code blocks and folder trees","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}`
 	reviewShape   = `{"verdict":"READY","slices":[{"id":"SL-1","classification":"...","goal":"...","inScope":["..."],"outOfScope":["..."],"observableOutcome":"...","requirementIds":["RF-1"],"adrIds":["ADR-1"],"dependsOn":[],"contracts":["..."],"happyPath":"...","failurePath":"...","acceptanceCriterion":"...","suggestedTarget":"...","suggestedVerificationStrategy":"..."}],"conflicts":[],"residuals":[]}`
 	approvalShape = `{"decision":"approved","bundleDigest":"sha256:...","rationale":"...","approvedBy":"...","decidedAt":"2026-01-01T00:00:00Z"}`
 )
@@ -217,10 +217,13 @@ type Control struct {
 	RequirementIds []string `json:"requirementIds"`
 }
 type SDD struct {
-	Schema    string    `json:"schema"`
-	SrsDigest string    `json:"srsDigest"`
-	Adrs      []ADR     `json:"adrs"`
-	Controls  []Control `json:"controls"`
+	Schema        string    `json:"schema"`
+	SrsDigest     string    `json:"srsDigest"`
+	SourceDigest  string    `json:"sourceDigest,omitempty"`
+	SourceFiles   []string  `json:"sourceFiles,omitempty"`
+	DesignContent string    `json:"designContent,omitempty"`
+	Adrs          []ADR     `json:"adrs"`
+	Controls      []Control `json:"controls"`
 }
 type Slice struct {
 	Id                            string   `json:"id"`
@@ -281,6 +284,21 @@ func sourcesBlock() string {
 	}
 	content, _ := m["content"].(string)
 	return fmt.Sprintf("<sources folder=\"specs/sources\" files=\"%s\">%s</sources>\n", strings.Join(files, ", "), engine.Inline(content))
+}
+
+func sourceFiles(bundle any) []string {
+	m, ok := bundle.(map[string]any)
+	if !ok {
+		return nil
+	}
+	values, _ := m["files"].([]any)
+	files := make([]string, 0, len(values))
+	for _, value := range values {
+		if file, ok := value.(string); ok {
+			files = append(files, file)
+		}
+	}
+	return files
 }
 
 // bundleDigest is the same computation approve() validates against — factored out so the
@@ -425,10 +443,28 @@ harness-controlled attempt.`,
 func designPrompt(violations []string) string {
 	var s SRS
 	srsDigest, _ := accepted("srs", &s)
+	sources, sourceDigest := acceptedRaw("sources")
+	files := sourceFiles(sources)
+	var sourceRequirements string
+	if len(files) > 0 && sourceDigest != "" {
+		sourceRequirements = fmt.Sprintf(`The accepted source bundle is authoritative design context:
+%s
+
+Set `+"`sourceDigest`"+` exactly to '%s' and `+"`sourceFiles`"+` exactly to %s. Populate
+`+"`designContent`"+` with the detailed Markdown design recovered from the source material.
+Preserve relevant headings, prose, tables, Mermaid diagrams, fenced code blocks and folder/file
+trees verbatim where possible. Do not replace those details with a short summary. Do not include
+the top-level `+"`# Software Design Document`"+` heading; the renderer supplies it.
+`, sourcesBlock(), sourceDigest, string(canon(files)))
+	} else {
+		sourceRequirements = `No accepted source bundle is available. Keep ` + "`sourceDigest`" + ` and ` + "`sourceFiles`" + ` null and still use ` + "`designContent`" + ` for any detailed Markdown design produced from the accepted SRS and the current conversation. Preserve diagrams, fenced code blocks and folder/file trees instead of flattening them into ADRs or controls.`
+	}
 	var input string
 	if len(violations) == 0 {
 		input = fmt.Sprintf(`Draft the SDD for this Specification run (blueprint 0004 §2/§3, design phase),
 building on the accepted SRS (digest '%s').
+
+%s
 
 Write a JSON OBJECT to the file '%s' (a real file, written with your
 file-write tool — NOT escaped or embedded inside the envelope you send back) with this
@@ -442,16 +478,18 @@ reference must point at a requirement id that actually exists in the accepted SR
 Return `+"`design`"+` without arguments when done; the harness will validate the file and
 either persist sdd.accepted.json and stop, or re-request `+"`design`"+` with the reported
 violations.`,
-			srsDigest, sddProposalPath, sddShape, srsDigest)
+			srsDigest, sourceRequirements, sddProposalPath, sddShape, srsDigest)
 	} else {
 		input = fmt.Sprintf(`The SDD proposal at '%s' did not pass SddEvaluator:
+%s
+
 %s
 
 Rewrite the file at the exact same path with this shape: %s
 `+"`schema`"+` must be exactly "iao/sdd/v1" and `+"`srsDigest`"+` must be
 set to exactly '%s'. Return `+"`design`"+` without arguments for another
 harness-controlled attempt.`,
-			sddProposalPath, violationsList(violations), sddShape, srsDigest)
+			sddProposalPath, violationsList(violations), sourceRequirements, sddShape, srsDigest)
 	}
 	return engine.Format(input, engine.NewEnvelope(engine.EnvelopeType.Command, "design", nil), engine.Skills("spec-design"))
 }
@@ -662,7 +700,8 @@ func design(*engine.Envelope) string {
 	var s SRS
 	sd, _ := accepted("srs", &s)
 	requirements := append(append([]Req{}, s.FunctionalRequirements...), s.QualityRequirements...)
-	if violations := validateSdd(x, sd, reqIDs(requirements)); len(violations) > 0 {
+	sources, sourceDigest := acceptedRaw("sources")
+	if violations := validateSddWithSources(x, sd, reqIDs(requirements), sourceDigest, sourceFiles(sources)); len(violations) > 0 {
 		return prompt("design", formatViolations(violations)...)
 	}
 	writeAccepted("sdd", x)

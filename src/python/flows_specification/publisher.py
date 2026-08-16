@@ -49,6 +49,15 @@ def build_development_plan(srs: dict, sdd: dict, readiness: dict, rendered: dict
     slice_ids = {item.get("id"): index + 1 for index, item in enumerate(readiness.get("slices", []))}
     features = []
     for index, item in enumerate(readiness.get("slices", [])):
+        requirement_ids = set(item.get("requirementIds", []))
+
+        def linked(artifact: dict) -> bool:
+            return bool(requirement_ids.intersection(artifact.get("requirementIds", [])))
+
+        acceptance_criteria = [artifact for artifact in srs.get("acceptanceCriteria", []) if linked(artifact)]
+        interfaces = [artifact for artifact in srs.get("interfaces", []) if linked(artifact)]
+        data_rules = [artifact for artifact in srs.get("dataRules", []) if linked(artifact)]
+        controls = [artifact for artifact in sdd.get("controls", []) if linked(artifact)]
         requirement_text = [f"{ref}: {requirements[ref]}" if ref in requirements else ref for ref in item.get("requirementIds", [])]
         decisions = []
         for ref in item.get("adrIds", []):
@@ -57,7 +66,26 @@ def build_development_plan(srs: dict, sdd: dict, readiness: dict, rendered: dict
                 f"{ref}: {adr.get('title', '')}. Decision: {adr.get('decision', '')}. Rationale: {adr.get('rationale', '')}"
                 if adr else ref
             )
-        references = list(dict.fromkeys(item.get("requirementIds", []) + item.get("adrIds", [])))
+        references = list(dict.fromkeys(
+            item.get("requirementIds", [])
+            + item.get("adrIds", [])
+            + [artifact.get("id") for artifact in acceptance_criteria]
+            + [artifact.get("id") for artifact in interfaces]
+            + [artifact.get("id") for artifact in data_rules]
+            + [artifact.get("id") for artifact in controls]
+        ))
+        acceptance_text = [item.get("acceptanceCriterion", "")] + [
+            f"{artifact.get('id', '')}: Given {artifact.get('given', '')}. "
+            f"When {artifact.get('when', '')}. Then {artifact.get('then', '')}"
+            for artifact in acceptance_criteria
+        ]
+        related_contract_text = [
+            f"{artifact.get('id', '')}: {artifact.get('name', '')}. {artifact.get('description', '')}"
+            for artifact in interfaces + controls
+        ] + [
+            f"{artifact.get('id', '')}: {artifact.get('rule', '')}"
+            for artifact in data_rules
+        ]
         features.append({
             "id": index + 1,
             "title": item.get("goal", ""),
@@ -72,9 +100,11 @@ def build_development_plan(srs: dict, sdd: dict, readiness: dict, rendered: dict
             "implementationContext": {
                 "requirements": requirement_text,
                 "decisions": decisions,
-                "constraints": [f"out of scope: {value}" for value in item.get("outOfScope", [])] + item.get("contracts", []),
+                "constraints": [f"out of scope: {value}" for value in item.get("outOfScope", [])]
+                + item.get("contracts", [])
+                + related_contract_text,
                 "files": [item.get("suggestedTarget", "")],
-                "acceptance": [item.get("acceptanceCriterion", "")],
+                "acceptance": acceptance_text,
             },
         })
     digest_source = "|".join(rendered[name] for name in EXPECTED_FILES)

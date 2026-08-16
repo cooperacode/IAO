@@ -86,6 +86,14 @@ public static class SpecificationRenderer
 
         sb.Append("# Software Design Document\n\n");
 
+        if (!string.IsNullOrWhiteSpace(sdd.DesignContent))
+        {
+            // This is intentionally raw Markdown: escaping it would destroy Mermaid
+            // diagrams, fenced code blocks, tables and folder trees that the SDD is meant to
+            // preserve from source-backed design context.
+            sb.Append(sdd.DesignContent.TrimEnd()).Append("\n\n");
+        }
+
         sb.Append("## Architecture Decision Records\n");
         AppendBulletsOrNone(sb, sdd.Adrs, a => $"- **{a.Id}** [{JoinIds(a.RequirementIds)}] {Escape(a.Title)}: {Escape(a.Decision)} — rationale: {Escape(a.Rationale)}");
 

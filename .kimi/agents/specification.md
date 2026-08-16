@@ -32,6 +32,19 @@ same continuous session, and no instruction from this harness ever carries a
 `.harness/specification/active/` (run state, proposals, accepted documents) and, once
 published, `specs/active/`.
 
+## Driver telemetry
+
+Before each invocation, use:
+
+```bash
+USAGE=$(python3 .harness/scripts/kimi_context_usage.py 2>/dev/null || true)
+if [ -n "$USAGE" ]; then
+  HARNESS_CONTEXT_USAGE_JSON="$USAGE" ./run-specification.sh
+else
+  ./run-specification.sh
+fi
+```
+
 ## Run
 
 Start by writing:
@@ -40,7 +53,8 @@ Start by writing:
 {"type":"text","value":"start","context":{"driver":"kimi code"}}
 ```
 
-Continue until `stdout` is exactly `stop`, then report the run's final status (`completed`,
-`awaiting_approval`, `needs_human_decision`, or `publish_blocked` — see
-`.harness/specification/active/run.json`). Session usage reporting is not available for Kimi
-because there is no `scripts/kimi_usage.py` driver.
+Continue until `stdout` is exactly `stop`. Then run
+`.harness/skills/session-report/generate_report.py --driver kimi`; a reporting failure does not
+invalidate the run. Report the run's final status (`completed`, `awaiting_approval`,
+`needs_human_decision`, or `publish_blocked` — see `.harness/specification/active/run.json`) and
+include the report path or the reporting error.

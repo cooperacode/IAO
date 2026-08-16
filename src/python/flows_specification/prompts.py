@@ -5,6 +5,8 @@ machine in `tasks.py` (same split as `flows_development/prompts.py`, and as the 
 
 from __future__ import annotations
 
+import json
+
 from harness_engine import prompt_formatter
 from harness_engine.envelope import Envelope, EnvelopeType
 
@@ -56,6 +58,8 @@ SRS_SHAPE = (
 )
 SDD_SHAPE = (
     '{"schema":"iao/sdd/v1","srsDigest":"sha256:...",'
+    '"sourceDigest":"sha256:...","sourceFiles":["design.md"],'
+    '"designContent":"Markdown body with headings, Mermaid diagrams, fenced code blocks and folder trees",'
     '"adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...",'
     '"requirementIds":["RF-1"]}],'
     '"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}'
@@ -257,8 +261,28 @@ harness-controlled attempt."""
 
 def design_prompt() -> str:
     _, srs_digest = store.read_accepted("srs")
+    sources, source_digest = store.read_accepted("sources")
+    files = (sources or {}).get("files") or []
+    if files and source_digest:
+        source_requirements = f"""The accepted source bundle is authoritative design context:
+{_sources_block()}
+
+Set `sourceDigest` exactly to '{source_digest}' and `sourceFiles` exactly to {json.dumps(files, ensure_ascii=False)}. Populate
+`designContent` with the detailed Markdown design recovered from the source material. Preserve
+relevant headings, prose, tables, Mermaid diagrams, fenced code blocks and folder/file trees
+verbatim where possible. Do not replace those details with a short summary. Do not include the
+top-level `# Software Design Document` heading; the renderer supplies it."""
+    else:
+        source_requirements = (
+            "No accepted source bundle is available. Keep `sourceDigest` and `sourceFiles` "
+            "null and still use `designContent` for any detailed Markdown design produced from "
+            "the accepted SRS and the current conversation. Preserve diagrams, fenced code "
+            "blocks and folder/file trees instead of flattening them into ADRs or controls."
+        )
     input_text = f"""Draft the SDD for this Specification run (blueprint 0004 §2/§3, design phase),
 building on the accepted SRS (digest '{srs_digest}').
+
+{source_requirements}
 
 Write a JSON OBJECT to the file '{SDD_PROPOSAL_PATH}' (a real file, written with your
 file-write tool — NOT escaped or embedded inside the envelope you send back) with this
@@ -281,8 +305,24 @@ violations."""
 
 def design_retry_prompt(violations) -> str:
     _, srs_digest = store.read_accepted("srs")
+    sources, source_digest = store.read_accepted("sources")
+    files = (sources or {}).get("files") or []
+    if files and source_digest:
+        source_requirements = f"""Reattach the accepted source bundle as authoritative design context:
+{_sources_block()}
+
+Keep `sourceDigest` exactly '{source_digest}', `sourceFiles` exactly {json.dumps(files, ensure_ascii=False)}, and preserve the
+source-backed Markdown in `designContent`, including Mermaid diagrams, fenced code blocks and
+folder/file trees. Do not summarize those details away."""
+    else:
+        source_requirements = (
+            "No accepted source bundle is available. Preserve any detailed Markdown design in "
+            "`designContent`, including diagrams, fenced code blocks and folder/file trees."
+        )
     input_text = f"""The SDD proposal at '{SDD_PROPOSAL_PATH}' did not pass SddEvaluator:
 {_violation_lines(violations)}
+
+{source_requirements}
 
 Rewrite the file at the exact same path with this shape: {SDD_SHAPE}
 `schema` must be exactly "{SDD_SCHEMA}" and `srsDigest` must be

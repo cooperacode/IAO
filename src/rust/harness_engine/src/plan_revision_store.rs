@@ -67,7 +67,9 @@ pub fn revision_count() -> i32 {
         return 0;
     }
     match std::fs::read_to_string(p) {
-        Ok(content) => serde_json::from_str::<AppliedPlanRevision>(&content).map(|a| a.version).unwrap_or(0),
+        Ok(content) => serde_json::from_str::<AppliedPlanRevision>(&content)
+            .map(|a| a.version)
+            .unwrap_or(0),
         Err(_) => 0,
     }
 }

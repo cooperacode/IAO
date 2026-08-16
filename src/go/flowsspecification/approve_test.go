@@ -40,6 +40,8 @@ func acceptValidBundleForApprove(blockingOpenQuestion bool) {
 			{Id: "RF-1", GoalIds: []string{"G-1"}, Statement: "does the thing", AcceptanceIds: []string{"AC-1"}},
 		},
 		AcceptanceCriteria: []AC{{Id: "AC-1", RequirementIds: []string{"RF-1"}, Given: "given", When: "when", Then: "then"}},
+		Interfaces:         []Iface{{Id: "IF-1", RequirementIds: []string{"RF-1"}, Name: "API", Description: "HTTP contract"}},
+		DataRules:          []Rule{{Id: "RN-1", RequirementIds: []string{"RF-1"}, Rule: "non-empty"}},
 		Delivery:           Delivery{Target: "target", VerificationStrategy: "strategy"},
 	}
 	writeAccepted("srs", srs)
@@ -48,6 +50,7 @@ func acceptValidBundleForApprove(blockingOpenQuestion bool) {
 		Schema:    "iao/sdd/v1",
 		SrsDigest: "sha256:srs",
 		Adrs:      []ADR{{Id: "ADR-1", Title: "title", Decision: "decision", Rationale: "rationale", RequirementIds: []string{"RF-1"}}},
+		Controls:  []Control{{Id: "IC-1", RequirementIds: []string{"RF-1"}, Name: "input", Description: "reject invalid input"}},
 	}
 	writeAccepted("sdd", sdd)
 
@@ -110,6 +113,15 @@ func TestApprove_ValidBundle_PassesDevelopmentReadyAndPublishes(t *testing.T) {
 	for _, name := range publishedFiles {
 		if _, err := os.Stat("specs/active/" + name); err != nil {
 			t.Fatalf("expected '%s' to be published: %v", name, err)
+		}
+	}
+	plan, err := os.ReadFile("specs/active/40-development-plan.json")
+	if err != nil {
+		t.Fatalf("expected development plan to be published: %v", err)
+	}
+	for _, reference := range []string{"AC-1", "IF-1", "RN-1", "IC-1"} {
+		if !strings.Contains(string(plan), `"`+reference+`"`) {
+			t.Fatalf("expected %s in development plan: %s", reference, plan)
 		}
 	}
 }

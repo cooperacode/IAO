@@ -196,7 +196,25 @@ func validateSrs(document SRS, prdDigest string, goals []string) []violation {
 	return result
 }
 
+const maxDesignContentUTF8Bytes = 1_000_000
+
+func sameStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func validateSdd(document SDD, srsDigest string, requirementIDs []string) []violation {
+	return validateSddWithSources(document, srsDigest, requirementIDs, "", nil)
+}
+
+func validateSddWithSources(document SDD, srsDigest string, requirementIDs []string, currentSourceDigest string, currentSourceFiles []string) []violation {
 	var result []violation
 	if document.Schema != "iao/sdd/v1" {
 		result = append(result, failed("SDD_SCHEMA_UNKNOWN", "expected schema 'iao/sdd/v1'"))
@@ -228,6 +246,24 @@ func validateSdd(document SDD, srsDigest string, requirementIDs []string) []viol
 			if !known[id] {
 				result = append(result, failed("SDD_CONTROL_REQUIREMENT_DANGLING", "control references unknown requirement"))
 			}
+		}
+	}
+	if document.DesignContent != "" && len([]byte(document.DesignContent)) > maxDesignContentUTF8Bytes {
+		result = append(result, failed("SDD_DESIGN_CONTENT_TOO_LARGE", "designContent exceeds the 1000000-byte UTF-8 limit"))
+	}
+	if strings.TrimSpace(currentSourceDigest) != "" {
+		if strings.TrimSpace(document.SourceDigest) == "" {
+			result = append(result, failed("SDD_SOURCE_DIGEST_MISSING", "sourceDigest is required when an accepted source bundle exists"))
+		} else if document.SourceDigest != currentSourceDigest {
+			result = append(result, failed("SDD_SOURCE_DIGEST_STALE", "SDD source digest is stale"))
+		}
+		if len(document.SourceFiles) == 0 {
+			result = append(result, failed("SDD_SOURCE_FILES_MISSING", "sourceFiles is required when an accepted source bundle exists"))
+		} else if !sameStrings(document.SourceFiles, currentSourceFiles) {
+			result = append(result, failed("SDD_SOURCE_FILES_STALE", "SDD source files do not match the current accepted source bundle"))
+		}
+		if strings.TrimSpace(document.DesignContent) == "" {
+			result = append(result, failed("SDD_DESIGN_CONTENT_MISSING", "designContent is required when an accepted source bundle exists"))
 		}
 	}
 	return result

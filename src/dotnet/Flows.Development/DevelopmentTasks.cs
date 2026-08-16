@@ -40,7 +40,8 @@ public static partial class DevelopmentTasks
 
     /// <summary>
     /// Name of the brief artifact in ArtifactStore (.harness/brief.md) — retained for
-    /// auditability and compatibility after planning; implement/fix use feature context.
+    /// auditability and compatibility after planning; implement/fix use feature context plus
+    /// the published design document rehydrated from disk.
     /// </summary>
     private const string BriefArtifactName = "brief";
 
@@ -116,7 +117,8 @@ public static partial class DevelopmentTasks
 
         var (content, files) = DocsReader.Read(DocsFolder);
         // Persisted for auditability and compatibility; implementation sessions use the
-        // bounded context copied into each feature by the planner.
+        // bounded context copied into each feature plus the published design document read
+        // from disk at every fresh implementation prompt.
         ArtifactStore.Write(BriefArtifactName, content);
         StateStore.Set("origem", "specs");
         return InitializerPrompt(content, files);

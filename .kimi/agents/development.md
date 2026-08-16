@@ -38,6 +38,19 @@ only if you need more than what's in the task text. Then implement the feature a
 fresh session. (If a genuine subagent-delegation tool is available and confirmed to start a
 truly fresh context, prefer it over this in-context fallback.)
 
+## Driver telemetry
+
+Before each invocation, use:
+
+```bash
+USAGE=$(python3 .harness/scripts/kimi_context_usage.py 2>/dev/null || true)
+if [ -n "$USAGE" ]; then
+  HARNESS_CONTEXT_USAGE_JSON="$USAGE" ./run-development.sh
+else
+  ./run-development.sh
+fi
+```
+
 ## Run
 
 Start by writing:
@@ -46,5 +59,7 @@ Start by writing:
 {"type":"text","value":"start","context":{"driver":"kimi code"}}
 ```
 
-Continue until `stdout` is exactly `stop`, then report that all features pass. Session usage
-reporting is not available for Kimi because there is no `scripts/kimi_usage.py` driver.
+Continue until `stdout` is exactly `stop`. Then run
+`.harness/skills/session-report/generate_report.py --driver kimi`; a reporting failure does not
+invalidate the development run. Report that all features pass and include the report path or
+the reporting error.

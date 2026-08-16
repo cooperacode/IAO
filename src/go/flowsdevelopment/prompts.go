@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,8 @@ const (
 // featuresShape is the feature_list shape embedded verbatim in the prompts.
 const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]`
 
+const designDocumentFileName = "20-software-design-document.md"
+
 // featureContextBlock returns the current feature's bounded inline context for implement/fix.
 func featureContextBlock(feature engine.Feature) string {
 	if strings.TrimSpace(feature.Description) == "" && len(feature.References) == 0 && feature.ImplementationContext.IsEmpty() {
@@ -34,6 +37,49 @@ func featureContextBlock(feature engine.Feature) string {
 		implementationContext = fmt.Sprintf("<implementation-context>%s</implementation-context>\n", feature.ImplementationContext.PromptText())
 	}
 	return fmt.Sprintf("Description: %s\nBrief references: %s\n%s\n", feature.Description, references, implementationContext)
+}
+
+// designContextBlock rehydrates the published design document for every fresh
+// implementation session. The feature list remains the feature-specific scope; this
+// durable source carries architecture, diagrams, folder trees, and cross-feature decisions
+// across context resets, including the Specification handoff path.
+func designContextBlock() string {
+	candidates := []string{
+		filepath.Join(docsFolder(), designDocumentFileName),
+		filepath.Join(docsFolder(), "active", designDocumentFileName),
+		filepath.Join("specs", "active", designDocumentFileName),
+	}
+	seen := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		if seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+
+		path := engine.ResolvePath(candidate)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				engine.LogError(fmt.Sprintf("[dev] failed to read design document '%s': %s", candidate, err))
+			}
+			continue
+		}
+
+		content := string(data)
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+
+		maxBytes := engine.CurrentConfig().DocsMaxChars
+		if len(content) > maxBytes {
+			engine.LogError(fmt.Sprintf("[dev] design document exceeded %d bytes (UTF-8); truncating implementation context", maxBytes))
+			content = truncateUtf8Bytes(content, maxBytes) + "\n\n[design context truncated at the configured docsMaxChars limit]"
+		}
+
+		return fmt.Sprintf("<design-context source=\"%s\">\n%s\n</design-context>\n\n", filepath.ToSlash(candidate), engine.Inline(content))
+	}
+
+	return ""
 }
 
 func currentFeatureContextBlock() string {
@@ -137,9 +183,10 @@ Return setup after writing/validating the setup.`, feedback)
 
 func ImplementPrompt(feature engine.Feature) string {
 	input := fmt.Sprintf("%s"+
-		"Follow `dev-implement` for this feature:\nFeature #%d (priority %d): %s\n%sTarget directory: %s\n\n"+
+		"Follow `dev-implement` for this feature:\nFeature #%d (priority %d): %s\n%s%sTreat the design context as architectural guidance for this feature. Do not expand\n"+
+		"the feature's scope to implement unrelated work from the document.\nTarget directory: %s\n\n"+
 		"Return `implement` without arguments when done. The harness derives the summary from Git.",
-		engine.NewFeaturePrefix(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature),
+		engine.NewFeaturePrefix(), feature.Id, feature.Priority, feature.Title, featureContextBlock(feature), designContextBlock(),
 		engine.LoadRunConfig().TargetDir)
 
 	return engine.Format(input,
@@ -173,9 +220,9 @@ func FixPrompt(verifyFailure string) string {
 		failure = fmt.Sprintf("Failure observed: %s\n\n", verifyFailure)
 	}
 
-	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s).\n%s%sFollow `dev-implement` to fix only this feature.\n"+
+	input := fmt.Sprintf("Verification FAILED on feature #%s\n(%s).\n%s%s%sFollow `dev-implement` to fix only this feature.\n"+
 		"Return `implement` without arguments; the harness derives the new summary from Git.",
-		state(currentFeatureIdKey), state(currentFeatureTitleKey), currentFeatureContextBlock(), failure)
+		state(currentFeatureIdKey), state(currentFeatureTitleKey), currentFeatureContextBlock(), designContextBlock(), failure)
 
 	return engine.Format(input,
 		engine.NewEnvelope(engine.EnvelopeType.Command, "implement", []string{}),

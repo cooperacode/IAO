@@ -384,6 +384,47 @@ public class SpecificationEvaluatorTests
     }
 
     [Fact]
+    public void EvaluateSdd_ComFonteAceitaProvenienciaEConteudoDetalhado()
+    {
+        var sdd = ValidSdd("sha256:srs") with
+        {
+            SourceDigest = "sha256:sources",
+            SourceFiles = ["design.md"],
+            DesignContent = "## Architecture\n\n```mermaid\nflowchart LR\n```",
+        };
+
+        var result = SpecificationEvaluator.EvaluateSdd(
+            sdd,
+            "sha256:srs",
+            ["RF-001"],
+            "sha256:sources",
+            ["design.md"]);
+
+        Assert.True(result.Passed);
+        Assert.Empty(result.Violations);
+    }
+
+    [Fact]
+    public void EvaluateSdd_ComFonteSemConteudoDetalhado_EhRejeitado()
+    {
+        var sdd = ValidSdd("sha256:srs") with
+        {
+            SourceDigest = "sha256:sources",
+            SourceFiles = ["design.md"],
+        };
+
+        var result = SpecificationEvaluator.EvaluateSdd(
+            sdd,
+            "sha256:srs",
+            ["RF-001"],
+            "sha256:sources",
+            ["design.md"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "SDD_DESIGN_CONTENT_MISSING");
+    }
+
+    [Fact]
     public void EvaluateSdd_DigestDeSrsDesatualizado_EhRejeitado()
     {
         var result = SpecificationEvaluator.EvaluateSdd(ValidSdd("sha256:old"), "sha256:new", ["RF-001"]);

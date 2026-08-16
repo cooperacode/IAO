@@ -88,3 +88,76 @@ def test_render_srs_campo_de_texto_nulo_nao_lanca_excecao():
     rendered = renderer.srs(document)
 
     assert "**DR-001**" in rendered
+
+
+def _valid_sdd(srs_digest="sha256:srs"):
+    return {
+        "schema": "iao/sdd/v1",
+        "srsDigest": srs_digest,
+        "adrs": [
+            {
+                "id": "ADR-1",
+                "title": "title",
+                "decision": "decision",
+                "rationale": "rationale",
+                "requirementIds": ["RF-001"],
+            }
+        ],
+        "controls": [
+            {
+                "id": "IC-1",
+                "name": "control",
+                "description": "description",
+                "requirementIds": ["RF-001"],
+            }
+        ],
+    }
+
+
+def test_evaluate_sdd_design_source_backed_passa():
+    document = _valid_sdd()
+    document.update(
+        {
+            "sourceDigest": "sha256:sources",
+            "sourceFiles": ["architecture.md", "tree.txt"],
+            "designContent": "## Architecture\n\n```mermaid\ngraph TD\n```\n\n```text\napp/\n```",
+        }
+    )
+
+    result = evaluator.sdd(
+        document,
+        "sha256:srs",
+        ["RF-001"],
+        "sha256:sources",
+        document["sourceFiles"],
+    )
+
+    assert result["passed"]
+
+
+def test_evaluate_sdd_design_source_backed_sem_conteudo_e_rejeitado():
+    document = _valid_sdd()
+    document.update(
+        {"sourceDigest": "sha256:sources", "sourceFiles": ["architecture.md"]}
+    )
+
+    result = evaluator.sdd(
+        document,
+        "sha256:srs",
+        ["RF-001"],
+        "sha256:sources",
+        document["sourceFiles"],
+    )
+
+    assert not result["passed"]
+    assert any(v["code"] == "SDD_DESIGN_CONTENT_MISSING" for v in result["violations"])
+
+
+def test_render_sdd_preserva_markdown_de_design():
+    document = _valid_sdd()
+    document["designContent"] = "## Architecture\n\n```mermaid\ngraph TD\n```\n\n```text\napp/\n```"
+
+    rendered = renderer.sdd(document)
+
+    assert "```mermaid\ngraph TD\n```" in rendered
+    assert "app/" in rendered

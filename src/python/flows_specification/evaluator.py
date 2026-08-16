@@ -11,6 +11,7 @@ from collections import Counter, deque
 import json
 
 MAX_IDEA_UTF8_BYTES = 20_000
+MAX_DESIGN_CONTENT_UTF8_BYTES = 1_000_000
 READINESS_VERDICTS = ("READY", "FAIL:product", "FAIL:analysis", "FAIL:design")
 APPROVAL_DECISIONS = ("approved", "revise")
 
@@ -251,7 +252,13 @@ def srs(document: dict, current_prd_digest: str, accepted_goal_ids: list[str]) -
     return _result(violations)
 
 
-def sdd(document: dict, current_srs_digest: str, requirement_ids: list[str]) -> dict:
+def sdd(
+    document: dict,
+    current_srs_digest: str,
+    requirement_ids: list[str],
+    current_source_digest: str | None = None,
+    current_source_files: list[str] | None = None,
+) -> dict:
     violations: list[tuple[str, str]] = []
     known_requirements = set(requirement_ids)
     allocated = {
@@ -299,6 +306,52 @@ def sdd(document: dict, current_srs_digest: str, requirement_ids: list[str]) -> 
                         f"control '{control.get('id', '')}' references unknown requirement '{requirement_id}'",
                     )
                 )
+    design_content = document.get("designContent")
+    if str(design_content or "").strip() and len(str(design_content).encode("utf-8")) > MAX_DESIGN_CONTENT_UTF8_BYTES:
+        violations.append(
+            (
+                "SDD_DESIGN_CONTENT_TOO_LARGE",
+                f"designContent exceeds the {MAX_DESIGN_CONTENT_UTF8_BYTES}-byte UTF-8 limit",
+            )
+        )
+    if str(current_source_digest or "").strip():
+        if not str(document.get("sourceDigest") or "").strip():
+            violations.append(
+                (
+                    "SDD_SOURCE_DIGEST_MISSING",
+                    "sourceDigest is required when an accepted source bundle exists",
+                )
+            )
+        elif document.get("sourceDigest") != current_source_digest:
+            violations.append(
+                (
+                    "SDD_SOURCE_DIGEST_STALE",
+                    f"sdd.sourceDigest '{document.get('sourceDigest', '')}' does not match the current accepted source digest '{current_source_digest}'",
+                )
+            )
+        expected_files = current_source_files or []
+        actual_files = document.get("sourceFiles")
+        if not actual_files:
+            violations.append(
+                (
+                    "SDD_SOURCE_FILES_MISSING",
+                    "sourceFiles is required when an accepted source bundle exists",
+                )
+            )
+        elif actual_files != expected_files:
+            violations.append(
+                (
+                    "SDD_SOURCE_FILES_STALE",
+                    "sdd.sourceFiles does not match the current accepted source bundle",
+                )
+            )
+        if not str(design_content or "").strip():
+            violations.append(
+                (
+                    "SDD_DESIGN_CONTENT_MISSING",
+                    "designContent is required when an accepted source bundle exists",
+                )
+            )
     return _result(violations)
 
 

@@ -90,7 +90,9 @@ pub fn load() -> HarnessConfig {
         match loaded {
             Ok(parsed) => config = parsed,
             Err(e) => {
-                harness_log::error(&format!("[HarnessConfig] failed to load; using defaults: {e}"));
+                harness_log::error(&format!(
+                    "[HarnessConfig] failed to load; using defaults: {e}"
+                ));
                 config = default_config();
             }
         }
@@ -163,9 +165,16 @@ fn normalize(config: HarnessConfig) -> HarnessConfig {
         } else {
             default.timeout_ms
         })
-            .clamp(MIN_ENABLED_TIMEOUT_MS, MAX_ALLOWED_TIMEOUT_MS),
-        context_reset_mode: match config.context_reset_mode.trim().to_ascii_lowercase().as_str() {
-            "adaptive" | "per-feature" | "never" => config.context_reset_mode.trim().to_ascii_lowercase(),
+        .clamp(MIN_ENABLED_TIMEOUT_MS, MAX_ALLOWED_TIMEOUT_MS),
+        context_reset_mode: match config
+            .context_reset_mode
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "adaptive" | "per-feature" | "never" => {
+                config.context_reset_mode.trim().to_ascii_lowercase()
+            }
             _ => default.context_reset_mode,
         },
         context_reset_threshold: if config.context_reset_threshold <= 0.0 {

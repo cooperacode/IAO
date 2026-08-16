@@ -57,9 +57,7 @@ pub fn write(config: &RunConfig) {
     }
     match serde_json::to_string(config) {
         Ok(json) => {
-            if let Err(e) =
-                crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json)
-            {
+            if let Err(e) = crate::atomic_io::write_atomic(std::path::Path::new(FILE_PATH), &json) {
                 harness_log::error(&format!("[RunConfigStore] failed to write: {e}"));
             }
         }

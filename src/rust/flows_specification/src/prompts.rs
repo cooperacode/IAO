@@ -10,12 +10,16 @@ use serde_json::Value;
 const IDEA_SHAPE: &str = r#"{"schema":"iao/idea/v1","title":"...","problem":"...","users":["..."],"desiredOutcomes":["..."],"constraints":["..."],"openQuestions":[{"id":"OQ-1","question":"...","blocking":false}]}"#;
 const PRD_SHAPE: &str = r#"{"schema":"iao/prd/v1","ideaDigest":"sha256:...","vision":"...","goals":[{"id":"G-1","statement":"..."}],"successMetrics":[{"id":"M-1","goalId":"G-1","measure":"...","target":"..."}],"nonGoals":["..."],"scope":["..."],"risks":[{"id":"R-1","description":"...","mitigation":"...","severity":"..."}],"decisions":[{"id":"D-1","statement":"...","rationale":"..."}],"openQuestions":[]}"#;
 const SRS_SHAPE: &str = r#"{"schema":"iao/srs/v1","prdDigest":"sha256:...","functionalRequirements":[{"id":"RF-1","goalIds":["G-1"],"statement":"...","dependsOn":[],"acceptanceIds":["AC-1"]}],"qualityRequirements":[],"acceptanceCriteria":[{"id":"AC-1","requirementIds":["RF-1"],"given":"...","when":"...","then":"..."}],"interfaces":[],"dataRules":[],"delivery":{"target":"...","verificationStrategy":"...","isBootstrap":true}}"#;
-const SDD_SHAPE: &str = r#"{"schema":"iao/sdd/v1","srsDigest":"sha256:...","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}"#;
+const SDD_SHAPE: &str = r#"{"schema":"iao/sdd/v1","srsDigest":"sha256:...","sourceDigest":"sha256:...","sourceFiles":["design.md"],"designContent":"Markdown body with headings, Mermaid diagrams, fenced code blocks and folder trees","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}"#;
 const REVIEW_SHAPE: &str = r#"{"verdict":"READY","slices":[{"id":"SL-1","classification":"...","goal":"...","inScope":["..."],"outOfScope":["..."],"observableOutcome":"...","requirementIds":["RF-1"],"adrIds":["ADR-1"],"dependsOn":[],"contracts":["..."],"happyPath":"...","failurePath":"...","acceptanceCriterion":"...","suggestedTarget":"...","suggestedVerificationStrategy":"..."}],"conflicts":[],"residuals":[]}"#;
 const APPROVAL_SHAPE: &str = r#"{"decision":"approved","bundleDigest":"sha256:...","rationale":"...","approvedBy":"...","decidedAt":"2026-01-01T00:00:00Z"}"#;
 
 fn violations_list(violations: &[String]) -> String {
-    violations.iter().map(|v| format!("- {v}")).collect::<Vec<_>>().join("\n")
+    violations
+        .iter()
+        .map(|v| format!("- {v}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn command_prompt(input: &str, command: &str, skill: &str) -> String {
@@ -41,7 +45,10 @@ fn sources_block() -> String {
     if files.is_empty() {
         "No sources folder was found (or it was empty). Ask the human operator for the idea, problem, users and constraints in this conversation, then frame it below.\n".to_string()
     } else {
-        let content = sources.as_ref().and_then(|s| s["content"].as_str()).unwrap_or("");
+        let content = sources
+            .as_ref()
+            .and_then(|s| s["content"].as_str())
+            .unwrap_or("");
         format!(
             "<sources folder=\"{SOURCES_FOLDER}\" files=\"{}\">{}</sources>\n",
             files.join(", "),
@@ -83,7 +90,10 @@ harness-controlled attempt.",
 }
 
 pub(crate) fn product_prompt() -> String {
-    let idea_digest = read("idea.accepted.json").as_ref().map(digest).unwrap_or_default();
+    let idea_digest = read("idea.accepted.json")
+        .as_ref()
+        .map(digest)
+        .unwrap_or_default();
     let input = format!(
         "Draft the PRD for this Specification run (blueprint 0004 §2/§3, product phase), \
 building on the accepted idea (digest '{idea_digest}').\n\n\
@@ -100,7 +110,10 @@ advance to `analysis`, or re-request `product` with the reported violations.",
     command_prompt(&input, "product", "spec-product")
 }
 pub(crate) fn product_retry_prompt(violations: &[String]) -> String {
-    let idea_digest = read("idea.accepted.json").as_ref().map(digest).unwrap_or_default();
+    let idea_digest = read("idea.accepted.json")
+        .as_ref()
+        .map(digest)
+        .unwrap_or_default();
     let input = format!(
         "The PRD proposal at '{}' did not pass PrdEvaluator:\n{}\n\n\
 Rewrite the file at the exact same path with this shape: {PRD_SHAPE}\n\
@@ -113,7 +126,10 @@ Rewrite the file at the exact same path with this shape: {PRD_SHAPE}\n\
 }
 
 pub(crate) fn analysis_prompt() -> String {
-    let prd_digest = read("prd.accepted.json").as_ref().map(digest).unwrap_or_default();
+    let prd_digest = read("prd.accepted.json")
+        .as_ref()
+        .map(digest)
+        .unwrap_or_default();
     let input = format!(
         "Draft the SRS for this Specification run (blueprint 0004 §2/§3, analysis phase), \
 building on the accepted PRD (digest '{prd_digest}').\n\n\
@@ -132,7 +148,10 @@ advance to `design`, or re-request `analysis` with the reported violations.",
     command_prompt(&input, "analysis", "spec-analysis")
 }
 pub(crate) fn analysis_retry_prompt(violations: &[String]) -> String {
-    let prd_digest = read("prd.accepted.json").as_ref().map(digest).unwrap_or_default();
+    let prd_digest = read("prd.accepted.json")
+        .as_ref()
+        .map(digest)
+        .unwrap_or_default();
     let input = format!(
         "The SRS proposal at '{}' did not pass SrsEvaluator:\n{}\n\n\
 Rewrite the file at the exact same path with this shape: {SRS_SHAPE}\n\
@@ -145,10 +164,42 @@ Return `analysis` without arguments for another harness-controlled attempt.",
 }
 
 pub(crate) fn design_prompt() -> String {
-    let srs_digest = read("srs.accepted.json").as_ref().map(digest).unwrap_or_default();
+    let srs_digest = read("srs.accepted.json")
+        .as_ref()
+        .map(digest)
+        .unwrap_or_default();
+    let sources = read("sources.accepted.json");
+    let files: Vec<String> = sources
+        .as_ref()
+        .and_then(|s| s["files"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.as_str().map(String::from))
+        .collect();
+    let source_digest = sources.as_ref().map(digest).unwrap_or_default();
+    let source_requirements = if !files.is_empty() && !source_digest.is_empty() {
+        format!(
+            "The accepted source bundle is authoritative design context:\n{}\n\nSet \
+`sourceDigest` exactly to '{}' and `sourceFiles` exactly to {}. Populate `designContent` \
+with the detailed Markdown design recovered from the source material. Preserve relevant \
+headings, prose, tables, Mermaid diagrams, fenced code blocks and folder/file trees verbatim \
+where possible. Do not replace those details with a short summary. Do not include the top-level \
+`# Software Design Document` heading; the renderer supplies it.",
+            sources_block(),
+            source_digest,
+            serde_json::to_string(&files).unwrap_or_else(|_| "[]".into())
+        )
+    } else {
+        "No accepted source bundle is available. Keep `sourceDigest` and `sourceFiles` null and \
+still use `designContent` for any detailed Markdown design produced from the accepted SRS and \
+the current conversation. Preserve diagrams, fenced code blocks and folder/file trees instead \
+of flattening them into ADRs or controls."
+            .to_string()
+    };
     let input = format!(
         "Draft the SDD for this Specification run (blueprint 0004 §2/§3, design phase), \
 building on the accepted SRS (digest '{srs_digest}').\n\n\
+{source_requirements}\n\n\
 Write a JSON OBJECT to the file '{}' (a real file, written with your file-write tool — NOT \
 escaped or embedded inside the envelope you send back) with this shape: {SDD_SHAPE}\n\
 `schema` must be exactly \"{SDD_SCHEMA}\" and `srsDigest` must be set to exactly '{srs_digest}'. \
@@ -164,9 +215,37 @@ violations.",
     command_prompt(&input, "design", "spec-design")
 }
 pub(crate) fn design_retry_prompt(violations: &[String]) -> String {
-    let srs_digest = read("srs.accepted.json").as_ref().map(digest).unwrap_or_default();
+    let srs_digest = read("srs.accepted.json")
+        .as_ref()
+        .map(digest)
+        .unwrap_or_default();
+    let sources = read("sources.accepted.json");
+    let files: Vec<String> = sources
+        .as_ref()
+        .and_then(|s| s["files"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.as_str().map(String::from))
+        .collect();
+    let source_digest = sources.as_ref().map(digest).unwrap_or_default();
+    let source_requirements = if !files.is_empty() && !source_digest.is_empty() {
+        format!(
+            "Reattach the accepted source bundle as authoritative design context:\n{}\n\nKeep \
+`sourceDigest` exactly '{}', `sourceFiles` exactly {}, and preserve the source-backed \
+Markdown in `designContent`, including Mermaid diagrams, fenced code blocks and folder/file \
+trees. Do not summarize those details away.",
+            sources_block(),
+            source_digest,
+            serde_json::to_string(&files).unwrap_or_else(|_| "[]".into())
+        )
+    } else {
+        "No accepted source bundle is available. Preserve any detailed Markdown design in \
+`designContent`, including diagrams, fenced code blocks and folder/file trees."
+            .to_string()
+    };
     let input = format!(
         "The SDD proposal at '{}' did not pass SddEvaluator:\n{}\n\n\
+{source_requirements}\n\n\
 Rewrite the file at the exact same path with this shape: {SDD_SHAPE}\n\
 `schema` must be exactly \"{SDD_SCHEMA}\" and `srsDigest` must be set to exactly '{srs_digest}'. \
 Return `design` without arguments for another harness-controlled attempt.",
@@ -222,7 +301,10 @@ fn bundle_preview() -> String {
     let sdd = read("sdd.accepted.json");
     let readiness = read("readiness.accepted.json");
     let count = |v: &Option<Value>, key: &str| -> usize {
-        v.as_ref().and_then(|d| d[key].as_array()).map(|a| a.len()).unwrap_or(0)
+        v.as_ref()
+            .and_then(|d| d[key].as_array())
+            .map(|a| a.len())
+            .unwrap_or(0)
     };
     format!(
         "## Preview — bundle to be published to specs/active/\n\n\
@@ -230,7 +312,9 @@ fn bundle_preview() -> String {
 - **SRS:** {} functional + {} quality requirement(s), {} acceptance criteria\n\
 - **SDD:** {} ADR(s), {} control(s)\n\
 - **Readiness:** verdict '{}', {} slice(s)\n",
-        prd.as_ref().and_then(|p| p["vision"].as_str()).unwrap_or("(missing)"),
+        prd.as_ref()
+            .and_then(|p| p["vision"].as_str())
+            .unwrap_or("(missing)"),
         count(&prd, "goals"),
         count(&prd, "successMetrics"),
         count(&srs, "functionalRequirements"),
@@ -238,7 +322,10 @@ fn bundle_preview() -> String {
         count(&srs, "acceptanceCriteria"),
         count(&sdd, "adrs"),
         count(&sdd, "controls"),
-        readiness.as_ref().and_then(|r| r["verdict"].as_str()).unwrap_or("(missing)"),
+        readiness
+            .as_ref()
+            .and_then(|r| r["verdict"].as_str())
+            .unwrap_or("(missing)"),
         count(&readiness, "slices"),
     )
 }

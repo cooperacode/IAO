@@ -1,4 +1,5 @@
 using Harness.Engine;
+using System.Text.Json;
 
 namespace Flows.Specification;
 
@@ -30,7 +31,7 @@ public static partial class SpecificationTasks
         """{"schema":"iao/srs/v1","prdDigest":"sha256:...","functionalRequirements":[{"id":"RF-1","goalIds":["G-1"],"statement":"...","dependsOn":[],"acceptanceIds":["AC-1"]}],"qualityRequirements":[],"acceptanceCriteria":[{"id":"AC-1","requirementIds":["RF-1"],"given":"...","when":"...","then":"..."}],"interfaces":[],"dataRules":[],"delivery":{"target":"...","verificationStrategy":"...","isBootstrap":true}}""";
 
     private const string SddShape =
-        """{"schema":"iao/sdd/v1","srsDigest":"sha256:...","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}""";
+        """{"schema":"iao/sdd/v1","srsDigest":"sha256:...","sourceDigest":"sha256:...","sourceFiles":["design.md"],"designContent":"Markdown body with headings, Mermaid diagrams, fenced code blocks and folder trees","adrs":[{"id":"ADR-1","title":"...","decision":"...","rationale":"...","requirementIds":["RF-1"]}],"controls":[{"id":"IC-1","name":"...","description":"...","requirementIds":["RF-1"]}]}""";
 
     private const string ReviewShape =
         """{"verdict":"READY","slices":[{"id":"SL-1","classification":"...","goal":"...","inScope":["..."],"outOfScope":["..."],"observableOutcome":"...","requirementIds":["RF-1"],"adrIds":["ADR-1"],"dependsOn":[],"contracts":["..."],"happyPath":"...","failurePath":"...","acceptanceCriterion":"...","suggestedTarget":"...","suggestedVerificationStrategy":"..."}],"conflicts":[],"residuals":[]}""";
@@ -194,11 +195,34 @@ public static partial class SpecificationTasks
     {
         var (_, srsDigest) = SpecificationStore.ReadAccepted(
             SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        var (sources, sourceDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+        var hasSources = sources is { Files.Length: > 0 } && !string.IsNullOrWhiteSpace(sourceDigest);
+        var sourceRequirements = hasSources
+            ? $"""
+            The accepted source bundle is authoritative design context:
+            {SourcesBlock()}
+
+            Set `sourceDigest` exactly to '{sourceDigest}' and `sourceFiles` exactly to
+            `{JsonSerializer.Serialize(sources!.Files, SpecificationJsonContext.Default.StringArray)}`. Populate `designContent` with the
+            detailed Markdown design recovered from the source material. Preserve relevant
+            headings, prose, tables, Mermaid diagrams, fenced code blocks and folder/file trees
+            verbatim where possible. Do not replace those details with a short summary. Do not
+            include the top-level `# Software Design Document` heading; the renderer supplies it.
+            """
+            : """
+            No accepted source bundle is available. Keep `sourceDigest` and `sourceFiles` null
+            and still use `designContent` for any detailed Markdown design produced from the
+            accepted SRS and the current conversation. Preserve diagrams, fenced code blocks and
+            folder/file trees instead of flattening them into ADRs or controls.
+            """;
 
         return PromptFormatter.Format(
             input: $"""
             Draft the SDD for this Specification run (blueprint 0004 §2/§3, design phase),
             building on the accepted SRS (digest '{srsDigest}').
+
+            {sourceRequirements}
 
             Write a JSON OBJECT to the file '{SddProposalPath}' (a real file, written with your
             file-write tool — NOT escaped or embedded inside the envelope you send back) with this
@@ -221,11 +245,30 @@ public static partial class SpecificationTasks
     {
         var (_, srsDigest) = SpecificationStore.ReadAccepted(
             SpecificationStore.Phases.Srs, SpecificationJsonContext.Default.SoftwareSpecification);
+        var (sources, sourceDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+        var hasSources = sources is { Files.Length: > 0 } && !string.IsNullOrWhiteSpace(sourceDigest);
+        var sourceRequirements = hasSources
+            ? $"""
+            Reattach the accepted source bundle as authoritative design context:
+            {SourcesBlock()}
+
+            Keep `sourceDigest` exactly '{sourceDigest}', `sourceFiles` exactly
+            `{JsonSerializer.Serialize(sources!.Files, SpecificationJsonContext.Default.StringArray)}`, and preserve the source-backed
+            Markdown in `designContent`, including Mermaid diagrams, fenced code blocks and
+            folder/file trees. Do not summarize those details away.
+            """
+            : """
+            No accepted source bundle is available. Preserve any detailed Markdown design in
+            `designContent`, including diagrams, fenced code blocks and folder/file trees.
+            """;
 
         return PromptFormatter.Format(
             input: $"""
             The SDD proposal at '{SddProposalPath}' did not pass SddEvaluator:
             {string.Join("\n", violations.Select(v => $"- {v}"))}
+
+            {sourceRequirements}
 
             Rewrite the file at the exact same path with this shape: {SddShape}
             `schema` must be exactly "{SpecificationEvaluator.SddSchema}" and `srsDigest` must be

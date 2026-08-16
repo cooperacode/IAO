@@ -24,6 +24,10 @@ about have `"type": "usage.record"`:
 Unlike Codex's cumulative-snapshot counters, each `usage.record` is already
 the delta for that request -- no reset/delta bookkeeping needed.
 
+`iter_context_events()` (used by kimi_context_usage.py, not by the cost CLI
+below) also reads `"type": "llm.request"` lines for their `maxTokens` field --
+the model's actual configured context window for that turn.
+
 Usage:
     .harness/scripts/kimi_usage.py
     .harness/scripts/kimi_usage.py --by-session
@@ -225,21 +229,17 @@ def walk_wire_logs(session_dir: Path) -> Iterable[tuple[str, Path]]:
         yield wire_path.parent.name, wire_path
 
 
-def iter_usage_events(
+def _iter_session_wire_files(
     home: Path,
-    repo: Path | None = None,
-    session_filter: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    warnings: list[str] | None = None,
-):
-    """Yields raw per-event usage: (session_id, agent_label, model, usage, timestamp).
-
-    `usage` keeps the native `wire.jsonl` field names (inputOther, output,
-    inputCacheRead, inputCacheCreation) -- UsageTotals.add() maps them.
-    `timestamp` is an ISO-8601 UTC string converted from the wire log's
-    epoch-millisecond `time` field.
-    """
+    repo: Path | None,
+    session_filter: str | None,
+    warnings: list[str] | None,
+) -> Iterable[tuple[str, str, Path]]:
+    """Yields (session_id, agent_label, wire.jsonl path) for every session
+    matching `repo`/`session_filter` -- the directory-walking/repo-filtering
+    logic shared by iter_usage_events (cost) and iter_context_events
+    (context-window telemetry), so both read `agents/*/wire.jsonl` the same
+    way."""
     index = load_session_index(home)
     sessions_dir = home / "sessions"
     if not sessions_dir.is_dir():
@@ -265,37 +265,125 @@ def iter_usage_events(
             continue
 
         for agent_label, wire_path in walk_wire_logs(session_dir):
-            try:
-                lines = wire_path.read_text().splitlines()
-            except OSError as exc:
-                if warnings is not None:
-                    warnings.append(f"could not read {wire_path}: {exc}")
+            yield session_id, agent_label, wire_path
+
+
+def _read_wire_lines(wire_path: Path, warnings: list[str] | None) -> list[dict]:
+    try:
+        raw_lines = wire_path.read_text().splitlines()
+    except OSError as exc:
+        if warnings is not None:
+            warnings.append(f"could not read {wire_path}: {exc}")
+        return []
+    parsed = []
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            parsed.append(obj)
+    return parsed
+
+
+def iter_usage_events(
+    home: Path,
+    repo: Path | None = None,
+    session_filter: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    warnings: list[str] | None = None,
+):
+    """Yields raw per-event usage: (session_id, agent_label, model, usage, timestamp).
+
+    `usage` keeps the native `wire.jsonl` field names (inputOther, output,
+    inputCacheRead, inputCacheCreation) -- UsageTotals.add() maps them.
+    `timestamp` is an ISO-8601 UTC string converted from the wire log's
+    epoch-millisecond `time` field.
+    """
+    for session_id, agent_label, wire_path in _iter_session_wire_files(
+        home, repo, session_filter, warnings
+    ):
+        for obj in _read_wire_lines(wire_path, warnings):
+            if obj.get("type") != "usage.record":
                 continue
 
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if obj.get("type") != "usage.record":
-                    continue
+            usage = obj.get("usage")
+            model = obj.get("model") or UNKNOWN_MODEL
+            raw_time = obj.get("time")
+            if not isinstance(usage, dict) or not isinstance(raw_time, (int, float)):
+                continue
 
-                usage = obj.get("usage")
-                model = obj.get("model") or UNKNOWN_MODEL
-                raw_time = obj.get("time")
-                if not isinstance(usage, dict) or not isinstance(raw_time, (int, float)):
-                    continue
+            ts = _epoch_ms_to_iso(int(raw_time))
+            if since and ts < since:
+                continue
+            if until and ts > until:
+                continue
 
-                ts = _epoch_ms_to_iso(int(raw_time))
-                if since and ts < since:
-                    continue
-                if until and ts > until:
-                    continue
+            yield session_id, agent_label, model, usage, ts
 
-                yield session_id, agent_label, model, usage, ts
+
+@dataclass(frozen=True)
+class ContextEvent:
+    session_id: str
+    agent_label: str
+    timestamp: str
+    context_window: int | None
+    used_tokens: int | None
+
+
+def iter_context_events(
+    home: Path,
+    repo: Path | None = None,
+    session_filter: str | None = None,
+    warnings: list[str] | None = None,
+) -> Iterable[ContextEvent]:
+    """Yields one ContextEvent per `usage.record`, pairing it with the
+    `maxTokens` reported by the most recent preceding `llm.request` in the
+    same wire.jsonl (same turn) -- the model's actual configured context
+    window, not a guessed default (unlike claude_context_usage.py, which has
+    no such field available and falls back to an env-var default).
+
+    `used_tokens` is the current turn's total input (inputOther +
+    inputCacheRead + inputCacheCreation) -- the size of what was actually
+    sent to the model for that request, same quantity Codex's
+    last_token_usage.input_tokens and Claude's context_input_tokens()
+    represent.
+    """
+    for session_id, agent_label, wire_path in _iter_session_wire_files(
+        home, repo, session_filter, warnings
+    ):
+        current_window: int | None = None
+        for obj in _read_wire_lines(wire_path, warnings):
+            obj_type = obj.get("type")
+            if obj_type == "llm.request":
+                max_tokens = obj.get("maxTokens")
+                if isinstance(max_tokens, int) and max_tokens > 0:
+                    current_window = max_tokens
+                continue
+            if obj_type != "usage.record":
+                continue
+
+            usage = obj.get("usage")
+            raw_time = obj.get("time")
+            if not isinstance(usage, dict) or not isinstance(raw_time, (int, float)):
+                continue
+
+            used_tokens = (
+                (usage.get("inputOther", 0) or 0)
+                + (usage.get("inputCacheRead", 0) or 0)
+                + (usage.get("inputCacheCreation", 0) or 0)
+            )
+            yield ContextEvent(
+                session_id=session_id,
+                agent_label=agent_label,
+                timestamp=_epoch_ms_to_iso(int(raw_time)),
+                context_window=current_window,
+                used_tokens=used_tokens,
+            )
 
 
 def collect(

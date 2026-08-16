@@ -12,6 +12,7 @@ pub(crate) const PRD_SCHEMA: &str = "iao/prd/v1";
 pub(crate) const SRS_SCHEMA: &str = "iao/srs/v1";
 pub(crate) const SDD_SCHEMA: &str = "iao/sdd/v1";
 pub(crate) const MAX_IDEA_UTF8_BYTES: usize = 20_000;
+pub(crate) const MAX_DESIGN_CONTENT_UTF8_BYTES: usize = 1_000_000;
 
 pub(crate) fn validate_idea(value: &Value, source: &str, source_digest: &str) -> Vec<String> {
     let mut errors = Vec::new();
@@ -221,7 +222,21 @@ pub(crate) fn validate_srs(value: &Value, parent_digest: &str, goal_ids: &[Strin
     errors
 }
 
-pub(crate) fn validate_sdd(value: &Value, parent_digest: &str, requirement_ids: &[String]) -> Vec<String> {
+pub(crate) fn validate_sdd(
+    value: &Value,
+    parent_digest: &str,
+    requirement_ids: &[String],
+) -> Vec<String> {
+    validate_sdd_with_sources(value, parent_digest, requirement_ids, "", &[])
+}
+
+pub(crate) fn validate_sdd_with_sources(
+    value: &Value,
+    parent_digest: &str,
+    requirement_ids: &[String],
+    current_source_digest: &str,
+    current_source_files: &[String],
+) -> Vec<String> {
     let mut errors = Vec::new();
     if value["schema"] != SDD_SCHEMA {
         errors.push("SDD_SCHEMA_UNKNOWN".into());
@@ -245,7 +260,12 @@ pub(crate) fn validate_sdd(value: &Value, parent_digest: &str, requirement_ids: 
         }
     }
     for adr in &adrs {
-        for requirement_id in adr["requirementIds"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        for requirement_id in adr["requirementIds"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
             if !known.contains(requirement_id) {
                 errors.push("SDD_ADR_REQUIREMENT_DANGLING".into());
             }
@@ -264,6 +284,36 @@ pub(crate) fn validate_sdd(value: &Value, parent_digest: &str, requirement_ids: 
             }
         }
     }
+    if let Some(content) = value["designContent"].as_str() {
+        if !content.trim().is_empty() && content.len() > MAX_DESIGN_CONTENT_UTF8_BYTES {
+            errors.push("SDD_DESIGN_CONTENT_TOO_LARGE".into());
+        }
+    }
+    if !current_source_digest.trim().is_empty() {
+        let source_digest = value["sourceDigest"].as_str().unwrap_or("").trim();
+        if source_digest.is_empty() {
+            errors.push("SDD_SOURCE_DIGEST_MISSING".into());
+        } else if source_digest != current_source_digest {
+            errors.push("SDD_SOURCE_DIGEST_STALE".into());
+        }
+        let source_files = value["sourceFiles"].as_array().cloned().unwrap_or_default();
+        if source_files.is_empty() {
+            errors.push("SDD_SOURCE_FILES_MISSING".into());
+        } else if source_files.len() != current_source_files.len()
+            || source_files
+                .iter()
+                .zip(current_source_files)
+                .any(|(actual, expected)| actual.as_str() != Some(expected.as_str()))
+        {
+            errors.push("SDD_SOURCE_FILES_STALE".into());
+        }
+        if value["designContent"]
+            .as_str()
+            .map_or(true, |content| content.trim().is_empty())
+        {
+            errors.push("SDD_DESIGN_CONTENT_MISSING".into());
+        }
+    }
     errors
 }
 
@@ -280,8 +330,15 @@ fn has_readiness_dependency_cycle(slices: &[Value]) -> bool {
         }
     }
     for slice in slices {
-        let Some(id) = slice["id"].as_str() else { continue };
-        for dep in slice["dependsOn"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        let Some(id) = slice["id"].as_str() else {
+            continue;
+        };
+        for dep in slice["dependsOn"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
             if dep != id && adjacency.contains_key(dep) {
                 adjacency.get_mut(dep).unwrap().push(id);
                 *indegree.get_mut(id).unwrap() += 1;
@@ -309,7 +366,11 @@ fn has_readiness_dependency_cycle(slices: &[Value]) -> bool {
     visited < indegree.len()
 }
 
-pub(crate) fn validate_readiness(value: &Value, requirement_ids: &[String], adr_ids: &[String]) -> Vec<String> {
+pub(crate) fn validate_readiness(
+    value: &Value,
+    requirement_ids: &[String],
+    adr_ids: &[String],
+) -> Vec<String> {
     let mut errors = Vec::new();
     let verdict = value["verdict"].as_str().unwrap_or("");
     if !["READY", "FAIL:product", "FAIL:analysis", "FAIL:design"].contains(&verdict) {
@@ -429,7 +490,9 @@ pub(crate) fn validate_development_readiness(
         errors.push("DEV_READINESS_BUNDLE_DIGEST_STALE".into());
     }
     let has_blocking = prd["openQuestions"].as_array().is_some_and(|items| {
-        items.iter().any(|q| q["blocking"].as_bool().unwrap_or(false))
+        items
+            .iter()
+            .any(|q| q["blocking"].as_bool().unwrap_or(false))
     });
     if has_blocking {
         errors.push("DEV_READINESS_BLOCKING_QUESTION_OPEN".into());
@@ -477,7 +540,8 @@ mod tests {
     #[test]
     fn validate_srs_regra_de_dados_sem_texto_e_rejeitada() {
         let mut document = valid_srs();
-        document["dataRules"] = json!([{"id": "DR-001", "requirementIds": ["RF-001"], "rule": null}]);
+        document["dataRules"] =
+            json!([{"id": "DR-001", "requirementIds": ["RF-001"], "rule": null}]);
 
         let errors = validate_srs(&document, "sha256:prd", &["OBJ-001".to_string()]);
 
@@ -492,9 +556,9 @@ mod tests {
         let mut document = valid_srs();
         document["functionalRequirements"][0]["statement"] = json!("   ");
         document["acceptanceCriteria"][0]["given"] = json!("");
-        document["interfaces"] =
-            json!([{"id": "IF-001", "requirementIds": ["RF-001"], "name": "name", "description": null}]);
-        document["delivery"] = json!({"target": "", "verificationStrategy": "strategy", "isBootstrap": true});
+        document["interfaces"] = json!([{"id": "IF-001", "requirementIds": ["RF-001"], "name": "name", "description": null}]);
+        document["delivery"] =
+            json!({"target": "", "verificationStrategy": "strategy", "isBootstrap": true});
 
         let errors = validate_srs(&document, "sha256:prd", &["OBJ-001".to_string()]);
 
@@ -516,7 +580,8 @@ mod tests {
         let mut document = valid_srs();
         document["acceptanceCriteria"][0]["requirementIds"] = json!(["RF-999"]);
         document["interfaces"] = json!([{"id": "IF-001", "requirementIds": ["RF-999"], "name": "n", "description": "d"}]);
-        document["dataRules"] = json!([{"id": "DR-001", "requirementIds": ["RF-999"], "rule": "r"}]);
+        document["dataRules"] =
+            json!([{"id": "DR-001", "requirementIds": ["RF-999"], "rule": "r"}]);
 
         let errors = validate_srs(&document, "sha256:prd", &["OBJ-001".to_string()]);
 
@@ -525,7 +590,10 @@ mod tests {
             "SRS_INTERFACE_REQUIREMENT_DANGLING",
             "SRS_DATA_RULE_REQUIREMENT_DANGLING",
         ] {
-            assert!(errors.contains(&code.to_string()), "expected {code} among {errors:?}");
+            assert!(
+                errors.contains(&code.to_string()),
+                "expected {code} among {errors:?}"
+            );
         }
     }
 
@@ -592,8 +660,54 @@ mod tests {
         // expected — this test only asserts on the two dangling-reference codes it targets.
         let errors = validate_sdd(&document, "sha256:srs", &["RF-001".to_string()]);
 
-        assert!(errors.contains(&"SDD_ADR_REQUIREMENT_DANGLING".to_string()), "{errors:?}");
-        assert!(errors.contains(&"SDD_CONTROL_REQUIREMENT_DANGLING".to_string()), "{errors:?}");
+        assert!(
+            errors.contains(&"SDD_ADR_REQUIREMENT_DANGLING".to_string()),
+            "{errors:?}"
+        );
+        assert!(
+            errors.contains(&"SDD_CONTROL_REQUIREMENT_DANGLING".to_string()),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_sdd_source_backed_design_passa() {
+        let mut document = valid_sdd();
+        document["sourceDigest"] = json!("sha256:sources");
+        document["sourceFiles"] = json!(["architecture.md", "tree.txt"]);
+        document["designContent"] = json!(
+            "## Architecture\n\n```mermaid\ngraph TD\n```\n\n```text\napp/\n```"
+        );
+
+        let errors = validate_sdd_with_sources(
+            &document,
+            "sha256:srs",
+            &["RF-001".to_string()],
+            "sha256:sources",
+            &["architecture.md".to_string(), "tree.txt".to_string()],
+        );
+
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn validate_sdd_source_backed_design_sem_conteudo_e_rejeitado() {
+        let mut document = valid_sdd();
+        document["sourceDigest"] = json!("sha256:sources");
+        document["sourceFiles"] = json!(["architecture.md"]);
+
+        let errors = validate_sdd_with_sources(
+            &document,
+            "sha256:srs",
+            &["RF-001".to_string()],
+            "sha256:sources",
+            &["architecture.md".to_string()],
+        );
+
+        assert!(
+            errors.contains(&"SDD_DESIGN_CONTENT_MISSING".to_string()),
+            "{errors:?}"
+        );
     }
 
     fn slice(id: &str, depends_on: &[&str]) -> Value {
@@ -644,23 +758,44 @@ mod tests {
 
         let errors = validate_readiness(&verdict, &[], &[]);
 
-        assert!(!errors.contains(&"READINESS_DEPENDENCY_CYCLE".to_string()), "{errors:?}");
+        assert!(
+            !errors.contains(&"READINESS_DEPENDENCY_CYCLE".to_string()),
+            "{errors:?}"
+        );
     }
 
     #[test]
     fn validate_approval_separa_os_tres_codigos() {
-        let invalid_decision = json!({"decision": "maybe", "bundleDigest": "sha256:x", "rationale": "because"});
+        let invalid_decision =
+            json!({"decision": "maybe", "bundleDigest": "sha256:x", "rationale": "because"});
         let errors = validate_approval(&invalid_decision, "sha256:x");
-        assert!(errors.contains(&"APPROVAL_DECISION_INVALID".to_string()), "{errors:?}");
-        assert!(!errors.contains(&"APPROVAL_BUNDLE_DIGEST_STALE".to_string()), "{errors:?}");
+        assert!(
+            errors.contains(&"APPROVAL_DECISION_INVALID".to_string()),
+            "{errors:?}"
+        );
+        assert!(
+            !errors.contains(&"APPROVAL_BUNDLE_DIGEST_STALE".to_string()),
+            "{errors:?}"
+        );
 
-        let stale_digest = json!({"decision": "approved", "bundleDigest": "sha256:old", "rationale": "because"});
+        let stale_digest =
+            json!({"decision": "approved", "bundleDigest": "sha256:old", "rationale": "because"});
         let errors = validate_approval(&stale_digest, "sha256:new");
-        assert!(errors.contains(&"APPROVAL_BUNDLE_DIGEST_STALE".to_string()), "{errors:?}");
-        assert!(!errors.contains(&"APPROVAL_DECISION_INVALID".to_string()), "{errors:?}");
+        assert!(
+            errors.contains(&"APPROVAL_BUNDLE_DIGEST_STALE".to_string()),
+            "{errors:?}"
+        );
+        assert!(
+            !errors.contains(&"APPROVAL_DECISION_INVALID".to_string()),
+            "{errors:?}"
+        );
 
-        let missing_rationale = json!({"decision": "approved", "bundleDigest": "sha256:x", "rationale": ""});
+        let missing_rationale =
+            json!({"decision": "approved", "bundleDigest": "sha256:x", "rationale": ""});
         let errors = validate_approval(&missing_rationale, "sha256:x");
-        assert!(errors.contains(&"APPROVAL_RATIONALE_MISSING".to_string()), "{errors:?}");
+        assert!(
+            errors.contains(&"APPROVAL_RATIONALE_MISSING".to_string()),
+            "{errors:?}"
+        );
     }
 }

@@ -13,10 +13,7 @@ use std::path::Path;
 /// anything fails before the rename.
 pub fn write_atomic(path: &Path, content: &str) -> std::io::Result<()> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
 
     // No uuid/rand crate in the workspace: pid + monotonic time (nanos since epoch) is
     // unique enough — two processes never collide (distinct pid), and the same process

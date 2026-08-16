@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Flows.Specification;
 
 // Authoritative domain model for the Specification flow (idea → PRD → SRS → SDD → readiness
@@ -172,7 +174,28 @@ public sealed record SoftwareDesignDocument(
     string Schema,
     string SrsDigest,
     Adr[] Adrs,
-    InterfaceControl[] Controls);
+    InterfaceControl[] Controls)
+{
+    /// <summary>
+    /// Digest of the accepted source bundle used to produce the detailed design. Optional for
+    /// backwards compatibility with SDDs created before source-backed design context existed;
+    /// when a source bundle is present, SddEvaluator requires it to match the current bundle.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceDigest { get; init; }
+
+    /// <summary>Source filenames carried into the design context, in DocsReader order.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? SourceFiles { get; init; }
+
+    /// <summary>
+    /// Markdown design body preserved from the source-backed design context. It intentionally
+    /// remains raw Markdown so Mermaid diagrams, fenced code blocks, tables and folder trees
+    /// survive publication instead of being flattened into an ADR/control bullet.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DesignContent { get; init; }
+}
 
 /// <summary>
 /// One readiness slice: the unit the Development planner turns into a feature. Fields mirror

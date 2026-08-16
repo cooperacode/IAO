@@ -119,8 +119,12 @@ def srs(x):
 
 
 def sdd(x):
+    design_content = x.get("designContent")
+    body = "# Software Design Document\n\n"
+    if str(design_content or "").strip():
+        body += str(design_content).rstrip("\r\n") + "\n\n"
     return (
-        "# Software Design Document\n\n## Architecture Decision Records\n"
+        body + "## Architecture Decision Records\n"
         + bullets(
             x.get("adrs", []),
             lambda a: (

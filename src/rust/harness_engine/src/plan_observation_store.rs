@@ -29,7 +29,12 @@ pub struct PlanObservation {
 
 /// Appends one observation and returns it. Id format `OBS-{n:03}`, n = 1-based count of
 /// observations already on file (before this one).
-pub fn append(kind: &str, feature_id: Option<i32>, summary: &str, evidence: &[&str]) -> PlanObservation {
+pub fn append(
+    kind: &str,
+    feature_id: Option<i32>,
+    summary: &str,
+    evidence: &[&str],
+) -> PlanObservation {
     let observation = PlanObservation {
         id: format!("OBS-{:03}", load().len() + 1),
         kind: kind.to_string(),
@@ -51,14 +56,21 @@ pub fn append(kind: &str, feature_id: Option<i32>, summary: &str, evidence: &[&s
     match serde_json::to_string(&observation) {
         Ok(json) => {
             use std::io::Write;
-            let file = std::fs::OpenOptions::new().create(true).append(true).open(FILE_PATH);
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(FILE_PATH);
             match file {
                 Ok(mut f) => {
                     if let Err(e) = writeln!(f, "{json}") {
-                        harness_log::error(&format!("[PlanObservationStore] failed to append: {e}"));
+                        harness_log::error(&format!(
+                            "[PlanObservationStore] failed to append: {e}"
+                        ));
                     }
                 }
-                Err(e) => harness_log::error(&format!("[PlanObservationStore] failed to append: {e}")),
+                Err(e) => {
+                    harness_log::error(&format!("[PlanObservationStore] failed to append: {e}"))
+                }
             }
         }
         Err(e) => harness_log::error(&format!("[PlanObservationStore] failed to append: {e}")),
@@ -143,7 +155,12 @@ mod tests {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
 
-        append("missing_dependency", Some(3), "needs a foundation", &["compiler failure", ""]);
+        append(
+            "missing_dependency",
+            Some(3),
+            "needs a foundation",
+            &["compiler failure", ""],
+        );
 
         let loaded = load();
 
@@ -170,7 +187,10 @@ mod tests {
         std::fs::create_dir_all(DIR).unwrap();
         {
             use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().append(true).open(FILE_PATH).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(FILE_PATH)
+                .unwrap();
             writeln!(f, "not valid json").unwrap();
         }
 

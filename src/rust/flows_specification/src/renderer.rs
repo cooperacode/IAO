@@ -36,7 +36,9 @@ fn join_ids(v: &Value) -> String {
         .join(", ")
 }
 fn items_of<'a>(v: &'a Value, key: &str) -> &'a [Value] {
-    v.get(key).and_then(Value::as_array).map_or(&[], |a| a.as_slice())
+    v.get(key)
+        .and_then(Value::as_array)
+        .map_or(&[], |a| a.as_slice())
 }
 /// Renders each item in array order, or "_None._" when the list is empty — a section's
 /// heading structure never shifts based on content. Mirrors `AppendBulletsOrNone`.
@@ -93,10 +95,20 @@ pub(crate) fn render_prd(prd: &Value) -> String {
     );
 
     sb.push_str("## Non-Goals\n");
-    append_bullets_or_none(&mut sb, items_of(prd, "nonGoals"), |ng| format!("- {}", escaped(ng)), true);
+    append_bullets_or_none(
+        &mut sb,
+        items_of(prd, "nonGoals"),
+        |ng| format!("- {}", escaped(ng)),
+        true,
+    );
 
     sb.push_str("## Scope\n");
-    append_bullets_or_none(&mut sb, items_of(prd, "scope"), |s| format!("- {}", escaped(s)), true);
+    append_bullets_or_none(
+        &mut sb,
+        items_of(prd, "scope"),
+        |s| format!("- {}", escaped(s)),
+        true,
+    );
 
     sb.push_str("## Risks\n");
     append_bullets_or_none(
@@ -157,7 +169,14 @@ pub(crate) fn render_srs(srs: &Value) -> String {
     append_bullets_or_none(
         &mut sb,
         items_of(srs, "functionalRequirements"),
-        |r| format!("- **{}** [{}]: {}", text_of(&r["id"]), join_ids(&r["goalIds"]), escaped(&r["statement"])),
+        |r| {
+            format!(
+                "- **{}** [{}]: {}",
+                text_of(&r["id"]),
+                join_ids(&r["goalIds"]),
+                escaped(&r["statement"])
+            )
+        },
         true,
     );
 
@@ -165,7 +184,14 @@ pub(crate) fn render_srs(srs: &Value) -> String {
     append_bullets_or_none(
         &mut sb,
         items_of(srs, "qualityRequirements"),
-        |r| format!("- **{}** [{}]: {}", text_of(&r["id"]), join_ids(&r["goalIds"]), escaped(&r["statement"])),
+        |r| {
+            format!(
+                "- **{}** [{}]: {}",
+                text_of(&r["id"]),
+                join_ids(&r["goalIds"]),
+                escaped(&r["statement"])
+            )
+        },
         true,
     );
 
@@ -206,7 +232,14 @@ pub(crate) fn render_srs(srs: &Value) -> String {
     append_bullets_or_none(
         &mut sb,
         items_of(srs, "dataRules"),
-        |d| format!("- **{}** ({}): {}", text_of(&d["id"]), join_ids(&d["requirementIds"]), escaped(&d["rule"])),
+        |d| {
+            format!(
+                "- **{}** ({}): {}",
+                text_of(&d["id"]),
+                join_ids(&d["requirementIds"]),
+                escaped(&d["rule"])
+            )
+        },
         true,
     );
 
@@ -219,7 +252,11 @@ pub(crate) fn render_srs(srs: &Value) -> String {
     ));
     sb.push_str(&format!(
         "- **Bootstrap:** {}\n",
-        if delivery["isBootstrap"].as_bool().unwrap_or(false) { "yes" } else { "no" }
+        if delivery["isBootstrap"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        }
     ));
 
     sb
@@ -229,6 +266,13 @@ pub(crate) fn render_srs(srs: &Value) -> String {
 pub(crate) fn render_sdd(sdd: &Value) -> String {
     let mut sb = String::new();
     sb.push_str("# Software Design Document\n\n");
+
+    if let Some(content) = sdd["designContent"].as_str() {
+        if !content.trim().is_empty() {
+            sb.push_str(content.trim_end());
+            sb.push_str("\n\n");
+        }
+    }
 
     sb.push_str("## Architecture Decision Records\n");
     append_bullets_or_none(
@@ -276,10 +320,20 @@ pub(crate) fn render_readiness(verdict: &Value) -> String {
     sb.push_str("\n\n");
 
     sb.push_str("## Conflicts\n");
-    append_bullets_or_none(&mut sb, items_of(verdict, "conflicts"), |c| format!("- {}", escaped(c)), true);
+    append_bullets_or_none(
+        &mut sb,
+        items_of(verdict, "conflicts"),
+        |c| format!("- {}", escaped(c)),
+        true,
+    );
 
     sb.push_str("## Residuals\n");
-    append_bullets_or_none(&mut sb, items_of(verdict, "residuals"), |r| format!("- {}", escaped(r)), true);
+    append_bullets_or_none(
+        &mut sb,
+        items_of(verdict, "residuals"),
+        |r| format!("- {}", escaped(r)),
+        true,
+    );
 
     sb.push_str("## Slices\n");
     let slices = items_of(verdict, "slices");
@@ -293,23 +347,47 @@ pub(crate) fn render_readiness(verdict: &Value) -> String {
                 escaped(&slice["classification"])
             ));
             sb.push_str(&format!("- **Goal:** {}\n", escaped(&slice["goal"])));
-            sb.push_str(&format!("- **In Scope:** {}\n", join_ids(&slice["inScope"])));
-            sb.push_str(&format!("- **Out of Scope:** {}\n", join_ids(&slice["outOfScope"])));
+            sb.push_str(&format!(
+                "- **In Scope:** {}\n",
+                join_ids(&slice["inScope"])
+            ));
+            sb.push_str(&format!(
+                "- **Out of Scope:** {}\n",
+                join_ids(&slice["outOfScope"])
+            ));
             sb.push_str(&format!(
                 "- **Observable Outcome:** {}\n",
                 escaped(&slice["observableOutcome"])
             ));
-            sb.push_str(&format!("- **Requirements:** {}\n", join_ids(&slice["requirementIds"])));
+            sb.push_str(&format!(
+                "- **Requirements:** {}\n",
+                join_ids(&slice["requirementIds"])
+            ));
             sb.push_str(&format!("- **ADRs:** {}\n", join_ids(&slice["adrIds"])));
-            sb.push_str(&format!("- **Depends On:** {}\n", join_ids(&slice["dependsOn"])));
-            sb.push_str(&format!("- **Contracts:** {}\n", join_ids(&slice["contracts"])));
-            sb.push_str(&format!("- **Happy Path:** {}\n", escaped(&slice["happyPath"])));
-            sb.push_str(&format!("- **Failure Path:** {}\n", escaped(&slice["failurePath"])));
+            sb.push_str(&format!(
+                "- **Depends On:** {}\n",
+                join_ids(&slice["dependsOn"])
+            ));
+            sb.push_str(&format!(
+                "- **Contracts:** {}\n",
+                join_ids(&slice["contracts"])
+            ));
+            sb.push_str(&format!(
+                "- **Happy Path:** {}\n",
+                escaped(&slice["happyPath"])
+            ));
+            sb.push_str(&format!(
+                "- **Failure Path:** {}\n",
+                escaped(&slice["failurePath"])
+            ));
             sb.push_str(&format!(
                 "- **Acceptance Criterion:** {}\n",
                 escaped(&slice["acceptanceCriterion"])
             ));
-            sb.push_str(&format!("- **Suggested Target:** {}\n", escaped(&slice["suggestedTarget"])));
+            sb.push_str(&format!(
+                "- **Suggested Target:** {}\n",
+                escaped(&slice["suggestedTarget"])
+            ));
             sb.push_str(&format!(
                 "- **Suggested Verification Strategy:** {}\n",
                 escaped(&slice["suggestedVerificationStrategy"])
@@ -324,7 +402,12 @@ pub(crate) fn render_readiness(verdict: &Value) -> String {
 /// Renders the four accepted documents into their published filenames, without touching disk
 /// — mirrors `SpecificationPublisher.RenderAll`, reused both by the pre-publish byte-budget
 /// gate and by `publish()` itself so they never diverge.
-pub(crate) fn render_all(prd: &Value, srs: &Value, sdd: &Value, readiness: &Value) -> HashMap<String, String> {
+pub(crate) fn render_all(
+    prd: &Value,
+    srs: &Value,
+    sdd: &Value,
+    readiness: &Value,
+) -> HashMap<String, String> {
     let mut m = HashMap::new();
     m.insert(FILENAMES[0].to_string(), render_prd(prd));
     m.insert(FILENAMES[1].to_string(), render_srs(srs));
@@ -366,10 +449,21 @@ mod tests {
 
         assert!(rendered.starts_with("# Product Requirements Document\n\n"));
         assert!(rendered.contains("## Vision\nthe vision\n\n"));
-        for heading in ["## Goals", "## Success Metrics", "## Non-Goals", "## Scope", "## Risks", "## Decisions", "## Open Questions"] {
+        for heading in [
+            "## Goals",
+            "## Success Metrics",
+            "## Non-Goals",
+            "## Scope",
+            "## Risks",
+            "## Decisions",
+            "## Open Questions",
+        ] {
             assert!(rendered.contains(heading), "missing heading {heading}");
         }
-        assert!(rendered.matches("_None._").count() == 7, "expected 7 empty sections, got: {rendered}");
+        assert!(
+            rendered.matches("_None._").count() == 7,
+            "expected 7 empty sections, got: {rendered}"
+        );
     }
 
     #[test]
@@ -420,6 +514,22 @@ mod tests {
         assert!(rendered.contains("## Slices\n_None._\n"));
     }
 
+    #[test]
+    fn render_sdd_preserva_markdown_de_design() {
+        let sdd = json!({
+            "schema": "iao/sdd/v1",
+            "srsDigest": "sha256:srs",
+            "designContent": "## Architecture\n\n```mermaid\ngraph TD\n```\n\n```text\napp/\n```",
+            "adrs": [],
+            "controls": []
+        });
+
+        let rendered = render_sdd(&sdd);
+
+        assert!(rendered.contains("```mermaid\ngraph TD\n```"));
+        assert!(rendered.contains("app/"));
+    }
+
     fn slice(id: &str, depends_on: &[&str]) -> Value {
         json!({
             "id": id,
@@ -452,11 +562,24 @@ mod tests {
         let rendered = render_readiness(&verdict);
 
         for label in [
-            "Goal", "In Scope", "Out of Scope", "Observable Outcome", "Requirements", "ADRs",
-            "Depends On", "Contracts", "Happy Path", "Failure Path", "Acceptance Criterion",
-            "Suggested Target", "Suggested Verification Strategy",
+            "Goal",
+            "In Scope",
+            "Out of Scope",
+            "Observable Outcome",
+            "Requirements",
+            "ADRs",
+            "Depends On",
+            "Contracts",
+            "Happy Path",
+            "Failure Path",
+            "Acceptance Criterion",
+            "Suggested Target",
+            "Suggested Verification Strategy",
         ] {
-            assert!(rendered.contains(&format!("**{label}:**")), "missing field {label}");
+            assert!(
+                rendered.contains(&format!("**{label}:**")),
+                "missing field {label}"
+            );
         }
         assert!(rendered.contains("### SL-1 — c\n"));
     }

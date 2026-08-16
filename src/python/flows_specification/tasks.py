@@ -125,12 +125,14 @@ def design(_=None):
             ]
         )
     s, sd = store.read_accepted("srs")
+    sources, source_digest = store.read_accepted("sources")
+    source_files = (sources or {}).get("files") or []
     req = [
         r.get("id")
         for r in (s or {}).get("functionalRequirements", [])
         + (s or {}).get("qualityRequirements", [])
     ]
-    e = evaluator.sdd(x, sd or "", req)
+    e = evaluator.sdd(x, sd or "", req, source_digest, source_files)
     if not e["passed"]:
         return prompts.design_retry_prompt(
             [f"{v['code']}: {v['message']}" for v in e["violations"]]

@@ -40,6 +40,14 @@ public static class SpecificationEvaluator
     public const int MaxIdeaUtf8Bytes = 20_000;
 
     /// <summary>
+    /// Upper bound for the raw Markdown body carried by a source-backed SDD. This is large
+    /// enough for diagrams, folder trees and implementation guidance while preventing one
+    /// design proposal from becoming an unbounded JSON payload; the final bundle-size gate
+    /// still applies to the complete published document set.
+    /// </summary>
+    public const int MaxDesignContentUtf8Bytes = 1_000_000;
+
+    /// <summary>
     /// Validates a <c>discover</c>-phase idea proposal: known schema, minimum required
     /// fields, UTF-8 size ceiling, unique open-question IDs, and that the proposal records
     /// where it came from (<paramref name="source"/>) and a digest of that source
@@ -255,9 +263,17 @@ public static class SpecificationEvaluator
     /// digest (<paramref name="currentSrsDigest"/>) and the accepted SRS's requirement ids
     /// (<paramref name="requirementIds"/>, functional + quality combined): digest freshness,
     /// unique ADR IDs, every accepted requirement allocated to at least one ADR, and no
-    /// dangling requirement reference from an ADR or a control (§5 SddEvaluator).
+    /// dangling requirement reference from an ADR or a control (§5 SddEvaluator). When
+    /// <paramref name="currentSourceDigest"/> is supplied, the source provenance and detailed
+    /// Markdown body are required as well, so source-backed design details cannot disappear
+    /// between prompt context and publication.
     /// </summary>
-    public static EvaluationResult EvaluateSdd(SoftwareDesignDocument sdd, string currentSrsDigest, string[] requirementIds)
+    public static EvaluationResult EvaluateSdd(
+        SoftwareDesignDocument sdd,
+        string currentSrsDigest,
+        string[] requirementIds,
+        string? currentSourceDigest = null,
+        string[]? currentSourceFiles = null)
     {
         var violations = new List<EvaluationViolation>();
 
@@ -284,6 +300,39 @@ public static class SpecificationEvaluator
             foreach (var requirementId in control.RequirementIds)
                 if (!knownRequirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SDD_CONTROL_REQUIREMENT_DANGLING", $"control '{control.Id}' references unknown requirement '{requirementId}'"));
+
+        if (!string.IsNullOrWhiteSpace(sdd.DesignContent)
+            && Encoding.UTF8.GetByteCount(sdd.DesignContent) > MaxDesignContentUtf8Bytes)
+            violations.Add(new EvaluationViolation(
+                "SDD_DESIGN_CONTENT_TOO_LARGE",
+                $"designContent exceeds the {MaxDesignContentUtf8Bytes}-byte UTF-8 limit"));
+
+        if (!string.IsNullOrWhiteSpace(currentSourceDigest))
+        {
+            if (string.IsNullOrWhiteSpace(sdd.SourceDigest))
+                violations.Add(new EvaluationViolation(
+                    "SDD_SOURCE_DIGEST_MISSING",
+                    "sourceDigest is required when an accepted source bundle exists"));
+            else if (!string.Equals(sdd.SourceDigest, currentSourceDigest, StringComparison.Ordinal))
+                violations.Add(new EvaluationViolation(
+                    "SDD_SOURCE_DIGEST_STALE",
+                    $"sdd.sourceDigest '{sdd.SourceDigest}' does not match the current accepted source digest '{currentSourceDigest}'"));
+
+            var expectedFiles = currentSourceFiles ?? [];
+            if (sdd.SourceFiles is null || sdd.SourceFiles.Length == 0)
+                violations.Add(new EvaluationViolation(
+                    "SDD_SOURCE_FILES_MISSING",
+                    "sourceFiles is required when an accepted source bundle exists"));
+            else if (!sdd.SourceFiles.SequenceEqual(expectedFiles, StringComparer.Ordinal))
+                violations.Add(new EvaluationViolation(
+                    "SDD_SOURCE_FILES_STALE",
+                    "sdd.sourceFiles does not match the current accepted source bundle"));
+
+            if (string.IsNullOrWhiteSpace(sdd.DesignContent))
+                violations.Add(new EvaluationViolation(
+                    "SDD_DESIGN_CONTENT_MISSING",
+                    "designContent is required when an accepted source bundle exists"));
+        }
 
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);
     }

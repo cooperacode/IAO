@@ -128,8 +128,14 @@ mod tests {
         let map = skills(&["agile-workitem", "story-splitting"]);
 
         assert_eq!(map.len(), 2);
-        assert_eq!(map["agile-workitem"], ".harness/skills/agile-workitem/SKILL.md");
-        assert_eq!(map["story-splitting"], ".harness/skills/story-splitting/SKILL.md");
+        assert_eq!(
+            map["agile-workitem"],
+            ".harness/skills/agile-workitem/SKILL.md"
+        );
+        assert_eq!(
+            map["story-splitting"],
+            ".harness/skills/story-splitting/SKILL.md"
+        );
     }
 
     #[test]

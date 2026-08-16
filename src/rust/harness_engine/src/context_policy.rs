@@ -35,7 +35,8 @@ pub fn observe(usage: Option<&ContextUsage>) {
     if usage.context_window_tokens <= 0 || usage.context_used_tokens < 0 {
         return;
     }
-    let ratio = (usage.context_used_tokens as f64 / usage.context_window_tokens as f64).clamp(0.0, 1.0);
+    let ratio =
+        (usage.context_used_tokens as f64 / usage.context_window_tokens as f64).clamp(0.0, 1.0);
     state_store::set(RATIO_KEY, &format!("{ratio:.6}"));
     state_store::set(USAGE_SEEN_KEY, "true");
 }
@@ -59,7 +60,12 @@ pub fn new_feature_prefix() -> String {
 
 fn should_reset() -> bool {
     let config = harness_config::current();
-    match config.context_reset_mode.trim().to_ascii_lowercase().as_str() {
+    match config
+        .context_reset_mode
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "never" => return false,
         "per-feature" => return true,
         _ => {}
@@ -77,7 +83,9 @@ fn should_reset() -> bool {
 }
 
 fn read_int(key: &str) -> Option<i32> {
-    state_store::get(key).and_then(|value| value.parse::<i32>().ok()).filter(|value| *value >= 0)
+    state_store::get(key)
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|value| *value >= 0)
 }
 
 #[cfg(test)]

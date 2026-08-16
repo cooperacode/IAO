@@ -59,11 +59,23 @@ pub struct TraceEntry {
     /// before this field existed.
     #[serde(default)]
     pub label: String,
-    #[serde(rename = "contextWindowTokens", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "contextWindowTokens",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub context_window_tokens: Option<i32>,
-    #[serde(rename = "contextUsedTokens", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "contextUsedTokens",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub context_used_tokens: Option<i32>,
-    #[serde(rename = "contextRatio", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "contextRatio",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub context_ratio: Option<f64>,
 }
 
@@ -137,7 +149,10 @@ pub fn append_with_context(
         Some(usage) if usage.context_window_tokens > 0 && usage.context_used_tokens >= 0 => (
             Some(usage.context_window_tokens),
             Some(usage.context_used_tokens),
-            Some((usage.context_used_tokens as f64 / usage.context_window_tokens as f64).clamp(0.0, 1.0)),
+            Some(
+                (usage.context_used_tokens as f64 / usage.context_window_tokens as f64)
+                    .clamp(0.0, 1.0),
+            ),
         ),
         _ => (None, None, None),
     };
