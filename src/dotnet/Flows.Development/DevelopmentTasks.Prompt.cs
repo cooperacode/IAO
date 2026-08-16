@@ -17,7 +17,7 @@ public static partial class DevelopmentTasks
     // embedded in the prompts via {FeaturesShape} so it doesn't collide with $"""..."""
     // interpolation.
     private const string FeaturesShape =
-        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]""";
+        """[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]""";
 
     // Reinjects the current feature's bounded inline context into implement/fix prompts.
     private static string FeatureContextBlock(Feature feature)
@@ -80,6 +80,34 @@ public static partial class DevelopmentTasks
             """,
             output: new Envelope(EnvelopeType.Command, "plan", [VERIFY_CMD, TARGET_DIR]),
             skills: PromptFormatter.Skills("dev-initializer"));
+
+    private static string HandoffSetupPrompt(string? failure = null)
+    {
+        var failureBlock = string.IsNullOrWhiteSpace(failure) ? "" : $"\nSetup feedback: {failure}\n";
+        return PromptFormatter.Format(
+            input: $"""
+            {failureBlock}
+            A validated Specification handoff has already defined the Development features.
+            Do not split, rename, reprioritize, remove, or rewrite the feature plan.
+            Complete only the operational setup by following the injected
+            dev-handoff-setup skill:
+
+            - inspect the repository and determine the concrete target directory;
+            - initialize or select the correct Git branch;
+            - create or validate an idempotent init.sh;
+            - create or validate an idempotent verify-feature.sh <feature-id>;
+            - determine the real executable verification command (for example dotnet test,
+              npm test, or pytest), never a prose description or a placeholder;
+            - ensure both scripts live directly inside the reported target directory.
+
+            Return setup with exactly two arguments:
+            1. the concrete target directory, relative to the harness root when possible;
+            2. the executable verification command.
+            Do not return the Specification's semantic target description as the directory.
+            """,
+            output: new Envelope(EnvelopeType.Command, "setup", [TARGET_DIR, VERIFY_CMD]),
+            skills: PromptFormatter.Skills("dev-handoff-setup"));
+    }
 
     private static string PlanRetryPrompt()
     {

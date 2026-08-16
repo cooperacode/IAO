@@ -751,6 +751,7 @@ func approve(*engine.Envelope) string {
 	// never a duplicated/divergent render. specs/active/ is not touched at all if this
 	// fails.
 	rendered := renderBundle(p, s, d, v)
+	rendered[developmentPlanFilename] = developmentPlanJSON(s, d, v, rendered)
 	if violations := developmentReady(p, s, d, v, x.BundleDigest, cur, rendered, engine.CurrentConfig().DocsMaxChars); len(violations) > 0 {
 		reason := strings.Join(formatViolations(violations), "; ")
 		r.Status = "publish_blocked"

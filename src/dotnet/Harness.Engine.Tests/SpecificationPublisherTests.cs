@@ -106,7 +106,9 @@ public class SpecificationPublisherTests : IDisposable
         Assert.Equal(Sha256Hex(File.ReadAllText(srsPath)), manifest.FileDigests[SrsFilename]);
         Assert.Equal(Sha256Hex(File.ReadAllText(sddPath)), manifest.FileDigests[SddFilename]);
         Assert.Equal(Sha256Hex(File.ReadAllText(readinessPath)), manifest.FileDigests[ReadinessFilename]);
-        Assert.Equal([PrdFilename, SrsFilename, SddFilename, ReadinessFilename], manifest.OwnedFiles);
+        Assert.Equal(
+            [PrdFilename, SrsFilename, SddFilename, ReadinessFilename, SpecificationPublisher.DevelopmentPlanFilename],
+            manifest.OwnedFiles);
         Assert.NotNull(result.Digests);
         Assert.Equal(manifest.FileDigests[PrdFilename], result.Digests![PrdFilename]);
 

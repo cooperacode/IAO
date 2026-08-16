@@ -279,7 +279,8 @@ and the deterministic fallback remains active.
 | State | What happens |
 |---|---|
 | `start` | Resumes by reconstructing bounded repository context if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `specs/` or interactively) |
-| `plan` | Writes up to `MaxFeatures` (harness.json `maxFeatures`, default 10) features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`), then starts deterministic session setup |
+| `plan` | In autonomous mode, writes up to `MaxFeatures` (harness.json `maxFeatures`, default 10) features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`). With a published `40-development-plan.json`, `start` imports the authoritative feature plan and emits `setup` for repository preparation instead. |
+| `setup` | Handoff-only driver turn: prepares Git, the concrete target directory, `init.sh`, `verify-feature.sh`, and reports the real `target_dir` and executable `verify_cmd`; it cannot redefine the imported feature plan. |
 | `bearings` | Internal compatibility command: captures the `progress.txt` tail and `git log`, then continues automatically |
 | `smoke` | Internal compatibility command: runs `./init.sh` with timeout and exit-code classification before selecting a feature |
 | `pick` | **Harness decision, no driver input.** Selects the highest-priority feature among the ones whose dependencies already passed |

@@ -17,7 +17,7 @@ const (
 )
 
 // featuresShape is the feature_list shape embedded verbatim in the prompts.
-const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]`
+const featuresShape = `[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]`
 
 // featureContextBlock returns the current feature's bounded inline context for implement/fix.
 func featureContextBlock(feature engine.Feature) string {
@@ -116,6 +116,23 @@ Repeat the command with '%s' and '%s'.`, briefBlock, planFilePath, featuresShape
 func SmokeFixPrompt(failure string) string {
 	input := fmt.Sprintf("The deterministic smoke test failed: %s\nRepair the target setup using `dev-smoke`, then return `smoke` without arguments. The harness will rerun `init.sh` and decide from its exit code.", failure)
 	return engine.Format(input, engine.NewEnvelope(engine.EnvelopeType.Command, "smoke", []string{}), engine.Skills("dev-smoke"))
+}
+
+func HandoffSetupPrompt(failure string) string {
+	feedback := ""
+	if strings.TrimSpace(failure) != "" {
+		feedback = "Setup feedback: " + failure + "\n"
+	}
+	input := fmt.Sprintf(`%sA validated Specification handoff already defined the Development features.
+Do not split, rename, reprioritize, remove, or rewrite them. Follow `+"`dev-handoff-setup`"+`:
+inspect the repository, prepare Git, create or validate idempotent init.sh and
+verify-feature.sh <feature-id>, and determine the real executable verification command.
+Both scripts must live directly inside the concrete target directory.
+Return `+"`setup`"+` with exactly two arguments: the concrete target directory (relative to
+the harness root when possible) and the executable verification command. Do not use the
+Specification target description as the directory.
+Return setup after writing/validating the setup.`, feedback)
+	return engine.Format(input, engine.NewEnvelope(engine.EnvelopeType.Command, "setup", []string{tokenTargetDir, tokenVerifyCmd}), engine.Skills("dev-handoff-setup"))
 }
 
 func ImplementPrompt(feature engine.Feature) string {

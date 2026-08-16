@@ -353,6 +353,7 @@ fn same_definition_except_priority(left: &Feature, right: &Feature) -> bool {
         && left.depends_on == right.depends_on
         && left.references == right.references
         && left.implementation_context.requirements == right.implementation_context.requirements
+        && left.implementation_context.decisions == right.implementation_context.decisions
         && left.implementation_context.constraints == right.implementation_context.constraints
         && left.implementation_context.files == right.implementation_context.files
         && left.implementation_context.acceptance == right.implementation_context.acceptance

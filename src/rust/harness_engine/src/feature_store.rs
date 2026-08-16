@@ -29,6 +29,8 @@ pub struct ImplementationContext {
     #[serde(default)]
     pub requirements: Vec<String>,
     #[serde(default)]
+    pub decisions: Vec<String>,
+    #[serde(default)]
     pub constraints: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
@@ -38,7 +40,7 @@ pub struct ImplementationContext {
 
 impl ImplementationContext {
     pub fn is_empty(&self) -> bool {
-        self.requirements.is_empty() && self.constraints.is_empty() && self.files.is_empty() && self.acceptance.is_empty()
+        self.requirements.is_empty() && self.decisions.is_empty() && self.constraints.is_empty() && self.files.is_empty() && self.acceptance.is_empty()
     }
 
     pub fn prompt_text(&self) -> String {
@@ -48,6 +50,7 @@ impl ImplementationContext {
         }
         [
             format_items("requirements", &self.requirements),
+            format_items("decisions", &self.decisions),
             format_items("constraints", &self.constraints),
             format_items("files", &self.files),
             format_items("acceptance", &self.acceptance),
@@ -101,6 +104,18 @@ pub struct Feature {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct FeatureList {
     pub(crate) items: Vec<Feature>,
+}
+
+/// Reads the structured Specification handoff and reuses the normal feature parser so
+/// ADR/requirement context is preserved with the same limits and graph checks as a driver
+/// supplied plan.
+pub fn parse_development_plan(json: &str) -> Vec<Feature> {
+    let value: serde_json::Value = match serde_json::from_str(json) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let Some(features) = value.get("features") else { return Vec::new(); };
+    parse(&serde_json::to_string(features).unwrap_or_default())
 }
 
 // Raw shape of the array the driver returns in `plan` — `id` is optional (reindexed by
@@ -228,6 +243,7 @@ fn truncate_implementation_context(context: &ImplementationContext) -> Implement
     };
     ImplementationContext {
         requirements: take(&context.requirements),
+        decisions: take(&context.decisions),
         constraints: take(&context.constraints),
         files: take(&context.files),
         acceptance: take(&context.acceptance),
@@ -531,6 +547,7 @@ fn same_definition(left: &Feature, right: &Feature) -> bool {
         && left.depends_on == right.depends_on
         && left.references == right.references
         && left.implementation_context.requirements == right.implementation_context.requirements
+        && left.implementation_context.decisions == right.implementation_context.decisions
         && left.implementation_context.constraints == right.implementation_context.constraints
         && left.implementation_context.files == right.implementation_context.files
         && left.implementation_context.acceptance == right.implementation_context.acceptance
@@ -684,6 +701,13 @@ mod tests {
         assert_eq!(features[0].description, "does Y");
         assert_eq!(features[0].references, vec!["RF-003".to_string()]);
         assert_eq!(features[0].implementation_context.requirements, vec!["inline Y"]);
+    }
+
+    #[test]
+    fn parse_development_plan_preserva_contexto_de_decisao() {
+        let features = parse_development_plan(r#"{"schema":"iao/development-plan/v1","features":[{"id":1,"title":"API","priority":1,"implementationContext":{"decisions":["ADR-2: use Postgres"]}}]}"#);
+
+        assert_eq!(features[0].implementation_context.decisions, vec!["ADR-2: use Postgres"]);
     }
 
     #[test]

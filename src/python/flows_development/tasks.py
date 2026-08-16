@@ -98,6 +98,11 @@ def start() -> str:
     # the driver writes a fresh array — best-effort, absence is not an error.
     Path(state_keys.PLAN_FILE_PATH).unlink(missing_ok=True)
 
+    imported = _import_published_plan()
+    if imported:
+        harness_log.info("[dev] imported the published Specification handoff; entering operational setup")
+        return prompts.handoff_setup_prompt()
+
     # The brief (what to build) comes from specs/, or, without specs, from interactive mode.
     if not docs_reader.has_docs(_docs_folder()):
         return prompts.initializer_interactive()
@@ -108,6 +113,40 @@ def start() -> str:
     artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
     state_store.set("origem", "specs")
     return prompts.initializer_prompt(content, files)
+
+
+def _import_published_plan() -> bool:
+    candidates = (
+        Path(_docs_folder()) / "40-development-plan.json",
+        Path(_docs_folder()) / "active" / "40-development-plan.json",
+        Path("specs/active/40-development-plan.json"),
+    )
+    for candidate in dict.fromkeys(candidates):
+        try:
+            if not candidate.exists():
+                continue
+            features = feature_store.parse_development_plan(candidate.read_text(encoding="utf-8"))
+            if not features:
+                harness_log.error(f"[dev] published handoff '{candidate}' was invalid or empty")
+                return False
+            capped = sorted(features, key=lambda f: (f.priority, f.id))[:MAX_FEATURES()]
+            ids = {feature.id for feature in capped}
+            feature_store.write([replace(feature, depends_on=tuple(dep for dep in feature.deps if dep in ids)) for feature in capped])
+            return True
+        except OSError as ex:
+            harness_log.error(f"[dev] failed to import published handoff '{candidate}': {ex}")
+            return False
+    return False
+
+
+def setup(envelope: Envelope | None) -> str:
+    target = os.environ.get("HARNESS_TARGET_DIR", "").strip() or _arg_at(envelope, 0, "")
+    verify = os.environ.get("HARNESS_VERIFY_CMD", "").strip() or _arg_at(envelope, 1, "")
+    if not target or not verify or len(target) > 240 or len(verify) > 500 or any(c in target for c in "\r\n"):
+        return prompts.handoff_setup_prompt("the setup response did not contain a concrete target directory and executable verification command")
+    run_config_store.write(RunConfig(verify_cmd=verify, target_dir=target, run_id=str(uuid.uuid4())))
+    harness_log.info(f"[dev] setup completed for target '{target}' with verify command '{verify}'")
+    return bearings(None)
 
 
 def plan(envelope: Envelope | None) -> str:

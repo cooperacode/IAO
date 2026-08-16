@@ -239,6 +239,23 @@ public class SpecificationEvaluatorTests
     }
 
     [Fact]
+    public void EvaluateSrs_DependsOnAusente_NaoLancaExcecaoEEhRejeitado()
+    {
+        var srs = ValidSrs("sha256:prd") with
+        {
+            QualityRequirements =
+            [
+                new Requirement("QR-001", ["OBJ-001"], "quality rule", null!, ["AC-001"])
+            ],
+        };
+
+        var result = SpecificationEvaluator.EvaluateSrs(srs, "sha256:prd", ["OBJ-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "SRS_REQUIREMENT_DEPENDS_ON_MISSING");
+    }
+
+    [Fact]
     public void EvaluateSrs_DigestDePrdDesatualizado_EhRejeitado()
     {
         var result = SpecificationEvaluator.EvaluateSrs(ValidSrs("sha256:old"), "sha256:new", ["OBJ-001"]);

@@ -85,6 +85,21 @@ def save(flow: str, data: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+def _specification_approval_gate_active() -> bool:
+    """Return whether Specification is waiting for the GUI's human approval.
+
+    The headless driver is intentionally terminated at this point by
+    ``_enforce_specification_approval_gate``.  The wrapper commonly reports that
+    SIGTERM as exit code 143, which is a controlled stop rather than a failure.
+    """
+    run_path = REPO_ROOT / ".harness" / "specification" / "active" / "run.json"
+    try:
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return run.get("status") == "awaiting_approval" and run.get("phase") == "approve"
+
+
 def flow_availability() -> dict[str, dict[str, Any]]:
     def check(script_name: str) -> dict[str, Any]:
         candidates = [REPO_ROOT / script_name]
@@ -145,7 +160,12 @@ def _watch(flow: str, run_id: str, proc: subprocess.Popen) -> None:
             return  # a newer run has already replaced this one
         data["exitCode"] = exit_code
         data["endedAt"] = _now_iso()
-        data["status"] = "error" if exit_code and exit_code > 0 else "stopped"
+        approval_gate_stop = (
+            flow == "specification"
+            and exit_code in (143, -signal.SIGTERM)
+            and _specification_approval_gate_active()
+        )
+        data["status"] = "stopped" if approval_gate_stop or not exit_code else "error"
         save(flow, data)
         if flow == "specification":
             request_path = REPO_ROOT / ".harness" / "specification" / "revisions" / "request.json"

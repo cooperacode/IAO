@@ -28,6 +28,7 @@ const ImplementationContextMaxChars = 4000
 // ImplementationContext is the structured inline guidance carried into implementation.
 type ImplementationContext struct {
 	Requirements []string `json:"requirements"`
+	Decisions    []string `json:"decisions"`
 	Constraints  []string `json:"constraints"`
 	Files        []string `json:"files"`
 	Acceptance   []string `json:"acceptance"`
@@ -55,7 +56,7 @@ func (c *ImplementationContext) UnmarshalJSON(data []byte) error {
 }
 
 func (c ImplementationContext) IsEmpty() bool {
-	return len(c.Requirements) == 0 && len(c.Constraints) == 0 && len(c.Files) == 0 && len(c.Acceptance) == 0
+	return len(c.Requirements) == 0 && len(c.Decisions) == 0 && len(c.Constraints) == 0 && len(c.Files) == 0 && len(c.Acceptance) == 0
 }
 
 func (c ImplementationContext) PromptText() string {
@@ -68,6 +69,7 @@ func (c ImplementationContext) PromptText() string {
 	}
 	return strings.Join([]string{
 		format("requirements", c.Requirements),
+		format("decisions", c.Decisions),
 		format("constraints", c.Constraints),
 		format("files", c.Files),
 		format("acceptance", c.Acceptance),
@@ -103,6 +105,24 @@ type rawFeature struct {
 
 type featureList struct {
 	Items []Feature `json:"items"`
+}
+
+// ParseDevelopmentPlan reads the machine-readable handoff emitted by the
+// Specification flow and applies the same normalization/validation rules as a driver
+// supplied plan. Keeping this here prevents the Development flow from losing the
+// structured ADR and requirement context during the handoff.
+func ParseDevelopmentPlan(rawJSON string) []Feature {
+	var envelope struct {
+		Features []Feature `json:"features"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &envelope); err != nil || len(envelope.Features) == 0 {
+		return []Feature{}
+	}
+	data, err := json.Marshal(envelope.Features)
+	if err != nil {
+		return []Feature{}
+	}
+	return ParseFeatures(string(data))
 }
 
 // WriteFeatures overwrites the whole list — used by `plan` (session 0) and MarkFeaturePassed.
@@ -230,12 +250,15 @@ func truncateImplementationContext(context ImplementationContext) Implementation
 		}
 		return result
 	}
-	return ImplementationContext{Requirements: take(context.Requirements), Constraints: take(context.Constraints), Files: take(context.Files), Acceptance: take(context.Acceptance)}
+	return ImplementationContext{Requirements: take(context.Requirements), Decisions: take(context.Decisions), Constraints: take(context.Constraints), Files: take(context.Files), Acceptance: take(context.Acceptance)}
 }
 
 func normalizeImplementationContext(context ImplementationContext) ImplementationContext {
 	if context.Requirements == nil {
 		context.Requirements = []string{}
+	}
+	if context.Decisions == nil {
+		context.Decisions = []string{}
 	}
 	if context.Constraints == nil {
 		context.Constraints = []string{}
@@ -595,6 +618,7 @@ func sameFeatureDefinition(left, right Feature) bool {
 		intsEqualSeq(left.DependsOn, right.DependsOn) &&
 		stringsEqualSeq(left.References, right.References) &&
 		stringsEqualSeq(left.ImplementationContext.Requirements, right.ImplementationContext.Requirements) &&
+		stringsEqualSeq(left.ImplementationContext.Decisions, right.ImplementationContext.Decisions) &&
 		stringsEqualSeq(left.ImplementationContext.Constraints, right.ImplementationContext.Constraints) &&
 		stringsEqualSeq(left.ImplementationContext.Files, right.ImplementationContext.Files) &&
 		stringsEqualSeq(left.ImplementationContext.Acceptance, right.ImplementationContext.Acceptance)

@@ -279,6 +279,7 @@ def _same_definition_except_priority(left: Feature, right: Feature) -> bool:
         and left.deps == right.deps
         and left.refs == right.refs
         and left.context.requirements == right.context.requirements
+        and left.context.decisions == right.context.decisions
         and left.context.constraints == right.context.constraints
         and left.context.files == right.context.files
         and left.context.acceptance == right.context.acceptance

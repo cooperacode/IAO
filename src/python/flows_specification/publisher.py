@@ -21,6 +21,8 @@ EXPECTED_FILES = (
     "20-software-design-document.md",
     "30-readiness-handoff.md",
 )
+DEVELOPMENT_PLAN_FILENAME = "40-development-plan.json"
+EXPECTED_PUBLISHED_FILES = EXPECTED_FILES + (DEVELOPMENT_PLAN_FILENAME,)
 
 
 def _digest(content: str) -> str:
@@ -34,6 +36,55 @@ def render_all(prd: dict, srs: dict, sdd: dict, readiness: dict) -> dict[str, st
         EXPECTED_FILES[1]: renderer.srs(srs),
         EXPECTED_FILES[2]: renderer.sdd(sdd),
         EXPECTED_FILES[3]: renderer.readiness(readiness),
+    }
+
+
+def build_development_plan(srs: dict, sdd: dict, readiness: dict, rendered: dict[str, str]) -> dict:
+    requirements = {
+        item.get("id"): item.get("statement", "")
+        for item in (srs.get("functionalRequirements", []) + srs.get("qualityRequirements", []))
+        if item.get("id")
+    }
+    adrs = {item.get("id"): item for item in sdd.get("adrs", []) if item.get("id")}
+    slice_ids = {item.get("id"): index + 1 for index, item in enumerate(readiness.get("slices", []))}
+    features = []
+    for index, item in enumerate(readiness.get("slices", [])):
+        requirement_text = [f"{ref}: {requirements[ref]}" if ref in requirements else ref for ref in item.get("requirementIds", [])]
+        decisions = []
+        for ref in item.get("adrIds", []):
+            adr = adrs.get(ref)
+            decisions.append(
+                f"{ref}: {adr.get('title', '')}. Decision: {adr.get('decision', '')}. Rationale: {adr.get('rationale', '')}"
+                if adr else ref
+            )
+        references = list(dict.fromkeys(item.get("requirementIds", []) + item.get("adrIds", [])))
+        features.append({
+            "id": index + 1,
+            "title": item.get("goal", ""),
+            "priority": index + 1,
+            "passes": False,
+            "dependsOn": [slice_ids[ref] for ref in item.get("dependsOn", []) if ref in slice_ids],
+            "description": (
+                f"{item.get('goal', '')} Observable outcome: {item.get('observableOutcome', '')}. "
+                f"Happy path: {item.get('happyPath', '')}. Failure path: {item.get('failurePath', '')}."
+            ),
+            "references": references,
+            "implementationContext": {
+                "requirements": requirement_text,
+                "decisions": decisions,
+                "constraints": [f"out of scope: {value}" for value in item.get("outOfScope", [])] + item.get("contracts", []),
+                "files": [item.get("suggestedTarget", "")],
+                "acceptance": [item.get("acceptanceCriterion", "")],
+            },
+        })
+    digest_source = "|".join(rendered[name] for name in EXPECTED_FILES)
+    return {
+        "schema": "iao/development-plan/v1",
+        "specificationBundleDigest": _digest(digest_source),
+        "sourceFiles": list(EXPECTED_FILES),
+        "features": features,
+        "targetDescription": (srs.get("delivery") or {}).get("target", ""),
+        "verificationDescription": (srs.get("delivery") or {}).get("verificationStrategy", ""),
     }
 
 
@@ -52,7 +103,7 @@ def _ownership_error() -> str | None:
     for existing in DESTINATION.iterdir():
         if not existing.is_file():
             continue
-        if existing.name not in EXPECTED_FILES:
+        if existing.name not in EXPECTED_PUBLISHED_FILES:
             return f"unrecognized file '{existing.name}' exists in '{DESTINATION}'; publish blocked."
         if existing.name not in owned:
             return f"file '{existing.name}' exists in '{DESTINATION}' but is not owned by a previous publish; publish blocked."
@@ -90,6 +141,9 @@ def publish(
     prd: dict, srs: dict, sdd: dict, readiness: dict
 ) -> tuple[bool, str | None]:
     rendered = render_all(prd, srs, sdd, readiness)
+    rendered[DEVELOPMENT_PLAN_FILENAME] = json.dumps(
+        build_development_plan(srs, sdd, readiness, rendered), separators=(",", ":"), ensure_ascii=False
+    )
     ownership_error = _ownership_error()
     if ownership_error:
         return False, ownership_error
@@ -102,16 +156,16 @@ def publish(
             digests[filename] = _digest(content)
 
         DESTINATION.mkdir(parents=True, exist_ok=True)
-        for filename in EXPECTED_FILES:
+        for filename in EXPECTED_PUBLISHED_FILES:
             atomic_io.write_text_atomic(
                 str(DESTINATION / filename), (staging / filename).read_text()
             )
 
         manifest = {
-            "ownedFiles": list(EXPECTED_FILES),
+            "ownedFiles": list(EXPECTED_PUBLISHED_FILES),
             "fileDigests": digests,
             "manifestDigest": _digest(
-                "|".join(digests[name] for name in EXPECTED_FILES)
+                "|".join(digests[name] for name in EXPECTED_PUBLISHED_FILES)
             ),
             "publishedAt": datetime.now(timezone.utc).isoformat(),
         }

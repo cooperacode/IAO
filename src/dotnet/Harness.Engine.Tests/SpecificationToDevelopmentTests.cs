@@ -174,6 +174,14 @@ public class SpecificationToDevelopmentTests : IDisposable
         Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, SrsFilename)).TrimEnd(), content);
         Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, SddFilename)).TrimEnd(), content);
         Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, ReadinessFilename)).TrimEnd(), content);
+        var planPath = Path.Combine(ActiveDir, SpecificationPublisher.DevelopmentPlanFilename);
+        Assert.True(File.Exists(planPath));
+        var imported = FeatureStore.ParseDevelopmentPlan(File.ReadAllText(planPath));
+        Assert.Equal(3, imported.Count);
+        Assert.Equal("Create a todo item", imported[0].Title);
+        Assert.Contains(
+            "ADR-1: In-memory store. Decision: Use an in-memory repository for todo items. Rationale: Simplicity for a bootstrap target",
+            imported[0].Context.DecisionItems);
     }
 
     // --- bundle -> planner brief -> FeatureStore.Parse -------------------------------------
@@ -201,6 +209,7 @@ public class SpecificationToDevelopmentTests : IDisposable
             Assert.True(feature.Description.Length <= FeatureStore.DescriptionMaxChars);
 
             var totalContextChars = feature.Context.RequirementItems.Sum(s => s.Length)
+                + feature.Context.DecisionItems.Sum(s => s.Length)
                 + feature.Context.ConstraintItems.Sum(s => s.Length)
                 + feature.Context.FileItems.Sum(s => s.Length)
                 + feature.Context.AcceptanceItems.Sum(s => s.Length);

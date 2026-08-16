@@ -15,6 +15,7 @@ func main() {
 	tasks := map[string]engine.Action{
 		"start":     func(*engine.Envelope) string { return Start() },
 		"plan":      Plan,
+		"setup":     Setup,
 		"bearings":  Bearings,
 		"smoke":     Smoke,
 		"pick":      Pick,

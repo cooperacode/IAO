@@ -13,7 +13,7 @@ public sealed record PublishResult(bool Success, string? Error, IReadOnlyDiction
 }
 
 /// <summary>
-/// Publishes the four accepted Specification documents to <c>specs/active/</c> (blueprint
+/// Publishes the four accepted Specification documents and the structured Development handoff to <c>specs/active/</c> (blueprint
 /// 0004 §6 "Publicação secura"). This is the only writer of that directory this flow ever
 /// uses: renders accepted documents into a staging directory sibling to the destination,
 /// digests each file plus a canonical manifest digest, refuses to touch the destination at
@@ -35,8 +35,10 @@ public static class SpecificationPublisher
     private const string SrsFilename = "10-software-requirements-specification.md";
     private const string SddFilename = "20-software-design-document.md";
     private const string ReadinessFilename = "30-readiness-handoff.md";
+    public const string DevelopmentPlanFilename = "40-development-plan.json";
 
     private static readonly string[] ExpectedFilenames = [PrdFilename, SrsFilename, SddFilename, ReadinessFilename];
+    private static readonly string[] ExpectedPublishedFilenames = [.. ExpectedFilenames, DevelopmentPlanFilename];
 
     /// <summary>
     /// Renders the four accepted documents into their published filenames, without touching
@@ -52,6 +54,62 @@ public static class SpecificationPublisher
         [SddFilename] = SpecificationRenderer.RenderSdd(sdd),
         [ReadinessFilename] = SpecificationRenderer.RenderReadiness(readiness),
     };
+
+    /// <summary>Builds the canonical machine-readable plan consumed by Flows.Development.</summary>
+    public static DevelopmentPlan BuildDevelopmentPlan(
+        SoftwareSpecification srs,
+        SoftwareDesignDocument sdd,
+        ReadinessVerdict readiness,
+        IReadOnlyDictionary<string, string> renderedDocuments)
+    {
+        var requirements = srs.FunctionalRequirements
+            .Concat(srs.QualityRequirements)
+            .ToDictionary(r => r.Id);
+        var adrs = sdd.Adrs.ToDictionary(adr => adr.Id);
+        var ids = readiness.Slices.Select((slice, index) => (SliceId: slice.Id, FeatureId: index + 1))
+            .ToDictionary(x => x.SliceId, x => x.FeatureId);
+
+        var features = readiness.Slices.Select((slice, index) =>
+        {
+            var references = slice.RequirementIds.Concat(slice.AdrIds).Distinct().ToArray();
+            var requirementText = slice.RequirementIds
+                .Select(id => requirements.TryGetValue(id, out var requirement)
+                    ? $"{id}: {requirement.Statement}"
+                    : id)
+                .ToArray();
+            var decisionText = slice.AdrIds
+                .Select(id => adrs.TryGetValue(id, out var adr)
+                    ? $"{id}: {adr.Title}. Decision: {adr.Decision}. Rationale: {adr.Rationale}"
+                    : id)
+                .ToArray();
+            var description = $"{slice.Goal}. Observable outcome: {slice.ObservableOutcome}. "
+                + $"Happy path: {slice.HappyPath}. Failure path: {slice.FailurePath}.";
+            var context = new ImplementationContext(
+                Requirements: requirementText,
+                Constraints: slice.OutOfScope.Select(value => $"out of scope: {value}").Concat(slice.Contracts).ToArray(),
+                Files: [slice.SuggestedTarget],
+                Acceptance: [slice.AcceptanceCriterion],
+                Decisions: decisionText);
+            return new Feature(
+                index + 1,
+                slice.Goal,
+                index + 1,
+                false,
+                slice.DependsOn.Where(ids.ContainsKey).Select(id => ids[id]).ToArray(),
+                description,
+                references,
+                context);
+        }).ToArray();
+
+        var documentDigest = Digest(string.Join("|", ExpectedFilenames.Select(name => renderedDocuments[name])));
+        return new DevelopmentPlan(
+            "iao/development-plan/v1",
+            documentDigest,
+            [PrdFilename, SrsFilename, SddFilename, ReadinessFilename],
+            features,
+            srs.Delivery.Target,
+            srs.Delivery.VerificationStrategy);
+    }
 
     /// <summary>
     /// Renders, stages, validates and — only if validation passes — publishes the four
@@ -69,6 +127,9 @@ public static class SpecificationPublisher
     public static PublishResult Publish(PrdDocument prd, SoftwareSpecification srs, SoftwareDesignDocument sdd, ReadinessVerdict readiness)
     {
         var rendered = RenderAll(prd, srs, sdd, readiness);
+        var developmentPlan = BuildDevelopmentPlan(srs, sdd, readiness, rendered);
+        var developmentPlanJson = JsonSerializer.Serialize(
+            developmentPlan, SpecificationJsonContext.Default.DevelopmentPlan);
 
         var stagingDir = $"{DestinationDir}.staging-{Guid.NewGuid():N}";
 
@@ -83,6 +144,8 @@ public static class SpecificationPublisher
                 File.WriteAllText(Path.Combine(stagingDir, filename), content);
                 digests[filename] = Digest(content);
             }
+            File.WriteAllText(Path.Combine(stagingDir, DevelopmentPlanFilename), developmentPlanJson);
+            digests[DevelopmentPlanFilename] = Digest(developmentPlanJson);
 
             // Ownership check BEFORE anything in the destination is touched. An empty/missing
             // previous manifest means nothing is "owned" yet — so even a pre-existing file that
@@ -95,7 +158,7 @@ public static class SpecificationPublisher
                 foreach (var existingPath in Directory.GetFiles(DestinationDir))
                 {
                     var existingName = Path.GetFileName(existingPath);
-                    if (!ExpectedFilenames.Contains(existingName))
+                    if (!ExpectedPublishedFilenames.Contains(existingName))
                         return PublishResult.Blocked($"unrecognized file '{existingName}' exists in '{DestinationDir}'; publish blocked.");
 
                     if (!previouslyOwned.Contains(existingName))
@@ -106,11 +169,11 @@ public static class SpecificationPublisher
             // Validation passed: copy the four known files in — never a directory-level
             // delete/glob, only these exact, known filenames — then write the manifest last.
             Directory.CreateDirectory(DestinationDir);
-            foreach (var filename in ExpectedFilenames)
+            foreach (var filename in ExpectedPublishedFilenames)
                 File.Copy(Path.Combine(stagingDir, filename), Path.Combine(DestinationDir, filename), overwrite: true);
 
-            var manifestDigest = Digest(string.Join("|", ExpectedFilenames.Select(f => digests[f])));
-            var manifest = new PublishManifest(ExpectedFilenames, digests, manifestDigest, DateTimeOffset.UtcNow);
+            var manifestDigest = Digest(string.Join("|", ExpectedPublishedFilenames.Select(f => digests[f])));
+            var manifest = new PublishManifest(ExpectedPublishedFilenames, digests, manifestDigest, DateTimeOffset.UtcNow);
             Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath)!);
             AtomicIO.WriteAllTextAtomic(ManifestPath, JsonSerializer.Serialize(manifest, SpecificationJsonContext.Default.PublishManifest));
 
@@ -182,6 +245,13 @@ public static class SpecificationPublisher
                 return PublishResult.Blocked(
                     $"postcondition failed: DocsReader.Read('{DestinationDir}')'s content does not contain the full on-disk text of '{filename}' (possible truncation).");
         }
+
+        var planPath = Path.Combine(DestinationDir, DevelopmentPlanFilename);
+        if (!expectedDigests.TryGetValue(DevelopmentPlanFilename, out var expectedPlanDigest)
+            || !File.Exists(planPath)
+            || Digest(File.ReadAllText(planPath)) != expectedPlanDigest)
+            return PublishResult.Blocked(
+                $"postcondition failed: '{DevelopmentPlanFilename}' is missing or has an unexpected digest.");
 
         return PublishResult.Ok(expectedDigests);
     }

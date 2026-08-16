@@ -102,6 +102,14 @@ public static partial class DevelopmentTasks
             HarnessLog.Error($"[dev] failed to clear {PlanFilePath}: {ex.Message}");
         }
 
+        // A published Specification handoff is authoritative for scope and slicing.
+        // Only fall back to the model-driven initializer when no valid handoff exists.
+        if (TryImportPublishedPlan())
+        {
+            HarnessLog.Info("[dev] imported the published Specification handoff; skipping replanning and entering setup.");
+            return HandoffSetupPrompt();
+        }
+
         // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
         if (!DocsReader.HasDocs(DocsFolder))
             return InitializerInteractive();
@@ -112,6 +120,66 @@ public static partial class DevelopmentTasks
         ArtifactStore.Write(BriefArtifactName, content);
         StateStore.Set("origem", "specs");
         return InitializerPrompt(content, files);
+    }
+
+    /// <summary>
+    /// Completes the operational setup after a Specification handoff. The handoff owns
+    /// scope and slicing; the driver still owns repository preparation and reports the
+    /// concrete target directory and executable verification command.
+    /// </summary>
+    public static string Setup(Envelope? envelope)
+    {
+        var targetDirectory = ExternalOrArg("HARNESS_TARGET_DIR", envelope, 0, "");
+        var verifyCommand = ExternalOrArg("HARNESS_VERIFY_CMD", envelope, 1, "");
+
+        if (string.IsNullOrWhiteSpace(verifyCommand) || string.IsNullOrWhiteSpace(targetDirectory)
+            || verifyCommand.Length > 500 || targetDirectory.Length > 240
+            || targetDirectory.Contains('\n') || targetDirectory.Contains('\r'))
+            return HandoffSetupPrompt("The setup response did not contain a concrete target directory and executable verification command.");
+
+        RunConfigStore.Write(new RunConfig(verifyCommand, targetDirectory, Guid.NewGuid().ToString()));
+        HarnessLog.Info($"[dev] setup completed for target '{targetDirectory}' with verify command '{verifyCommand}'.");
+        return Bearings(null);
+    }
+
+    private static bool TryImportPublishedPlan()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(DocsFolder, "40-development-plan.json"),
+            Path.Combine(DocsFolder, "active", "40-development-plan.json"),
+            Path.Combine("specs", "active", "40-development-plan.json"),
+        }.Distinct(StringComparer.Ordinal).ToArray();
+
+        foreach (var path in candidates)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                    continue;
+
+                var json = File.ReadAllText(path);
+                var features = FeatureStore.ParseDevelopmentPlan(json);
+                if (features.Count == 0)
+                {
+                    HarnessLog.Error($"[dev] published handoff '{path}' was invalid or empty.");
+                    return false;
+                }
+
+                var capped = features.OrderBy(f => f.Priority).ThenBy(f => f.Id).Take(MaxFeatures).ToList();
+                var cappedIds = capped.Select(f => f.Id).ToHashSet();
+                capped = [.. capped.Select(f => f with { DependsOn = f.Deps.Where(cappedIds.Contains).ToArray() })];
+                FeatureStore.Write(capped);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                HarnessLog.Error($"[dev] failed to import published handoff '{path}': {ex.Message}");
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

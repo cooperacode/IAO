@@ -27,7 +27,7 @@ TARGET_DIR = "$TARGET_DIR"
 
 # Shape of the feature_list embedded in the prompts.
 FEATURES_SHAPE = (
-    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]'
+    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]'
 )
 
 
@@ -113,6 +113,23 @@ the file, no surrounding text. Repeat the command with `{VERIFY_CMD}` and `{TARG
     return prompt_formatter.format(
         input_text,
         Envelope(EnvelopeType.COMMAND, "plan", (VERIFY_CMD, TARGET_DIR)),
+    )
+
+
+def handoff_setup_prompt(failure: str | None = None) -> str:
+    feedback = f"Setup feedback: {failure}\n" if failure and failure.strip() else ""
+    input_text = f"""{feedback}A validated Specification handoff already defined the Development features.
+Do not split, rename, reprioritize, remove, or rewrite them. Follow `dev-handoff-setup`:
+inspect the repository, prepare Git, create or validate idempotent init.sh and
+verify-feature.sh <feature-id>, and determine the real executable verification command.
+Both scripts must live directly inside the concrete target directory.
+Return `setup` with exactly two arguments: the concrete target directory (relative to the
+harness root when possible) and the executable verification command. Do not use the
+Specification target description as the directory."""
+    return prompt_formatter.format(
+        input_text,
+        Envelope(EnvelopeType.COMMAND, "setup", (TARGET_DIR, VERIFY_CMD)),
+        prompt_formatter.skills("dev-handoff-setup"),
     )
 
 

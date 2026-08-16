@@ -104,6 +104,11 @@ pub fn start() -> String {
     // the driver writes a fresh array — best-effort, absence is not an error.
     let _ = std::fs::remove_file(PLAN_FILE_PATH);
 
+    if import_published_plan() {
+        harness_log::info("[dev] imported the published Specification handoff; entering operational setup");
+        return prompts::handoff_setup_prompt(None);
+    }
+
     // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
     let folder = docs_folder();
     if !docs_reader::has_docs(&folder) {
@@ -116,6 +121,41 @@ pub fn start() -> String {
     artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
     state_store::set("origem", "specs");
     prompts::initializer_prompt(&content, &files)
+}
+
+fn import_published_plan() -> bool {
+    let folder = docs_folder();
+    let candidates = [
+        std::path::PathBuf::from(format!("{folder}/40-development-plan.json")),
+        std::path::PathBuf::from(format!("{folder}/active/40-development-plan.json")),
+        std::path::PathBuf::from("specs/active/40-development-plan.json"),
+    ];
+    for candidate in candidates {
+        if !candidate.is_file() { continue; }
+        let Ok(json) = std::fs::read_to_string(&candidate) else { return false; };
+        let features = feature_store::parse_development_plan(&json);
+        if features.is_empty() {
+            harness_log::error(&format!("[dev] published handoff '{}' was invalid or empty", candidate.display()));
+            return false;
+        }
+        let mut capped: Vec<_> = features.into_iter().take(max_features()).collect();
+        let ids: std::collections::HashSet<i32> = capped.iter().map(|feature| feature.id).collect();
+        for feature in &mut capped { feature.depends_on.retain(|dependency| ids.contains(dependency)); }
+        feature_store::write(&capped);
+        return true;
+    }
+    false
+}
+
+pub fn setup(envelope: Option<&Envelope>) -> String {
+    let target = std::env::var("HARNESS_TARGET_DIR").ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 0, ""));
+    let verify_cmd = std::env::var("HARNESS_VERIFY_CMD").ok().filter(|value| !value.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 1, ""));
+    if target.trim().is_empty() || verify_cmd.trim().is_empty() || target.len() > 240 || verify_cmd.len() > 500 || target.contains(['\r', '\n']) {
+        return prompts::handoff_setup_prompt(Some("the setup response did not contain a concrete target directory and executable verification command"));
+    }
+    run_config_store::write(&RunConfig { verify_cmd, verify_cmds: Vec::new(), target_dir: target, run_id: uuid::Uuid::new_v4().to_string() });
+    harness_log::info(&format!("[dev] setup completed for target with verify command"));
+    bearings(None)
 }
 
 // plan interprets the driver's feature array (written to PLAN_FILE_PATH, not the

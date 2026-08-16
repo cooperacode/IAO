@@ -352,6 +352,7 @@ func evaluatorSameDefinitionExceptPriority(left, right Feature) bool {
 		intsEqualSeq(left.DependsOn, right.DependsOn) &&
 		stringsEqualSeq(left.References, right.References) &&
 		stringsEqualSeq(left.ImplementationContext.Requirements, right.ImplementationContext.Requirements) &&
+		stringsEqualSeq(left.ImplementationContext.Decisions, right.ImplementationContext.Decisions) &&
 		stringsEqualSeq(left.ImplementationContext.Constraints, right.ImplementationContext.Constraints) &&
 		stringsEqualSeq(left.ImplementationContext.Files, right.ImplementationContext.Files) &&
 		stringsEqualSeq(left.ImplementationContext.Acceptance, right.ImplementationContext.Acceptance)

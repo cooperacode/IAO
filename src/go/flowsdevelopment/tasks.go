@@ -99,6 +99,10 @@ func Start() string {
 	// A stale plan.json from a previous (or aborted) run must not satisfy this one before
 	// the driver writes a fresh array — best-effort, absence is not an error.
 	_ = os.Remove(planFilePath)
+	if features := importPublishedPlan(); len(features) > 0 {
+		engine.LogInfo("[dev] imported the published Specification handoff; entering operational setup")
+		return HandoffSetupPrompt("")
+	}
 
 	// The brief (what to build) comes from specs/, or, without specs, from interactive mode.
 	if !engine.HasDocs(docsFolder()) {
@@ -111,6 +115,52 @@ func Start() string {
 	engine.WriteArtifact(briefArtifactName, content)
 	engine.SetState("origem", "specs")
 	return InitializerPrompt(content, files)
+}
+
+func importPublishedPlan() []engine.Feature {
+	candidates := []string{filepath.Join(docsFolder(), "40-development-plan.json"), filepath.Join(docsFolder(), "active", "40-development-plan.json"), filepath.Join("specs", "active", "40-development-plan.json")}
+	for _, candidate := range candidates {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		features := engine.ParseDevelopmentPlan(string(data))
+		if len(features) == 0 {
+			engine.LogError(fmt.Sprintf("[dev] published handoff '%s' was invalid or empty", candidate))
+			return nil
+		}
+		capped := features
+		if len(capped) > MaxFeatures() {
+			capped = capped[:MaxFeatures()]
+		}
+		ids := map[int]bool{}
+		for _, feature := range capped {
+			ids[feature.Id] = true
+		}
+		for i := range capped {
+			deps := []int{}
+			for _, dep := range capped[i].DependsOn {
+				if ids[dep] {
+					deps = append(deps, dep)
+				}
+			}
+			capped[i].DependsOn = deps
+		}
+		engine.WriteFeatures(capped)
+		return capped
+	}
+	return nil
+}
+
+func Setup(envelope *engine.Envelope) string {
+	target := envOrArg("HARNESS_TARGET_DIR", envelope, 0, "")
+	verify := envOrArg("HARNESS_VERIFY_CMD", envelope, 1, "")
+	if strings.TrimSpace(target) == "" || strings.TrimSpace(verify) == "" || len(target) > 240 || len(verify) > 500 || strings.ContainsAny(target, "\r\n") {
+		return HandoffSetupPrompt("the setup response did not contain a concrete target directory and executable verification command")
+	}
+	engine.WriteRunConfig(engine.RunConfig{VerifyCmd: verify, TargetDir: target, RunId: newRunId()})
+	engine.LogInfo(fmt.Sprintf("[dev] setup completed for target '%s' with verify command '%s'", target, verify))
+	return Bearings(nil)
 }
 
 // Plan interprets the driver's feature array (written to planFilePath, not the envelope —

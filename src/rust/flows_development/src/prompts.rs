@@ -17,7 +17,7 @@ use crate::tasks::{
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
 
-const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]"#;
+const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]"#;
 
 // Returns the current feature's bounded inline context for implement/fix prompts.
 fn feature_context_block(feature: &Feature) -> String {
@@ -117,6 +117,12 @@ scaffolds everything is not a valid plan for a multi-requirement goal."
         ),
         Some(&prompt_formatter::skills(&["dev-initializer"])),
     )
+}
+
+pub fn handoff_setup_prompt(failure: Option<&str>) -> String {
+    let feedback = failure.filter(|value| !value.trim().is_empty()).map(|value| format!("Setup feedback: {value}\n")).unwrap_or_default();
+    let input = format!("{feedback}A validated Specification handoff already defined the Development features.\nDo not split, rename, reprioritize, remove, or rewrite them. Follow `dev-handoff-setup`: inspect the repository, prepare Git, create or validate idempotent init.sh and verify-feature.sh <feature-id>, and determine the real executable verification command. Both scripts must live directly inside the concrete target directory.\nReturn `setup` with exactly two arguments: the concrete target directory (relative to the harness root when possible) and the executable verification command. Do not use the Specification target description as the directory.");
+    prompt_formatter::format(&input, &Envelope::new(envelope_type::COMMAND, "setup", vec![TARGET_DIR.to_string(), VERIFY_CMD.to_string()]), Some(&prompt_formatter::skills(&["dev-handoff-setup"])))
 }
 
 pub fn plan_retry_prompt() -> String {

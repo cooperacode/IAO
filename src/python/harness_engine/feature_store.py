@@ -35,10 +35,11 @@ class ImplementationContext:
     constraints: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
     acceptance: tuple[str, ...] = ()
+    decisions: tuple[str, ...] = ()
 
     @property
     def is_empty(self) -> bool:
-        return not any((self.requirements, self.constraints, self.files, self.acceptance))
+        return not any((self.requirements, self.decisions, self.constraints, self.files, self.acceptance))
 
     def prompt_text(self) -> str:
         def format_items(label: str, values: tuple[str, ...]) -> str:
@@ -47,6 +48,7 @@ class ImplementationContext:
 
         return "\\n".join((
             format_items("requirements", self.requirements),
+            format_items("decisions", self.decisions),
             format_items("constraints", self.constraints),
             format_items("files", self.files),
             format_items("acceptance", self.acceptance),
@@ -97,6 +99,7 @@ class Feature:
             "references": list(self.references) if self.references is not None else None,
             "implementationContext": {
                 "requirements": list(self.context.requirements),
+                "decisions": list(self.context.decisions),
                 "constraints": list(self.context.constraints),
                 "files": list(self.context.files),
                 "acceptance": list(self.context.acceptance),
@@ -131,7 +134,13 @@ def _implementation_context_from_payload(value: object) -> ImplementationContext
         raw = value.get(name)
         return tuple(str(item) for item in raw if str(item).strip()) if isinstance(raw, list) else ()
 
-    return ImplementationContext(items("requirements"), items("constraints"), items("files"), items("acceptance"))
+    return ImplementationContext(
+        requirements=items("requirements"),
+        constraints=items("constraints"),
+        files=items("files"),
+        acceptance=items("acceptance"),
+        decisions=items("decisions"),
+    )
 
 
 def _truncate_implementation_context(context: ImplementationContext) -> ImplementationContext:
@@ -152,6 +161,7 @@ def _truncate_implementation_context(context: ImplementationContext) -> Implemen
 
     return ImplementationContext(
         requirements=take(context.requirements),
+        decisions=take(context.decisions),
         constraints=take(context.constraints),
         files=take(context.files),
         acceptance=take(context.acceptance),
@@ -222,6 +232,19 @@ def parse(features_json: str) -> list[Feature]:
         return reindexed
     except Exception as ex:
         harness_log.error(f"[FeatureStore] failed to parse features: {ex}")
+        return []
+
+
+def parse_development_plan(plan_json: str) -> list[Feature]:
+    """Reads the structured Specification handoff and reuses normal plan validation."""
+    try:
+        payload = json.loads(plan_json)
+        features = payload.get("features") if isinstance(payload, dict) else None
+        if not isinstance(features, list):
+            return []
+        return parse(json.dumps(features))
+    except Exception as ex:
+        harness_log.error(f"[FeatureStore] failed to parse development plan: {ex}")
         return []
 
 
@@ -509,6 +532,7 @@ def _same_definition_except_priority(left: Feature, right: Feature) -> bool:
         and left.deps == right.deps
         and left.refs == right.refs
         and left.context.requirements == right.context.requirements
+        and left.context.decisions == right.context.decisions
         and left.context.constraints == right.context.constraints
         and left.context.files == right.context.files
         and left.context.acceptance == right.context.acceptance

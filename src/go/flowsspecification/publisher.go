@@ -18,6 +18,93 @@ var publishedFiles = []string{
 	"30-readiness-handoff.md",
 }
 
+const developmentPlanFilename = "40-development-plan.json"
+
+func expectedPublishedFiles() []string {
+	return append(append([]string{}, publishedFiles...), developmentPlanFilename)
+}
+
+func developmentPlanJSON(srs SRS, sdd SDD, readiness Verdict, rendered map[string]string) string {
+	requirements := map[string]string{}
+	for _, requirement := range append(append([]Req{}, srs.FunctionalRequirements...), srs.QualityRequirements...) {
+		requirements[requirement.Id] = requirement.Statement
+	}
+	adrs := map[string]ADR{}
+	for _, adr := range sdd.Adrs {
+		adrs[adr.Id] = adr
+	}
+	sliceIDs := map[string]int{}
+	for index, slice := range readiness.Slices {
+		sliceIDs[slice.Id] = index + 1
+	}
+	features := make([]engine.Feature, 0, len(readiness.Slices))
+	for index, slice := range readiness.Slices {
+		requirementText := []string{}
+		for _, id := range slice.RequirementIds {
+			if statement, ok := requirements[id]; ok {
+				requirementText = append(requirementText, id+": "+statement)
+			} else {
+				requirementText = append(requirementText, id)
+			}
+		}
+		decisionText := []string{}
+		for _, id := range slice.AdrIds {
+			if adr, ok := adrs[id]; ok {
+				decisionText = append(decisionText, fmt.Sprintf("%s: %s. Decision: %s. Rationale: %s", id, adr.Title, adr.Decision, adr.Rationale))
+			} else {
+				decisionText = append(decisionText, id)
+			}
+		}
+		dependsOn := []int{}
+		for _, dependency := range slice.DependsOn {
+			if id, ok := sliceIDs[dependency]; ok {
+				dependsOn = append(dependsOn, id)
+			}
+		}
+		references := append([]string{}, slice.RequirementIds...)
+		references = append(references, slice.AdrIds...)
+		features = append(features, engine.Feature{
+			Id: index + 1, Title: slice.Goal, Priority: index + 1, Passes: false,
+			DependsOn: dependsOn, Description: fmt.Sprintf("%s Observable outcome: %s. Happy path: %s. Failure path: %s.", slice.Goal, slice.ObservableOutcome, slice.HappyPath, slice.FailurePath),
+			References: uniqueStringsForPlan(references),
+			ImplementationContext: engine.ImplementationContext{
+				Requirements: requirementText,
+				Decisions:    decisionText,
+				Constraints:  append(prefixValues("out of scope: ", slice.OutOfScope), slice.Contracts...),
+				Files:        []string{slice.SuggestedTarget}, Acceptance: []string{slice.AcceptanceCriterion},
+			},
+		})
+	}
+	return string(canon(map[string]any{
+		"schema":                    "iao/development-plan/v1",
+		"specificationBundleDigest": digestText(strings.Join([]string{rendered[publishedFiles[0]], rendered[publishedFiles[1]], rendered[publishedFiles[2]], rendered[publishedFiles[3]]}, "|")),
+		"sourceFiles":               publishedFiles,
+		"features":                  features,
+		"targetDescription":         srs.Delivery.Target,
+		"verificationDescription":   srs.Delivery.VerificationStrategy,
+	}))
+}
+
+func prefixValues(prefix string, values []string) []string {
+	result := make([]string, len(values))
+	for i, value := range values {
+		result[i] = prefix + value
+	}
+	return result
+}
+
+func uniqueStringsForPlan(values []string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 func escapeMarkdown(value string) string {
 	var builder strings.Builder
 	for _, character := range value {
@@ -156,6 +243,10 @@ const destinationDir = "specs/active"
 // check fails afterwards — the caller (approve()) turns either into publish_blocked either
 // way.
 func publishDocuments(rendered map[string]string) (bool, string) {
+	if _, ok := rendered[developmentPlanFilename]; !ok {
+		rendered[developmentPlanFilename] = `{"schema":"iao/development-plan/v1","features":[]}`
+	}
+	expectedPublished := expectedPublishedFiles()
 	previouslyOwned := map[string]bool{}
 	if raw, err := os.ReadFile(path("publish-manifest.json")); err == nil {
 		var manifest struct {
@@ -168,7 +259,7 @@ func publishDocuments(rendered map[string]string) (bool, string) {
 	}
 
 	expected := map[string]bool{}
-	for _, name := range publishedFiles {
+	for _, name := range expectedPublished {
 		expected[name] = true
 	}
 
@@ -197,7 +288,7 @@ func publishDocuments(rendered map[string]string) (bool, string) {
 	}
 	defer os.RemoveAll(staging)
 	digests := map[string]string{}
-	for _, name := range publishedFiles {
+	for _, name := range expectedPublished {
 		content := rendered[name]
 		if err := os.WriteFile(filepath.Join(staging, name), []byte(content), 0644); err != nil {
 			return false, fmt.Sprintf("failed to stage '%s': %s", name, err)
@@ -210,15 +301,19 @@ func publishDocuments(rendered map[string]string) (bool, string) {
 	if err := os.MkdirAll(destinationDir, 0755); err != nil {
 		return false, fmt.Sprintf("failed to create '%s': %s", destinationDir, err)
 	}
-	for _, name := range publishedFiles {
+	for _, name := range expectedPublished {
 		content, _ := os.ReadFile(filepath.Join(staging, name))
 		if err := os.WriteFile(filepath.Join(destinationDir, name), content, 0644); err != nil {
 			return false, fmt.Sprintf("failed to write '%s': %s", name, err)
 		}
 	}
-	manifestDigest := digestText(strings.Join([]string{digests[publishedFiles[0]], digests[publishedFiles[1]], digests[publishedFiles[2]], digests[publishedFiles[3]]}, "|"))
+	digestParts := make([]string, 0, len(expectedPublished))
+	for _, name := range expectedPublished {
+		digestParts = append(digestParts, digests[name])
+	}
+	manifestDigest := digestText(strings.Join(digestParts, "|"))
 	writeJSON("publish-manifest.json", map[string]any{
-		"ownedFiles":     publishedFiles,
+		"ownedFiles":     expectedPublished,
 		"fileDigests":    digests,
 		"manifestDigest": manifestDigest,
 		"publishedAt":    time.Now().UTC().Format(time.RFC3339),

@@ -144,19 +144,48 @@ public static class SpecificationEvaluator
     {
         var violations = new List<EvaluationViolation>();
 
+        if (srs is null)
+            return EvaluationResult.Fail([
+                new EvaluationViolation("SRS_DOCUMENT_MISSING", "the SRS proposal must be a JSON object")
+            ]);
+
         if (srs.Schema != SrsSchema)
             violations.Add(new EvaluationViolation("SRS_SCHEMA_UNKNOWN", $"expected schema '{SrsSchema}', got '{srs.Schema}'"));
 
         if (string.IsNullOrEmpty(currentPrdDigest) || srs.PrdDigest != currentPrdDigest)
             violations.Add(new EvaluationViolation("SRS_PRD_DIGEST_STALE", $"srs.prdDigest '{srs.PrdDigest}' does not match the current accepted PRD digest '{currentPrdDigest}'"));
 
-        var requirements = srs.FunctionalRequirements.Concat(srs.QualityRequirements).ToArray();
+        if (srs.FunctionalRequirements is null)
+            violations.Add(new EvaluationViolation("SRS_FUNCTIONAL_REQUIREMENTS_MISSING", "functionalRequirements must be a non-null array"));
+        if (srs.QualityRequirements is null)
+            violations.Add(new EvaluationViolation("SRS_QUALITY_REQUIREMENTS_MISSING", "qualityRequirements must be a non-null array"));
+        if (srs.AcceptanceCriteria is null)
+            violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_CRITERIA_MISSING", "acceptanceCriteria must be a non-null array"));
+        if (srs.Interfaces is null)
+            violations.Add(new EvaluationViolation("SRS_INTERFACES_MISSING", "interfaces must be a non-null array"));
+        if (srs.DataRules is null)
+            violations.Add(new EvaluationViolation("SRS_DATA_RULES_MISSING", "dataRules must be a non-null array"));
+        if (srs.Delivery is null)
+            violations.Add(new EvaluationViolation("SRS_DELIVERY_MISSING", "delivery must be a JSON object"));
+
+        var functionalRequirements = srs.FunctionalRequirements ?? [];
+        var qualityRequirements = srs.QualityRequirements ?? [];
+        var acceptanceCriteria = srs.AcceptanceCriteria ?? [];
+        var interfaces = srs.Interfaces ?? [];
+        var dataRules = srs.DataRules ?? [];
+        var requirements = functionalRequirements
+            .Concat(qualityRequirements)
+            .Where(requirement => requirement is not null)
+            .ToArray();
         AddDuplicateIdViolations(violations, requirements.Select(r => r.Id), "SRS_REQUIREMENT_ID_DUPLICATE", "requirement");
 
         var requirementIds = requirements.Select(r => r.Id).ToHashSet();
-        var acceptanceCriterionIds = srs.AcceptanceCriteria.Select(a => a.Id).ToHashSet();
+        var acceptanceCriterionIds = acceptanceCriteria
+            .Where(criterion => criterion is not null)
+            .Select(a => a.Id)
+            .ToHashSet();
 
-        var coveredGoalIds = requirements.SelectMany(r => r.GoalIds).ToHashSet();
+        var coveredGoalIds = requirements.SelectMany(r => r.GoalIds ?? []).ToHashSet();
         foreach (var goalId in acceptedGoalIds)
             if (!coveredGoalIds.Contains(goalId))
                 violations.Add(new EvaluationViolation("SRS_GOAL_NOT_COVERED", $"goal '{goalId}' is not covered by any requirement"));
@@ -166,49 +195,56 @@ public static class SpecificationEvaluator
             if (string.IsNullOrWhiteSpace(requirement.Statement))
                 violations.Add(new EvaluationViolation("SRS_REQUIREMENT_STATEMENT_MISSING", $"requirement '{requirement.Id}' has no statement"));
 
-            if (requirement.AcceptanceIds.Length == 0)
+            if (requirement.GoalIds is null)
+                violations.Add(new EvaluationViolation("SRS_REQUIREMENT_GOAL_IDS_MISSING", $"requirement '{requirement.Id}' must have a non-null goalIds array"));
+            if (requirement.DependsOn is null)
+                violations.Add(new EvaluationViolation("SRS_REQUIREMENT_DEPENDS_ON_MISSING", $"requirement '{requirement.Id}' must have a non-null dependsOn array"));
+            if (requirement.AcceptanceIds is null)
+                violations.Add(new EvaluationViolation("SRS_REQUIREMENT_ACCEPTANCE_IDS_MISSING", $"requirement '{requirement.Id}' must have a non-null acceptanceIds array"));
+            if ((requirement.AcceptanceIds ?? []).Length == 0)
                 violations.Add(new EvaluationViolation("SRS_REQUIREMENT_WITHOUT_ACCEPTANCE", $"requirement '{requirement.Id}' has no acceptance criterion"));
 
-            foreach (var acceptanceId in requirement.AcceptanceIds)
+            foreach (var acceptanceId in requirement.AcceptanceIds ?? [])
                 if (!acceptanceCriterionIds.Contains(acceptanceId))
                     violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_REFERENCE_DANGLING", $"requirement '{requirement.Id}' references unknown acceptance criterion '{acceptanceId}'"));
 
-            foreach (var dependencyId in requirement.DependsOn)
+            foreach (var dependencyId in requirement.DependsOn ?? [])
                 if (!requirementIds.Contains(dependencyId))
                     violations.Add(new EvaluationViolation("SRS_REQUIREMENT_DEPENDENCY_DANGLING", $"requirement '{requirement.Id}' depends on unknown requirement '{dependencyId}'"));
         }
 
-        foreach (var criterion in srs.AcceptanceCriteria)
+        foreach (var criterion in acceptanceCriteria.Where(criterion => criterion is not null))
         {
             if (string.IsNullOrWhiteSpace(criterion.Given) || string.IsNullOrWhiteSpace(criterion.When) || string.IsNullOrWhiteSpace(criterion.Then))
                 violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_CRITERION_TEXT_MISSING", $"acceptance criterion '{criterion.Id}' has an empty given/when/then"));
 
-            foreach (var requirementId in criterion.RequirementIds)
+            foreach (var requirementId in criterion.RequirementIds ?? [])
                 if (!requirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SRS_ACCEPTANCE_CRITERION_REQUIREMENT_DANGLING", $"acceptance criterion '{criterion.Id}' references unknown requirement '{requirementId}'"));
         }
 
-        foreach (var iface in srs.Interfaces)
+        foreach (var iface in interfaces.Where(iface => iface is not null))
         {
             if (string.IsNullOrWhiteSpace(iface.Name) || string.IsNullOrWhiteSpace(iface.Description))
                 violations.Add(new EvaluationViolation("SRS_INTERFACE_TEXT_MISSING", $"interface '{iface.Id}' has an empty name or description"));
 
-            foreach (var requirementId in iface.RequirementIds)
+            foreach (var requirementId in iface.RequirementIds ?? [])
                 if (!requirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SRS_INTERFACE_REQUIREMENT_DANGLING", $"interface '{iface.Id}' references unknown requirement '{requirementId}'"));
         }
 
-        foreach (var rule in srs.DataRules)
+        foreach (var rule in dataRules.Where(rule => rule is not null))
         {
             if (string.IsNullOrWhiteSpace(rule.Rule))
                 violations.Add(new EvaluationViolation("SRS_DATA_RULE_TEXT_MISSING", $"data rule '{rule.Id}' has no rule text"));
 
-            foreach (var requirementId in rule.RequirementIds)
+            foreach (var requirementId in rule.RequirementIds ?? [])
                 if (!requirementIds.Contains(requirementId))
                     violations.Add(new EvaluationViolation("SRS_DATA_RULE_REQUIREMENT_DANGLING", $"data rule '{rule.Id}' references unknown requirement '{requirementId}'"));
         }
 
-        if (string.IsNullOrWhiteSpace(srs.Delivery.Target) || string.IsNullOrWhiteSpace(srs.Delivery.VerificationStrategy))
+        if (srs.Delivery is not null
+            && (string.IsNullOrWhiteSpace(srs.Delivery.Target) || string.IsNullOrWhiteSpace(srs.Delivery.VerificationStrategy)))
             violations.Add(new EvaluationViolation("SRS_DELIVERY_TEXT_MISSING", "delivery contract has an empty target or verification strategy"));
 
         return violations.Count == 0 ? EvaluationResult.Ok() : EvaluationResult.Fail(violations);

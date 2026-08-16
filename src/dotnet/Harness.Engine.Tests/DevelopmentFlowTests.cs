@@ -41,6 +41,7 @@ public class DevelopmentFlowTests : IDisposable
     // feature-list JSON array to, instead of embedding it in the envelope's args.
     private const string PlanFilePath = ".harness/plan.json";
     private const string ReplanFilePath = ".harness/replan.json";
+    private const string PublishedPlanPath = "specs/active/40-development-plan.json";
 
     private static void Clean()
     {
@@ -53,6 +54,8 @@ public class DevelopmentFlowTests : IDisposable
             File.Delete(PlanFilePath);
         if (File.Exists(ReplanFilePath))
             File.Delete(ReplanFilePath);
+        if (File.Exists(PublishedPlanPath))
+            File.Delete(PublishedPlanPath);
     }
 
     private static void WritePlanFile(string features)
@@ -71,6 +74,13 @@ public class DevelopmentFlowTests : IDisposable
     {
         Directory.CreateDirectory(SpecsDir);
         File.WriteAllText(Path.Combine(SpecsDir, "brief.md"), content);
+    }
+
+    private static void GivenPublishedPlan()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(PublishedPlanPath)!);
+        File.WriteAllText(PublishedPlanPath,
+            """{"schema":"iao/development-plan/v1","specificationBundleDigest":"sha256:test","sourceFiles":["30-readiness-handoff.md"],"features":[{"id":7,"title":"Imported slice","priority":1,"passes":false,"dependsOn":[],"description":"from Specification","references":["RF-001"],"implementationContext":{"requirements":["RF-001: create item"],"constraints":[],"files":["src/Items.cs"],"acceptance":["item is created"]}}],"targetDirectory":"webapi","verificationStrategy":"integration tests"}""");
     }
 
     // Mirrors Flows.Development/Program.cs's real wiring: only resets StateStore/Trace on
@@ -251,6 +261,25 @@ public class DevelopmentFlowTests : IDisposable
         // DocsReader.Read prepends a "## <file>" heading before the content — Contains, not
         // exact equality (same pattern as DocsReaderTests for the consolidated content).
         Assert.Contains("Build a task-management app.", ArtifactStore.Read("brief"));
+    }
+
+    [Fact]
+    public void Start_ComHandoffPublicado_ImportaFeaturesESaltaONovoPlanejamento()
+    {
+        GivenPublishedPlan();
+
+        var result = DevelopmentTasks.Start();
+
+        Assert.Contains("\"value\":\"setup\"", result);
+        Assert.Single(FeatureStore.Load());
+        Assert.Equal("Imported slice", FeatureStore.Load()[0].Title);
+        Assert.Empty(RunConfigStore.Load().VerifyCmd);
+
+        result = DevelopmentTasks.Setup(Cmd("setup", "app/todo-api", "dotnet test"));
+
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal("app/todo-api", RunConfigStore.Load().TargetDir);
+        Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd);
     }
 
     [Fact]

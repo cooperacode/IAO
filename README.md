@@ -83,9 +83,13 @@ diagram, with the file that implements each component.
   `.harness/feature_list.json`, so later implementation sessions do not reopen
   the full brief.
 
-  The context is grouped into `requirements`, `constraints`, `files`, and `acceptance`
+  The context is grouped into `requirements`, `decisions`, `constraints`, `files`, and `acceptance`
   arrays. Older plans that used a single string remain readable and are migrated to
   `requirements` when loaded.
+- **Specification handoff**: when the Specification flow publishes a `READY` bundle,
+  `specs/active/40-development-plan.json` is the authoritative machine-readable slice
+  plan for Development. Development imports its scope directly, then runs an operational
+  setup step; it only uses `dev-initializer` planning when no valid handoff is present.
 - **HarnessHost**: reusable flow entry point; runs dispatch, publishes output
   to `stdout`, and snapshots state and trace when the flow stops.
 - **TaskRegistry**: parses envelopes, validates commands, applies step, cost,
@@ -114,7 +118,9 @@ files across the engine and flow layers.
 ## Collaborations
 
 1. The user places a brief in `specs/`.
-2. The agent starts the flow by sending the `start` envelope.
+2. The agent starts the flow by sending the `start` envelope. If a published
+   `40-development-plan.json` exists, the flow imports its slices and asks only for
+   repository setup instead of asking the agent to decompose the brief again.
 3. The harness reads the documents, emits the planning instruction, and asks
    for a structured feature list.
 4. The agent returns the list; the harness validates it, caps it, and persists
