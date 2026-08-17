@@ -284,10 +284,14 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Equal("Imported slice", FeatureStore.Load()[0].Title);
         Assert.Empty(RunConfigStore.Load().VerifyCmd);
 
-        result = DevelopmentTasks.Setup(Cmd("setup", "app/todo-api", "dotnet test"));
+        // Must resolve to a target directory that actually has init.sh (the constructor's
+        // _targetDir) — Setup now chains into Bearings→Smoke, which runs init.sh before
+        // handing off to implement; a non-existent directory like "app/todo-api" would fail
+        // the smoke check and return a `smoke` retry instead of `implement`.
+        result = DevelopmentTasks.Setup(Cmd("setup", _targetDir, "dotnet test"));
 
         Assert.Contains("\"value\":\"implement\"", result);
-        Assert.Equal("app/todo-api", RunConfigStore.Load().TargetDir);
+        Assert.Equal(_targetDir, RunConfigStore.Load().TargetDir);
         Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd);
     }
 
