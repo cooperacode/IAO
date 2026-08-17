@@ -745,13 +745,19 @@ def main() -> None:
     host = os.environ.get("HARNESS_GUI_HOST", "127.0.0.1")
     port = int(os.environ.get("HARNESS_GUI_PORT", "8787"))
 
+    # Two distinct, stable lines (starting/serving) so a VS Code task can use a background
+    # problemMatcher to know when the server is actually ready — see .vscode/tasks.json.
+    # flush=True: stdout is block-buffered once it isn't a TTY (e.g. redirected to a task's
+    # log), so without it these two lines could sit unflushed for a while — right when the
+    # task watcher most needs to see them promptly.
+    print(f"[harness-gui] starting on {host}:{port}…", flush=True)
     process_manager.sweep_orphans()
     stop_event = threading.Event()
     sweeper = threading.Thread(target=_orphan_sweep_loop, args=(stop_event,), daemon=True)
     sweeper.start()
 
     server = ThreadingHTTPServer((host, port), Handler)
-    print(f"[harness-gui] serving on http://{host}:{port} (repo root: {REPO_ROOT})")
+    print(f"[harness-gui] serving on http://{host}:{port} (repo root: {REPO_ROOT})", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -37,8 +37,8 @@
 #     .harness/gui/                   # local GUI: drives Claude/Codex in background over the
 #                                      # wrapper(s) above and shows live progress + a
 #                                      # specs/sources manager. stdlib Python 3, no extra
-#                                      # dependency. Purely additive — never changes what's
-#                                      # copied for .harness/index.html/run.sh above.
+#                                      # dependency. Purely additive — doesn't change anything
+#                                      # else in the package.
 #
 # Usage:
 #   ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] [--version <v>] [--with-gui]
@@ -372,13 +372,10 @@ fi
 echo "[package] assembling $OUT …"
 rm -rf "$OUT"
 mkdir -p "$OUT/.harness"
-cp .harness/index.html "$OUT/.harness/index.html"
-cp .harness/run.sh "$OUT/.harness/run.sh"
-chmod +x "$OUT/.harness/run.sh"
 if [[ "$WITH_GUI" == true ]]; then
   # Optional local control panel: a stdlib-Python orchestrator that drives Claude/Codex in
   # background over the wrapper(s) this package already installs, plus a specs/sources
-  # manager for the specification flow. Additive only — never touches index.html/run.sh above.
+  # manager for the specification flow.
   echo "[package] including optional GUI orchestrator (.harness/gui/)…"
   mkdir -p "$OUT/.harness/gui"
   cp .harness/gui/*.py "$OUT/.harness/gui/"
@@ -787,8 +784,8 @@ Python 3, no extra dependency) and open **http://127.0.0.1:8787**. Pick the driv
 Codex — whichever CLI is on this machine's PATH) and the flow, confirm the autonomy warning
 (it writes files and can commit without review, same as driving it by hand), and click
 **Start**. It runs the driver in the background over the same \`$DEV_WRAPPER\`
-you'd invoke manually, and shows live progress next to the same backlog/trace panels as
-\`.harness/index.html\`.$GUI_SPEC_NOTE
+you'd invoke manually, and shows live progress with backlog/trace panels right in the
+browser.$GUI_SPEC_NOTE
 "
 fi
 
