@@ -1,6 +1,6 @@
 [package]
 name = "flows_specification"
-version = "0.5.0"
+version = "1.0.0"
 edition = "2024"
 [dependencies]
 harness_engine = { path = "../harness_engine" }
