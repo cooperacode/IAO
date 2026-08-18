@@ -23,6 +23,7 @@ fn main() {
     let mut tasks: HashMap<String, Action> = HashMap::new();
     tasks.insert("start".to_string(), Arc::new(|_| tasks::start()));
     tasks.insert("plan".to_string(), Arc::new(tasks::plan));
+    tasks.insert("setup".to_string(), Arc::new(tasks::setup));
     tasks.insert("bearings".to_string(), Arc::new(tasks::bearings));
     tasks.insert("smoke".to_string(), Arc::new(tasks::smoke));
     tasks.insert("pick".to_string(), Arc::new(tasks::pick));
@@ -54,7 +55,7 @@ fn main() {
         ".harness/last-development.trace.jsonl",
         ".harness/last-development.state.json",
         Some(&validators),
-        Some(tasks::STEP_BUDGET),
+        Some(tasks::step_budget()),
         Some(should_reset_on_start),
     );
 

@@ -12,9 +12,12 @@ from harness_engine import (
     artifact_store,
     context_policy,
     feature_store,
+    harness_config,
+    harness_log,
     plan_observation_store,
     plan_revision_store,
     prompt_formatter,
+    path_resolver,
     run_config_store,
     state_store,
 )
@@ -27,8 +30,10 @@ TARGET_DIR = "$TARGET_DIR"
 
 # Shape of the feature_list embedded in the prompts.
 FEATURES_SHAPE = (
-    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]'
+    '[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]'
 )
+
+DESIGN_DOCUMENT_FILE_NAME = "20-software-design-document.md"
 
 
 def _state(key: str) -> str:
@@ -42,6 +47,57 @@ def _feature_context_block(feature: Feature) -> str:
     references = ", ".join(feature.refs) if feature.refs else "none"
     context_block = f"<implementation-context>{feature.context.prompt_text()}</implementation-context>\n" if not feature.context.is_empty else ""
     return f"Description: {feature.description}\nBrief references: {references}\n{context_block}\n"
+
+
+def _truncate_utf8_bytes(content: str, max_bytes: int) -> str:
+    encoded = content.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return content
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _design_context_block() -> str:
+    """Rehydrates the published design document for every implement/fix prompt."""
+    docs_folder = harness_config.current().docs_folder
+    candidates = (
+        Path(docs_folder) / DESIGN_DOCUMENT_FILE_NAME,
+        Path(docs_folder) / "active" / DESIGN_DOCUMENT_FILE_NAME,
+        Path("specs") / "active" / DESIGN_DOCUMENT_FILE_NAME,
+    )
+    seen: set[Path] = set()
+
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+
+        path = Path(path_resolver.resolve(str(candidate)))
+        try:
+            content = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except OSError as ex:
+            harness_log.error(f"[dev] failed to read design document '{candidate}': {ex}")
+            continue
+
+        if not content.strip():
+            continue
+
+        max_bytes = harness_config.current().docs_max_chars
+        if len(content.encode("utf-8")) > max_bytes:
+            harness_log.error(
+                f"[dev] design document exceeded {max_bytes} bytes (UTF-8); "
+                "truncating implementation context."
+            )
+            content = _truncate_utf8_bytes(content, max_bytes) + "\n\n[design context truncated at the configured docsMaxChars limit]"
+
+        return (
+            f'<design-context source="{candidate.as_posix()}">\n'
+            f"{prompt_formatter.inline(content)}\n"
+            "</design-context>\n\n"
+        )
+
+    return ""
 
 
 def _current_feature_context_block() -> str:
@@ -116,6 +172,23 @@ the file, no surrounding text. Repeat the command with `{VERIFY_CMD}` and `{TARG
     )
 
 
+def handoff_setup_prompt(failure: str | None = None) -> str:
+    feedback = f"Setup feedback: {failure}\n" if failure and failure.strip() else ""
+    input_text = f"""{feedback}A validated Specification handoff already defined the Development features.
+Do not split, rename, reprioritize, remove, or rewrite them. Follow `dev-handoff-setup`:
+inspect the repository, prepare Git, create or validate idempotent init.sh and
+verify-feature.sh <feature-id>, and determine the real executable verification command.
+Both scripts must live directly inside the concrete target directory.
+Return `setup` with exactly two arguments: the concrete target directory (relative to the
+harness root when possible) and the executable verification command. Do not use the
+Specification target description as the directory."""
+    return prompt_formatter.format(
+        input_text,
+        Envelope(EnvelopeType.COMMAND, "setup", (TARGET_DIR, VERIFY_CMD)),
+        prompt_formatter.skills("dev-handoff-setup"),
+    )
+
+
 def smoke_fix_prompt(failure: str) -> str:
     input_text = f"""The deterministic smoke test failed: {failure}
 Repair the target setup using `dev-smoke`, then return `smoke` without arguments. The harness
@@ -129,11 +202,14 @@ will rerun `init.sh` and decide from its exit code."""
 
 def implement_prompt(feature: Feature) -> str:
     context = _feature_context_block(feature)
+    design_context = _design_context_block()
     input_text = f"""{context_policy.new_feature_prefix()}
 
 Follow `dev-implement` for this feature:
 Feature #{feature.id} (priority {feature.priority}): {feature.title}
-{context}Target directory: {run_config_store.load().target_dir}
+{context}{design_context}Treat the design context as architectural guidance for this feature. Do not expand
+the feature's scope to implement unrelated work from the document.
+Target directory: {run_config_store.load().target_dir}
 
 Return `implement` without arguments when done. The harness derives the summary from Git."""
     return prompt_formatter.format(
@@ -178,7 +254,7 @@ def fix_prompt(verify_failure: str | None = None) -> str:
 """
     input_text = f"""Verification FAILED on feature #{_state(state_keys.CURRENT_FEATURE_ID)}
 ({_state(state_keys.CURRENT_FEATURE_TITLE)}).
-{_current_feature_context_block()}{failure}Follow `dev-implement` to fix only this
+{_current_feature_context_block()}{_design_context_block()}{failure}Follow `dev-implement` to fix only this
 feature. Return `implement` without arguments; the harness derives the new summary from Git."""
     return prompt_formatter.format(
         input_text,

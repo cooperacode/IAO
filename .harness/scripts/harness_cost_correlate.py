@@ -13,6 +13,7 @@ Supported usage sources:
 - `copilot`: uses .harness/scripts/copilot_usage.py and VS Code's workspaceStorage (GitHub
   Copilot Chat). No dollar cost estimate (Copilot bills by "premium request"
   with a multiplier, not by token) -- tokens only.
+- `kimi`: uses .harness/scripts/kimi_usage.py and sessions under ~/.kimi-code/sessions.
 
 Limitations:
 - Matching is done by time window, not by a shared key. If trace.jsonl mixes
@@ -23,6 +24,9 @@ Limitations:
 - Copilot never has a dollar cost (always "n/a"); tokens may come from a
   less reliable layer (`chatSessions`) or may not exist at all (`no-tokens`)
   -- see .harness/scripts/copilot_usage.py for what each source means.
+- Kimi costs are API-like estimates too: the default managed/OAuth plan bills
+  flat-rate, not per token -- see .harness/scripts/kimi_usage.py's pricing
+  table comment for the alias-to-raw-API-model correspondence assumption.
 
 Usage:
     .harness/scripts/harness_cost_correlate.py --session "$CLAUDE_CODE_SESSION_ID"
@@ -30,6 +34,7 @@ Usage:
     .harness/scripts/harness_cost_correlate.py --usage-source codex --session-tree <uuid>
     .harness/scripts/harness_cost_correlate.py --usage-source codex --repo . --json
     .harness/scripts/harness_cost_correlate.py --usage-source copilot --session <uuid>
+    .harness/scripts/harness_cost_correlate.py --usage-source kimi --session <sessionId>
 """
 
 from __future__ import annotations
@@ -48,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import claude_usage as claude  # noqa: E402
 import codex_usage as codex  # noqa: E402
 import copilot_usage as copilot  # noqa: E402
+import kimi_usage as kimi  # noqa: E402
 
 DEFAULT_TRACE_FILE = Path(".harness/trace.jsonl")
 DEFAULT_LOGS_DIR = Path(".harness/logs")
@@ -413,11 +419,60 @@ class CopilotBackend(UsageBackend):
         }
 
 
+class KimiBackend(UsageBackend):
+    name = "kimi"
+
+    def load_events(self, args: argparse.Namespace) -> tuple[list[UsageEvent], list[str]]:
+        home = args.kimi_home or kimi.kimi_code_home()
+        if not home.is_dir():
+            print(f"KIMI_CODE_HOME not found: {home}", file=sys.stderr)
+            sys.exit(1)
+
+        repo = None if args.all_repos else _resolve(args.repo or Path(__file__).resolve().parents[2])
+        warnings: list[str] = []
+        events = [
+            UsageEvent(
+                timestamp=parse_ts(ts),
+                timestamp_raw=ts,
+                model=model,
+                usage=usage,
+            )
+            for (_, _, model, usage, ts) in kimi.iter_usage_events(
+                home,
+                repo=repo,
+                session_filter=args.session,
+                warnings=warnings,
+            )
+        ]
+        events.sort(key=lambda event: event.timestamp)
+        return events, warnings
+
+    def new_totals(self) -> kimi.UsageTotals:
+        return kimi.UsageTotals()
+
+    def add_event(self, totals: kimi.UsageTotals, event: UsageEvent) -> None:
+        totals.add(event.usage, event.timestamp_raw)
+
+    def total_tokens(self, totals: kimi.UsageTotals) -> int:
+        return totals.total_tokens
+
+    def cost(self, totals: kimi.UsageTotals, model: str) -> float | None:
+        return totals.cost(model)
+
+    def to_jsonable(self, totals: kimi.UsageTotals, model: str) -> dict:
+        return kimi.to_jsonable(totals, model)
+
+    def metadata(self) -> dict:
+        return {"pricing": ".harness/scripts/kimi_usage.py"}
+
+
 def make_backend(args: argparse.Namespace) -> UsageBackend:
     if args.usage_source == "claude":
         return ClaudeBackend()
     if args.usage_source == "copilot":
         return CopilotBackend()
+    if args.usage_source == "kimi":
+        return KimiBackend()
     return CodexBackend(args.pricing_tier, args.context_rate)
 
 
@@ -659,7 +714,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--usage-source",
-        choices=["claude", "codex", "copilot"],
+        choices=["claude", "codex", "copilot", "kimi"],
         default="claude",
         help="Fonte local de uso de tokens (default: claude)",
     )
@@ -689,15 +744,21 @@ def main() -> None:
         help="Copilot: override do diretorio User do VS Code",
     )
     parser.add_argument(
+        "--kimi-home",
+        type=Path,
+        default=None,
+        help="Kimi: override do KIMI_CODE_HOME",
+    )
+    parser.add_argument(
         "--repo",
         type=Path,
         default=None,
-        help="Codex/Copilot: filtra sessoes cujo cwd/workspace esta neste repo (default: repo atual)",
+        help="Codex/Copilot/Kimi: filtra sessoes cujo cwd/workspace esta neste repo (default: repo atual)",
     )
     parser.add_argument(
         "--all-repos",
         action="store_true",
-        help="Codex/Copilot: nao filtra por repo/cwd/workspace",
+        help="Codex/Copilot/Kimi: nao filtra por repo/cwd/workspace",
     )
     parser.add_argument(
         "--no-archived",

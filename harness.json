@@ -7,5 +7,8 @@
   "timeoutMs": 600000,
   "contextResetMode": "adaptive",
   "contextResetThreshold": 0.7,
-  "contextFallbackFeatures": 1
+  "contextFallbackFeatures": 1,
+  "maxFeatures": 10,
+  "stepsPerFeature": 8,
+  "maxReplans": 2
 }

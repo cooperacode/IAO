@@ -72,7 +72,8 @@ public class SpecificationToDevelopmentTests : IDisposable
             new AcceptanceCriterion("AC-2", ["RF-2"], "an item exists", "a user marks it done", "it is shown as completed"),
             new AcceptanceCriterion("AC-3", ["RF-3"], "an item exists", "a user deletes it", "it no longer appears in the list"),
         ],
-        [], [],
+        [new InterfaceContract("IF-1", ["RF-1"], "Todo API", "HTTP contract for todo creation")],
+        [new DataRule("RN-1", ["RF-1"], "Titles must be non-empty")],
         new DeliveryContract("webapi", "integration tests", true));
 
     private static SoftwareDesignDocument TodoSdd() => new(
@@ -82,7 +83,7 @@ public class SpecificationToDevelopmentTests : IDisposable
             new Adr("ADR-2", "REST completion endpoint", "Expose PATCH /todos/{id}/complete", "Idempotent completion", ["RF-2"]),
             new Adr("ADR-3", "REST delete endpoint", "Expose DELETE /todos/{id}", "Standard REST semantics", ["RF-3"]),
         ],
-        []);
+        [new InterfaceControl("IC-1", "Input control", "Reject invalid titles", ["RF-1"])]);
 
     private static ReadinessVerdict TodoReadiness() => new(
         "READY",
@@ -174,6 +175,18 @@ public class SpecificationToDevelopmentTests : IDisposable
         Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, SrsFilename)).TrimEnd(), content);
         Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, SddFilename)).TrimEnd(), content);
         Assert.Contains(File.ReadAllText(Path.Combine(ActiveDir, ReadinessFilename)).TrimEnd(), content);
+        var planPath = Path.Combine(ActiveDir, SpecificationPublisher.DevelopmentPlanFilename);
+        Assert.True(File.Exists(planPath));
+        var imported = FeatureStore.ParseDevelopmentPlan(File.ReadAllText(planPath));
+        Assert.Equal(3, imported.Count);
+        Assert.Equal("Create a todo item", imported[0].Title);
+        Assert.Contains(
+            "ADR-1: In-memory store. Decision: Use an in-memory repository for todo items. Rationale: Simplicity for a bootstrap target",
+            imported[0].Context.DecisionItems);
+        Assert.Contains("AC-1", imported[0].Refs);
+        Assert.Contains("IF-1", imported[0].Refs);
+        Assert.Contains("RN-1", imported[0].Refs);
+        Assert.Contains("IC-1", imported[0].Refs);
     }
 
     // --- bundle -> planner brief -> FeatureStore.Parse -------------------------------------
@@ -201,6 +214,7 @@ public class SpecificationToDevelopmentTests : IDisposable
             Assert.True(feature.Description.Length <= FeatureStore.DescriptionMaxChars);
 
             var totalContextChars = feature.Context.RequirementItems.Sum(s => s.Length)
+                + feature.Context.DecisionItems.Sum(s => s.Length)
                 + feature.Context.ConstraintItems.Sum(s => s.Length)
                 + feature.Context.FileItems.Sum(s => s.Length)
                 + feature.Context.AcceptanceItems.Sum(s => s.Length);

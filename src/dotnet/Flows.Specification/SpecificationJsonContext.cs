@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Harness.Engine;
 
 namespace Flows.Specification;
 
@@ -34,6 +35,8 @@ namespace Flows.Specification;
 [JsonSerializable(typeof(ReadinessVerdict))]
 [JsonSerializable(typeof(ApprovalDecision))]
 [JsonSerializable(typeof(PublishManifest))]
+[JsonSerializable(typeof(DevelopmentPlan))]
 [JsonSerializable(typeof(RunState))]
 [JsonSerializable(typeof(SourceBundle))]
+[JsonSerializable(typeof(string[]))]
 public partial class SpecificationJsonContext : JsonSerializerContext;

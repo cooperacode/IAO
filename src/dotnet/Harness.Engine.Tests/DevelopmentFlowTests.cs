@@ -41,6 +41,8 @@ public class DevelopmentFlowTests : IDisposable
     // feature-list JSON array to, instead of embedding it in the envelope's args.
     private const string PlanFilePath = ".harness/plan.json";
     private const string ReplanFilePath = ".harness/replan.json";
+    private const string PublishedPlanPath = "specs/active/40-development-plan.json";
+    private const string PublishedDesignPath = "specs/active/20-software-design-document.md";
 
     private static void Clean()
     {
@@ -53,6 +55,10 @@ public class DevelopmentFlowTests : IDisposable
             File.Delete(PlanFilePath);
         if (File.Exists(ReplanFilePath))
             File.Delete(ReplanFilePath);
+        if (File.Exists(PublishedPlanPath))
+            File.Delete(PublishedPlanPath);
+        if (File.Exists(PublishedDesignPath))
+            File.Delete(PublishedDesignPath);
     }
 
     private static void WritePlanFile(string features)
@@ -71,6 +77,19 @@ public class DevelopmentFlowTests : IDisposable
     {
         Directory.CreateDirectory(SpecsDir);
         File.WriteAllText(Path.Combine(SpecsDir, "brief.md"), content);
+    }
+
+    private static void GivenPublishedPlan()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(PublishedPlanPath)!);
+        File.WriteAllText(PublishedPlanPath,
+            """{"schema":"iao/development-plan/v1","specificationBundleDigest":"sha256:test","sourceFiles":["30-readiness-handoff.md"],"features":[{"id":7,"title":"Imported slice","priority":1,"passes":false,"dependsOn":[],"description":"from Specification","references":["RF-001"],"implementationContext":{"requirements":["RF-001: create item"],"constraints":[],"files":["src/Items.cs"],"acceptance":["item is created"]}}],"targetDirectory":"webapi","verificationStrategy":"integration tests"}""");
+    }
+
+    private static void GivenPublishedDesign(string content = "# Software design\n\nArchitecture details.")
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(PublishedDesignPath)!);
+        File.WriteAllText(PublishedDesignPath, content);
     }
 
     // Mirrors Flows.Development/Program.cs's real wiring: only resets StateStore/Trace on
@@ -254,6 +273,29 @@ public class DevelopmentFlowTests : IDisposable
     }
 
     [Fact]
+    public void Start_ComHandoffPublicado_ImportaFeaturesESaltaONovoPlanejamento()
+    {
+        GivenPublishedPlan();
+
+        var result = DevelopmentTasks.Start();
+
+        Assert.Contains("\"value\":\"setup\"", result);
+        Assert.Single(FeatureStore.Load());
+        Assert.Equal("Imported slice", FeatureStore.Load()[0].Title);
+        Assert.Empty(RunConfigStore.Load().VerifyCmd);
+
+        // Must resolve to a target directory that actually has init.sh (the constructor's
+        // _targetDir) — Setup now chains into Bearings→Smoke, which runs init.sh before
+        // handing off to implement; a non-existent directory like "app/todo-api" would fail
+        // the smoke check and return a `smoke` retry instead of `implement`.
+        result = DevelopmentTasks.Setup(Cmd("setup", _targetDir, "dotnet test"));
+
+        Assert.Contains("\"value\":\"implement\"", result);
+        Assert.Equal(_targetDir, RunConfigStore.Load().TargetDir);
+        Assert.Equal("dotnet test", RunConfigStore.Load().VerifyCmd);
+    }
+
+    [Fact]
     public void Start_ModoInterativo_NaoPersisteBrief()
     {
         DevelopmentTasks.Start(); // sem specs/ → InitializerInteractive()
@@ -327,6 +369,48 @@ public class DevelopmentFlowTests : IDisposable
         Assert.Contains("Brief references: RF-003", result);
         Assert.Contains("<implementation-context>requirements: inline X", result);
         Assert.DoesNotContain("<brief>", result);
+    }
+
+    [Fact]
+    public void ImplementPrompt_ReinjetaDocumentoDeDesignPublicado()
+    {
+        GivenPublishedDesign(
+            """
+            # Software design
+
+            ```mermaid
+            flowchart LR
+                Client --> API
+            ```
+
+            ```text
+            src/
+              Domain/
+              Infrastructure/
+            ```
+            """);
+
+        var result = Plan();
+        Assert.Contains("<design-context source=", result);
+        Assert.Contains("flowchart LR", result);
+        Assert.Contains("src/\\n  Domain/\\n  Infrastructure/", result);
+        Assert.Contains("Do not expand", result);
+    }
+
+    [Fact]
+    public void FixPrompt_ReinjetaDocumentoDeDesignPublicadoAposFalha()
+    {
+        GivenPublishedDesign("# Design\n\nUse the repository interfaces from the SDD.");
+        WriteVerifyFeatureScript(_targetDir,
+            "#!/usr/bin/env bash\nset -euo pipefail\necho \"FAIL: feature $1 quebrou\"\nexit 7\n");
+
+        Plan();
+        var result = DevelopmentTasks.Bearings(Cmd("bearings", "orientado"));
+        result = DevelopmentTasks.Implement(Cmd("implement", "implementei"));
+
+        Assert.Contains("<design-context source=", result);
+        Assert.Contains("Use the repository interfaces from the SDD.", result);
+        Assert.Contains("feature 2 quebrou", result);
     }
 
     [Fact]

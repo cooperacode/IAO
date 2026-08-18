@@ -110,7 +110,9 @@ pub fn read_all() -> String {
                     parts.push_str(content.trim_end());
                     parts.push('\n');
                 }
-                Err(e) => harness_log::error(&format!("[ArtifactStore] failed to read {file}: {e}")),
+                Err(e) => {
+                    harness_log::error(&format!("[ArtifactStore] failed to read {file}: {e}"))
+                }
             }
         }
     }

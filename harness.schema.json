@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://cooperacode.club/iao/harness.schema.json",
   "title": "IAO harness.json",
-  "description": "Fixed harness variables, read once per process from the repo root. Optional: a missing or invalid file/field falls back to the built-in default for that field. Consumed identically by every port (.NET/HarnessConfig, Go/harness_config.go, Python/harness_config.py, Rust/harness_config.rs). Does NOT contain the verify command, target directory or run identity (those live in .harness/run_config.json) and does NOT contain flow-local constants such as the Development flow's MaxFeatures/StepsPerFeature/MaxReplans, which are hardcoded in code, not externalized here.",
+  "description": "Fixed harness variables, read once per process from the repo root. Optional: a missing or invalid file/field falls back to the built-in default for that field. Consumed identically by every port (.NET/HarnessConfig, Go/harness_config.go, Python/harness_config.py, Rust/harness_config.rs). Does NOT contain the verify command, target directory or run identity (those live in .harness/run_config.json).",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -59,6 +59,24 @@
       "default": 1,
       "minimum": 1,
       "description": "Number of feature boundaries used as a deterministic fallback reset cadence when no context-usage telemetry is available. Non-positive values fall back to the default (1)."
+    },
+    "maxFeatures": {
+      "type": "integer",
+      "default": 10,
+      "minimum": 1,
+      "description": "Development flow only: maximum number of features kept from the driver-proposed plan (highest priority first). Also the ceiling enforced on driver-proposed plan revisions (see maxReplans). Non-positive values fall back to the default (10)."
+    },
+    "stepsPerFeature": {
+      "type": "integer",
+      "default": 8,
+      "minimum": 1,
+      "description": "Development flow only: per-feature step ceiling that bars an implement/verify loop that never closes. Also used to derive the effective step budget passed to the host (maxFeatures * stepsPerFeature + 8), overriding maxSteps for this flow. Non-positive values fall back to the default (8)."
+    },
+    "maxReplans": {
+      "type": "integer",
+      "default": 2,
+      "minimum": 1,
+      "description": "Development flow only: maximum number of driver-proposed global plan revisions accepted in one run. Non-positive values fall back to the default (2)."
     }
   }
 }

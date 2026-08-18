@@ -66,10 +66,21 @@ func pathExists(path string) bool {
 // it is a symlink) and confirms it is actually inside baseDir, comparing canonical paths by
 // real directory prefix — not lexical string prefix (which would let "/base-evil" pass as
 // contained in "/base").
+//
+// baseDir must be symlink-resolved the same way `target` is below, or this silently fails
+// whenever baseDir itself sits behind a symlink — e.g. macOS's /tmp, which is a symlink to
+// /private/tmp. Without this, any harness process invoked with a cwd under /tmp resolves
+// every skill/doc path to something like "/private/tmp/.harness/skills/..." (correctly
+// symlink-resolved) while comparing it against the unresolved "/tmp/..." baseDir: the prefix
+// check never matches, ResolvePath falls through to "not found", and readSkills silently
+// embeds nothing — no error, just an instruction with no methodology guidance in it.
 func isContained(candidate, baseDir string) bool {
 	normalizedBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		normalizedBase = baseDir
+	}
+	if resolvedBase, err := filepath.EvalSymlinks(normalizedBase); err == nil {
+		normalizedBase = resolvedBase
 	}
 	normalizedBase = strings.TrimRight(normalizedBase, string(filepath.Separator))
 

@@ -1,6 +1,6 @@
 ---
 name: session-report
-description: "generate an HTML cost/usage report for the harness's most recent session (tokens, cost per step, per command, errors) for claude, codex, or copilot"
+description: "generate an HTML cost/usage report for the harness's most recent session (tokens, cost per step, per command, errors) for claude, codex, copilot, or kimi"
 ---
 
 # SKILL: session usage and cost report
@@ -28,11 +28,11 @@ without reimplementing anything:
 .harness/skills/session-report/generate_report.py --driver claude
 .harness/skills/session-report/generate_report.py --driver codex
 .harness/skills/session-report/generate_report.py --driver copilot
+.harness/skills/session-report/generate_report.py --driver kimi
 ```
 
 Generates `report/session-report-<driver>-<timestamp>.html` (folder created if it doesn't
-exist) and prints the path at the end. **Confirmed in this session**, running all three
-drivers against this repo's real data: using the session that actually generated
+exist) and prints the path at the end. The report uses the session that actually generated
 `.harness/trace.jsonl` (`--session daba97f0-b838-4b05-92f3-1b778de86d78`), the report
 reproduced exactly the numbers from the existing `.harness/report_custo_claude.txt` in the
 repo — 57 steps, $10.55 attributed, $11.46 total, 42m 40s duration.
@@ -44,6 +44,7 @@ repo — 57 steps, $10.55 attributed, $11.46 total, 42m 40s duration.
 .harness/skills/session-report/generate_report.py --driver codex --session-tree <session-id>
 .harness/skills/session-report/generate_report.py --driver codex --trace-file .harness/last-development.trace.jsonl
 .harness/skills/session-report/generate_report.py --driver claude --out-dir /tmp/reports
+.harness/skills/session-report/generate_report.py --driver kimi --session <session-id>
 ```
 
 `--session` skips auto-detection and keeps the strict single-session filter.
@@ -57,7 +58,8 @@ run).
 
 - Python 3 (tested with 3.12) — no external dependencies, stdlib only.
 - `.harness/scripts/claude_usage.py`, `.harness/scripts/codex_usage.py`,
-  `.harness/scripts/copilot_usage.py` and `.harness/scripts/harness_cost_correlate.py`
+  `.harness/scripts/copilot_usage.py`, `.harness/scripts/kimi_usage.py` and
+  `.harness/scripts/harness_cost_correlate.py`
   already present in the harness container.
 - A `.harness/trace.jsonl` (or another one passed via `--trace-file`) from a harness run that
   has already happened — without a trace there's no step to correlate.
@@ -105,6 +107,11 @@ depend on `feature_list.json` and Roslyn analysis — out of scope for this skil
   always returns `cost=None` (billed by premium request with a multiplier, not by token); the
   report still shows tokens normally but every cost KPI/column becomes "n/d", with an
   explanatory note in the footer.
+- **Kimi's cost is an API-like estimate** — Kimi Code's managed/OAuth plan is flat-rate, not
+  token-metered. The Kimi adapter reads `~/.kimi-code/sessions/**/agents/*/wire.jsonl` and
+  estimates cost using the raw Moonshot API prices documented in
+  `.harness/scripts/kimi_usage.py`; the report's Kimi cost is therefore not a billing
+  reconciliation.
 - **`--out-dir`/`--trace-file` defaults are always relative to the repo root**, not the
   directory the command was called from — `generate_report.py` resolves `REPO_ROOT` from its
   own file path (`.harness/skills/session-report/generate_report.py` → up three levels).
@@ -116,6 +123,6 @@ depend on `feature_list.json` and Roslyn analysis — out of scope for this skil
   `.harness/last-development.trace.jsonl`).
 - `Nenhuma sessao de <driver> encontrada para este repo` — the chosen driver has never been
   used in this repository (the corresponding `<driver>_usage.py` found no sessions). Run the
-  usage script directly (`python3 .harness/scripts/claude_usage.py`) to confirm.
+  usage script directly (for Kimi: `python3 .harness/scripts/kimi_usage.py --json`) to confirm.
 - `Erro ao rodar <script>.py (exit 1)` — the underlying script (usage or correlate) failed;
   its stderr is passed through prefixed with `[<script>]` before the final error message.

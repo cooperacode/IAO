@@ -41,20 +41,29 @@ from harness_engine import (
 from harness_engine.envelope import Envelope
 from harness_engine.run_config_store import RunConfig
 
-# This flow's local guards (the global harness.json ceiling, 12, is too short for a loop).
-# Few features + a PER-FEATURE step ceiling: bars an implement<->verify loop that never closes.
-MAX_FEATURES = 10
-STEPS_PER_FEATURE = 8
+# This flow's local guards, externalized into harness.json (the global harness.json
+# max_steps ceiling, 12, is too short for a loop). Few features + a PER-FEATURE step
+# ceiling: bars an implement<->verify loop that never closes.
+def MAX_FEATURES() -> int:
+    return harness_config.current().max_features
+
+
+def STEPS_PER_FEATURE() -> int:
+    return harness_config.current().steps_per_feature
+
 
 # Ceiling on how many times the harness will accept a global plan revision within one run
 # (see `replan`/`_handle_verify_failure`) — a driver stuck oscillating between plans must
 # still terminate rather than loop forever.
-MAX_REPLANS = 2
+def MAX_REPLANS() -> int:
+    return harness_config.current().max_replans
+
 
 # Effective step ceiling passed to harness_host (override of the global one): slack for
-# the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus start/plan
-# and the boundaries.
-STEP_BUDGET = MAX_FEATURES * STEPS_PER_FEATURE + 8
+# the worst case of MAX_FEATURES() features spending STEPS_PER_FEATURE() each, plus
+# start/plan and the boundaries.
+def STEP_BUDGET() -> int:
+    return MAX_FEATURES() * STEPS_PER_FEATURE() + 8
 
 
 def _state(key: str) -> str:
@@ -89,16 +98,56 @@ def start() -> str:
     # the driver writes a fresh array — best-effort, absence is not an error.
     Path(state_keys.PLAN_FILE_PATH).unlink(missing_ok=True)
 
+    imported = _import_published_plan()
+    if imported:
+        harness_log.info("[dev] imported the published Specification handoff; entering operational setup")
+        return prompts.handoff_setup_prompt()
+
     # The brief (what to build) comes from specs/, or, without specs, from interactive mode.
     if not docs_reader.has_docs(_docs_folder()):
         return prompts.initializer_interactive()
 
     content, files = docs_reader.read(_docs_folder())
     # Persisted for auditability and compatibility; implementation sessions use the bounded
-    # context copied into each feature by the planner.
+    # context copied into each feature plus the published design document read from disk at
+    # every fresh implementation prompt.
     artifact_store.write(state_keys.BRIEF_ARTIFACT_NAME, content)
     state_store.set("origem", "specs")
     return prompts.initializer_prompt(content, files)
+
+
+def _import_published_plan() -> bool:
+    candidates = (
+        Path(_docs_folder()) / "40-development-plan.json",
+        Path(_docs_folder()) / "active" / "40-development-plan.json",
+        Path("specs/active/40-development-plan.json"),
+    )
+    for candidate in dict.fromkeys(candidates):
+        try:
+            if not candidate.exists():
+                continue
+            features = feature_store.parse_development_plan(candidate.read_text(encoding="utf-8"))
+            if not features:
+                harness_log.error(f"[dev] published handoff '{candidate}' was invalid or empty")
+                return False
+            capped = sorted(features, key=lambda f: (f.priority, f.id))[:MAX_FEATURES()]
+            ids = {feature.id for feature in capped}
+            feature_store.write([replace(feature, depends_on=tuple(dep for dep in feature.deps if dep in ids)) for feature in capped])
+            return True
+        except OSError as ex:
+            harness_log.error(f"[dev] failed to import published handoff '{candidate}': {ex}")
+            return False
+    return False
+
+
+def setup(envelope: Envelope | None) -> str:
+    target = os.environ.get("HARNESS_TARGET_DIR", "").strip() or _arg_at(envelope, 0, "")
+    verify = os.environ.get("HARNESS_VERIFY_CMD", "").strip() or _arg_at(envelope, 1, "")
+    if not target or not verify or len(target) > 240 or len(verify) > 500 or any(c in target for c in "\r\n"):
+        return prompts.handoff_setup_prompt("the setup response did not contain a concrete target directory and executable verification command")
+    run_config_store.write(RunConfig(verify_cmd=verify, target_dir=target, run_id=str(uuid.uuid4())))
+    harness_log.info(f"[dev] setup completed for target '{target}' with verify command '{verify}'")
+    return bearings(None)
 
 
 def plan(envelope: Envelope | None) -> str:
@@ -109,7 +158,7 @@ def plan(envelope: Envelope | None) -> str:
         return prompts.plan_retry_prompt()  # didn't parse → re-request (corrective loop)
 
     # Feature ceiling: keeps the highest-priority ones (lowest number).
-    capped = sorted(features, key=lambda f: (f.priority, f.id))[:MAX_FEATURES]
+    capped = sorted(features, key=lambda f: (f.priority, f.id))[:MAX_FEATURES()]
 
     # Sanitizes depends_on: a surviving feature may depend on an id cut above, which would
     # block it forever (never "ready") with no way for the driver to know — the harness
@@ -144,22 +193,22 @@ def replan(envelope: Envelope | None) -> str:
     `plan`/`state_keys.PLAN_FILE_PATH`). Two independent gates must both clear: the
     deterministic evidence/invariant evaluator, then feature_store's hard domain
     invariants (passed features immutable, dependency graph valid) — either can reject."""
-    if plan_revision_store.revision_count() >= MAX_REPLANS:
-        return _stop(f"global replan limit ({MAX_REPLANS})")
+    if plan_revision_store.revision_count() >= MAX_REPLANS():
+        return _stop(f"global replan limit ({MAX_REPLANS()})")
 
     revision = plan_revision_store.read_proposal()
     if revision is None:
         return prompts.replan_prompt("No readable replan proposal was found.")
 
     evaluation = plan_revision_evaluator.evaluate(
-        feature_store.load(), revision, plan_observation_store.load(), MAX_FEATURES,
-        max(0, STEP_BUDGET - state_store.load().step), STEPS_PER_FEATURE,
+        feature_store.load(), revision, plan_observation_store.load(), MAX_FEATURES(),
+        max(0, STEP_BUDGET() - state_store.load().step), STEPS_PER_FEATURE(),
     )
     if not evaluation.passed:
         errors = " | ".join(f"{e.code}: {e.message}" for e in evaluation.errors)
         return prompts.replan_prompt(f"The deterministic plan evaluator rejected the proposal: {errors}")
 
-    result = feature_store.apply_revision(revision, MAX_FEATURES)
+    result = feature_store.apply_revision(revision, MAX_FEATURES())
     if not result.success:
         return prompts.replan_prompt(f"The proposed revision was rejected: {result.error}")
 
@@ -701,9 +750,9 @@ def _over_feature_budget() -> bool:
     steps = _int_or(_state(state_keys.FEATURE_STEPS), 0) + 1
     state_store.set(state_keys.FEATURE_STEPS, str(steps))
 
-    if steps > STEPS_PER_FEATURE:
+    if steps > STEPS_PER_FEATURE():
         harness_log.error(
-            f"[dev] feature '{_state(state_keys.CURRENT_FEATURE_TITLE)}' exceeded {STEPS_PER_FEATURE} "
+            f"[dev] feature '{_state(state_keys.CURRENT_FEATURE_TITLE)}' exceeded {STEPS_PER_FEATURE()} "
             "steps; stopping.",)
         return True
     return False
@@ -723,7 +772,7 @@ def _handle_verify_failure(failure: str) -> str:
     failures = _int_or(_state(state_keys.VERIFY_FAILURES), 0) + 1
     state_store.set(state_keys.VERIFY_FAILURES, str(failures))
 
-    if failures < 3 or plan_revision_store.revision_count() >= MAX_REPLANS:
+    if failures < 3 or plan_revision_store.revision_count() >= MAX_REPLANS():
         return prompts.fix_prompt(failure)
 
     try:

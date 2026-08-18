@@ -14,7 +14,7 @@ Only the engine you choose to package needs its toolchain installed:
 ## 1. Build a package
 
 ```bash
-./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
+./package.sh --engine <dotnet|python|rust|go> [--os <rid>] [--version <v>]
 
 # or run with no flags for an interactive menu
 ./package.sh
@@ -22,6 +22,9 @@ Only the engine you choose to package needs its toolchain installed:
 
 - `--os` (RID) only applies to `--engine dotnet` — Native AOT compiles per OS (`osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`, `win-x64`).
 - `rust`, `go`, and `python` packages are built for/run on the host you run this script on (no cross-compile).
+- There's no IDE to choose anymore — every package bundles the adapter/prompt for all five
+  supported IDEs (Claude Code, GitHub Copilot, Devin, Codex, Kimi Code CLI), so the same
+  package works with whichever one is on the target machine.
 
 This produces a self-contained folder in `dist/`:
 
@@ -33,8 +36,8 @@ dist/flows-python-v<version>/          # --engine python
 ```
 
 Each package includes the engine binary (or Python source) under `.harness/bin/`, the
-runtime inputs under `.harness/skills/` and `.harness/scripts/`, the chosen IDE adapter,
-and `.harness/START-HERE.md`.
+runtime inputs under `.harness/skills/` and `.harness/scripts/`, every IDE adapter, and
+`.harness/START-HERE.md`.
 
 ## 2. Move the package into your project
 
@@ -141,7 +144,7 @@ the harness), not through the driver-facing envelope.
 
 ## 4. Start development
 
-Development is always driven by the IDE agent, not by hand on the command line. Open `your-project/` in the IDE you packaged for and follow `.harness/START-HERE.md`:
+Development is always driven by the IDE agent, not by hand on the command line. Open `your-project/` in whichever of these IDEs you have — the package already bundles all of them — and follow `.harness/START-HERE.md`:
 
 | IDE | Adapter | How to start |
 |---|---|---|
@@ -149,5 +152,6 @@ Development is always driven by the IDE agent, not by hand on the command line. 
 | GitHub Copilot | `.github/prompts/development.prompt.md` | Select the **development** prompt file, then ask *"Develop: \<project goal\>"* |
 | Devin | `.devin/workflows/development.md` | Invoke `/development`, then ask *"Develop: \<project goal\>"* |
 | Codex | `.codex/agents/development.toml` | Ask to use the custom **development** agent for *"Develop: \<project goal\>"* |
+| Kimi Code CLI | `.kimi/agents/development.md` | `kimi -p "Develop: \<project goal\>" --agent-file .kimi/agents/development.md` |
 
 The agent drives `./run-development.sh` itself, one feature at a time, until every feature passes verification.

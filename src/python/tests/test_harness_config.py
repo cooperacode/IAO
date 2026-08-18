@@ -27,6 +27,29 @@ def test_load_sem_arquivo_usa_defaults():
     assert config.max_instruction_chars == 0  # cost ceiling disabled by default
     assert config.docs_folder == "specs"
     assert config.timeout_ms == 10 * 60_000  # time guard is always enabled
+    assert config.max_features == 10
+    assert config.steps_per_feature == 8
+    assert config.max_replans == 2
+
+
+def test_load_com_guardas_do_development_le_e_normaliza():
+    Path(CONFIG_PATH).write_text('{"maxFeatures":5,"stepsPerFeature":4,"maxReplans":1}')
+
+    config = harness_config.load()
+
+    assert config.max_features == 5
+    assert config.steps_per_feature == 4
+    assert config.max_replans == 1
+
+    # Non-positive values fall back to the default — same tolerance as the rest of the
+    # config: it's optional input, it can't bring down the run.
+    Path(CONFIG_PATH).write_text('{"maxFeatures":0,"stepsPerFeature":-1,"maxReplans":0}')
+
+    fallback = harness_config.load()
+
+    assert fallback.max_features == harness_config.DEFAULT.max_features
+    assert fallback.steps_per_feature == harness_config.DEFAULT.steps_per_feature
+    assert fallback.max_replans == harness_config.DEFAULT.max_replans
 
 
 def test_load_com_timeout_le_e_normaliza():

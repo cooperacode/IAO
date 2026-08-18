@@ -103,6 +103,16 @@ func TestFeatures_ParsePreservesDescriptionAndReferences(t *testing.T) {
 	}
 }
 
+func TestFeatures_ParseDevelopmentPlanPreservesDecisionContext(t *testing.T) {
+	isolate(t)
+
+	features := ParseDevelopmentPlan(`{"schema":"iao/development-plan/v1","features":[{"id":1,"title":"API","priority":1,"implementationContext":{"decisions":["ADR-2: use Postgres"]}}]}`)
+
+	if len(features) != 1 || len(features[0].ImplementationContext.Decisions) != 1 || features[0].ImplementationContext.Decisions[0] != "ADR-2: use Postgres" {
+		t.Fatalf("unexpected decision context: %+v", features)
+	}
+}
+
 func TestFeatures_ParseDescriptionAboveCeiling_IsTruncated(t *testing.T) {
 	isolate(t)
 

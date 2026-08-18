@@ -30,6 +30,33 @@ public class HarnessConfigTests : IDisposable
         Assert.Equal(0, config.MaxInstructionChars); // cost ceiling disabled by default
         Assert.Equal("specs", config.DocsFolder);
         Assert.Equal(10 * 60_000, config.TimeoutMs);       // time guard is always enabled
+        Assert.Equal(10, config.MaxFeatures);
+        Assert.Equal(8, config.StepsPerFeature);
+        Assert.Equal(2, config.MaxReplans);
+    }
+
+    [Fact]
+    public void Load_ComGuardasDoDevelopment_LeENormaliza()
+    {
+        File.WriteAllText(ConfigPath,
+            """{"maxFeatures":5,"stepsPerFeature":4,"maxReplans":1}""");
+
+        var config = HarnessConfig.Load();
+
+        Assert.Equal(5, config.MaxFeatures);
+        Assert.Equal(4, config.StepsPerFeature);
+        Assert.Equal(1, config.MaxReplans);
+
+        // Non-positive values fall back to the default, same tolerance as the rest of the
+        // config: it's optional input, it can't bring down the run.
+        File.WriteAllText(ConfigPath,
+            """{"maxFeatures":0,"stepsPerFeature":-1,"maxReplans":0}""");
+
+        var fallback = HarnessConfig.Load();
+
+        Assert.Equal(HarnessConfig.Default.MaxFeatures, fallback.MaxFeatures);
+        Assert.Equal(HarnessConfig.Default.StepsPerFeature, fallback.StepsPerFeature);
+        Assert.Equal(HarnessConfig.Default.MaxReplans, fallback.MaxReplans);
     }
 
     [Fact]

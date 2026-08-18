@@ -18,7 +18,9 @@ pub fn load(skill_name: &str) -> Option<String> {
     match std::fs::read_to_string(path) {
         Ok(content) => Some(content),
         Err(e) => {
-            harness_log::error(&format!("[ArtifactTemplate] failed to read template for {skill_name}: {e}"));
+            harness_log::error(&format!(
+                "[ArtifactTemplate] failed to read template for {skill_name}: {e}"
+            ));
             None
         }
     }

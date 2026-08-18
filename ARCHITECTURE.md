@@ -22,7 +22,7 @@ the selected one as `run-development.sh` in the generated package — same
 ## The pattern in one paragraph
 
 The harness never calls a model. An IDE agent (the *driver* — Copilot, Devin,
-Claude Code, Codex) runs the harness binary, reads the next instruction from
+Claude Code, Codex, Kimi Code CLI) runs the harness binary, reads the next instruction from
 `stdout`, does the actual work with its own tools, and writes back a JSON
 envelope. The harness — deterministic, compiled code — decides the next state,
 validates the response against the command's contract, persists state to disk,
@@ -59,7 +59,7 @@ once per turn; the harness is single-shot per process.
 | Envelope | JSON contract between driver and harness | `src/dotnet/Harness.Engine/Envelope.cs` |
 | DevelopmentTasks | Domain-specific state machine | `src/dotnet/Flows.Development/DevelopmentTasks*.cs` |
 | Stores | `.harness/` persistence | `StateStore.cs`, `RunConfigStore.cs`, `FeatureStore.cs`, `Trace.cs` |
-| IDE agent | Driver running the runner and responding in JSON | Codex, Claude Code, Copilot, Devin adapters |
+| IDE agent | Driver running the runner and responding in JSON | Codex, Claude Code, Copilot, Devin, Kimi Code CLI adapters |
 | Project code | Target repository changed and verified | `target_dir/*` |
 
 **Related patterns:** State Machine (explicit, deterministic state sequence),
@@ -279,7 +279,8 @@ and the deterministic fallback remains active.
 | State | What happens |
 |---|---|
 | `start` | Resumes by reconstructing bounded repository context if a feature is still pending; otherwise resets `FeatureStore`/`RunConfigStore` and asks for the init (from `specs/` or interactively) |
-| `plan` | Writes up to `MaxFeatures = 10` features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`), then starts deterministic session setup |
+| `plan` | In autonomous mode, writes up to `MaxFeatures` (harness.json `maxFeatures`, default 10) features, each with `dependsOn`, plus the run config (`verify_cmd`, `target_dir`). With a published `40-development-plan.json`, `start` imports the authoritative feature plan and emits `setup` for repository preparation instead. |
+| `setup` | Handoff-only driver turn: prepares Git, the concrete target directory, `init.sh`, `verify-feature.sh`, and reports the real `target_dir` and executable `verify_cmd`; it cannot redefine the imported feature plan. |
 | `bearings` | Internal compatibility command: captures the `progress.txt` tail and `git log`, then continues automatically |
 | `smoke` | Internal compatibility command: runs `./init.sh` with timeout and exit-code classification before selecting a feature |
 | `pick` | **Harness decision, no driver input.** Selects the highest-priority feature among the ones whose dependencies already passed |
@@ -300,9 +301,10 @@ turn. The resulting `implement` instruction carries the explicit clean-context
 marker, so a driver that supports the long-running-agent adapter can open a new
 session while recovering the feature context from persistent artifacts.
 
-**Budget** — `MaxFeatures = 10`, `StepsPerFeature = 8`,
-`StepBudget = 10 × 8 + 8 = 88`, passed to `HarnessHost.Run` as the effective
-`maxSteps` override for this flow.
+**Budget** — `MaxFeatures`, `StepsPerFeature` and `MaxReplans` are read from
+harness.json (`maxFeatures`, `stepsPerFeature`, `maxReplans`; defaults 10, 8, 2).
+`StepBudget = MaxFeatures × StepsPerFeature + 8` (88 by default) is passed to
+`HarnessHost.Run` as the effective `maxSteps` override for this flow.
 
 (`src/dotnet/Flows.Development/DevelopmentTasks.cs`,
 `DevelopmentTasks.Verify.cs`, `DevelopmentTasks.Handoff.cs`)
@@ -318,8 +320,9 @@ binary and, from there, to the repository being changed.
   to the inbox, runs the wrapper with no arguments, and assumes a clean context
   per feature. Equivalent adapters exist for other drivers:
   `.claude/agents/development.agent.md` (Claude Code),
-  `.github/prompts/development.prompt.md` (GitHub Copilot), and
-  `.devin/workflows/development.md` (Devin) — same protocol, different driver.
+  `.github/prompts/development.prompt.md` (GitHub Copilot),
+  `.devin/workflows/development.md` (Devin), and
+  `.kimi/agents/development.md` (Kimi Code CLI) — same protocol, different driver.
 - **`.harness/inbox.json`** — file transport. Avoids escaped JSON on the
   command line (one forgotten quote can hang a shell before the program even
   runs) and keeps `stdout` exclusive to control.

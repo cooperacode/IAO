@@ -21,12 +21,19 @@ public record HarnessConfig(
     int TimeoutMs,
     string ContextResetMode,
     double ContextResetThreshold,
-    int ContextFallbackFeatures)
+    int ContextFallbackFeatures,
+    int MaxFeatures,
+    int StepsPerFeature,
+    int MaxReplans)
 {
     // Step ceiling: prevents an infinite loop that would burn tokens indefinitely.
     // MaxInstructionChars = 0 disables the cost ceiling (only the step one applies).
     // TimeoutMs is always enabled: a workspace config may tune it but cannot turn off the
     // per-step time guard.
+    // MaxFeatures/StepsPerFeature/MaxReplans are the Development flow's local guards (see
+    // Flows.Development.DevelopmentTasks): few features + a per-feature step ceiling bars
+    // the implement<->verify loop that never closes; MaxReplans caps how many global plan
+    // revisions one run may apply.
     public static HarnessConfig Default { get; } = new(
         MaxSteps: 12,
         MaxInstructionChars: 0,
@@ -35,7 +42,10 @@ public record HarnessConfig(
         TimeoutMs: 10 * 60_000,
         ContextResetMode: "adaptive",
         ContextResetThreshold: 0.70,
-        ContextFallbackFeatures: 1);
+        ContextFallbackFeatures: 1,
+        MaxFeatures: 10,
+        StepsPerFeature: 8,
+        MaxReplans: 2);
 
     private const string FilePath = "harness.json";
 
@@ -118,5 +128,8 @@ public record HarnessConfig(
         ContextFallbackFeatures = config.ContextFallbackFeatures > 0
             ? config.ContextFallbackFeatures
             : Default.ContextFallbackFeatures,
+        MaxFeatures = config.MaxFeatures > 0 ? config.MaxFeatures : Default.MaxFeatures,
+        StepsPerFeature = config.StepsPerFeature > 0 ? config.StepsPerFeature : Default.StepsPerFeature,
+        MaxReplans = config.MaxReplans > 0 ? config.MaxReplans : Default.MaxReplans,
     };
 }

@@ -239,6 +239,23 @@ public class SpecificationEvaluatorTests
     }
 
     [Fact]
+    public void EvaluateSrs_DependsOnAusente_NaoLancaExcecaoEEhRejeitado()
+    {
+        var srs = ValidSrs("sha256:prd") with
+        {
+            QualityRequirements =
+            [
+                new Requirement("QR-001", ["OBJ-001"], "quality rule", null!, ["AC-001"])
+            ],
+        };
+
+        var result = SpecificationEvaluator.EvaluateSrs(srs, "sha256:prd", ["OBJ-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "SRS_REQUIREMENT_DEPENDS_ON_MISSING");
+    }
+
+    [Fact]
     public void EvaluateSrs_DigestDePrdDesatualizado_EhRejeitado()
     {
         var result = SpecificationEvaluator.EvaluateSrs(ValidSrs("sha256:old"), "sha256:new", ["OBJ-001"]);
@@ -307,6 +324,48 @@ public class SpecificationEvaluatorTests
         Assert.Contains("SRS_DATA_RULE_REQUIREMENT_DANGLING", codes);
     }
 
+    // Regression coverage for the production crash this fixes: a DataRule (or any of the
+    // other free-text fields RenderSrs renders) with an empty/null value used to sail through
+    // evaluation, get accepted, and only blow up much later — as a NullReferenceException
+    // inside SpecificationRenderer.Escape — when `approve` tried to publish it. The evaluator
+    // is the gate that's supposed to catch structurally-invalid documents before acceptance
+    // (blueprint 0004 §5), so an empty required text field belongs here, not just behind
+    // Escape()'s defensive null check.
+    [Fact]
+    public void EvaluateSrs_RegraDeDadosSemTexto_EhRejeitada()
+    {
+        var srs = ValidSrs("sha256:prd") with
+        {
+            DataRules = [new DataRule("DR-001", ["RF-001"], null!)],
+        };
+
+        var result = SpecificationEvaluator.EvaluateSrs(srs, "sha256:prd", ["OBJ-001"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "SRS_DATA_RULE_TEXT_MISSING");
+    }
+
+    [Fact]
+    public void EvaluateSrs_CamposDeTextoVaziosEmOutrosRegistros_SaoRejeitados()
+    {
+        var srs = ValidSrs("sha256:prd") with
+        {
+            FunctionalRequirements = [new Requirement("RF-001", ["OBJ-001"], "  ", [], ["AC-001"])],
+            AcceptanceCriteria = [new AcceptanceCriterion("AC-001", ["RF-001"], "", "when", "then")],
+            Interfaces = [new InterfaceContract("IF-001", ["RF-001"], "name", "")],
+            Delivery = new DeliveryContract("", "strategy", true),
+        };
+
+        var result = SpecificationEvaluator.EvaluateSrs(srs, "sha256:prd", ["OBJ-001"]);
+
+        Assert.False(result.Passed);
+        var codes = result.Violations.Select(v => v.Code).ToArray();
+        Assert.Contains("SRS_REQUIREMENT_STATEMENT_MISSING", codes);
+        Assert.Contains("SRS_ACCEPTANCE_CRITERION_TEXT_MISSING", codes);
+        Assert.Contains("SRS_INTERFACE_TEXT_MISSING", codes);
+        Assert.Contains("SRS_DELIVERY_TEXT_MISSING", codes);
+    }
+
     // ---- SddEvaluator ----
 
     private static SoftwareDesignDocument ValidSdd(string srsDigest) => new(
@@ -322,6 +381,47 @@ public class SpecificationEvaluatorTests
 
         Assert.True(result.Passed);
         Assert.Empty(result.Violations);
+    }
+
+    [Fact]
+    public void EvaluateSdd_ComFonteAceitaProvenienciaEConteudoDetalhado()
+    {
+        var sdd = ValidSdd("sha256:srs") with
+        {
+            SourceDigest = "sha256:sources",
+            SourceFiles = ["design.md"],
+            DesignContent = "## Architecture\n\n```mermaid\nflowchart LR\n```",
+        };
+
+        var result = SpecificationEvaluator.EvaluateSdd(
+            sdd,
+            "sha256:srs",
+            ["RF-001"],
+            "sha256:sources",
+            ["design.md"]);
+
+        Assert.True(result.Passed);
+        Assert.Empty(result.Violations);
+    }
+
+    [Fact]
+    public void EvaluateSdd_ComFonteSemConteudoDetalhado_EhRejeitado()
+    {
+        var sdd = ValidSdd("sha256:srs") with
+        {
+            SourceDigest = "sha256:sources",
+            SourceFiles = ["design.md"],
+        };
+
+        var result = SpecificationEvaluator.EvaluateSdd(
+            sdd,
+            "sha256:srs",
+            ["RF-001"],
+            "sha256:sources",
+            ["design.md"]);
+
+        Assert.False(result.Passed);
+        Assert.Contains(result.Violations, v => v.Code == "SDD_DESIGN_CONTENT_MISSING");
     }
 
     [Fact]

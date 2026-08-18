@@ -116,6 +116,25 @@ public static class FeatureStore
         }
     }
 
+    /// <summary>Reads the structured Specification handoff and normalizes its features with the same rules as driver plans.</summary>
+    public static IReadOnlyList<Feature> ParseDevelopmentPlan(string json)
+    {
+        try
+        {
+            var plan = JsonSerializer.Deserialize(json, HarnessJsonContext.Default.DevelopmentPlan);
+            if (plan is null || plan.Features is null || plan.Features.Length == 0)
+                return [];
+
+            var featuresJson = JsonSerializer.Serialize(plan.Features, HarnessJsonContext.Default.FeatureArray);
+            return Parse(featuresJson);
+        }
+        catch (Exception ex)
+        {
+            HarnessLog.Error($"[FeatureStore] failed to parse development handoff: {ex.Message}");
+            return [];
+        }
+    }
+
     /// <summary>Cuts at <see cref="DescriptionMaxChars"/> characters — never throws, never
     /// rejects the whole feature over it, just shortens.</summary>
     private static string TruncateDescription(string? description) =>
@@ -142,11 +161,18 @@ public static class FeatureStore
             return [.. result];
         }
 
+        var requirements = Take(source.RequirementItems, ref remaining);
+        var decisions = Take(source.DecisionItems, ref remaining);
+        var constraints = Take(source.ConstraintItems, ref remaining);
+        var files = Take(source.FileItems, ref remaining);
+        var acceptance = Take(source.AcceptanceItems, ref remaining);
+
         return new ImplementationContext(
-            Take(source.RequirementItems, ref remaining),
-            Take(source.ConstraintItems, ref remaining),
-            Take(source.FileItems, ref remaining),
-            Take(source.AcceptanceItems, ref remaining));
+            Requirements: requirements,
+            Constraints: constraints,
+            Files: files,
+            Acceptance: acceptance,
+            Decisions: decisions);
     }
 
     /// <summary>
@@ -302,6 +328,7 @@ public static class FeatureStore
         && left.Deps.SequenceEqual(right.Deps)
         && left.Refs.SequenceEqual(right.Refs)
         && left.Context.RequirementItems.SequenceEqual(right.Context.RequirementItems)
+        && left.Context.DecisionItems.SequenceEqual(right.Context.DecisionItems)
         && left.Context.ConstraintItems.SequenceEqual(right.Context.ConstraintItems)
         && left.Context.FileItems.SequenceEqual(right.Context.FileItems)
         && left.Context.AcceptanceItems.SequenceEqual(right.Context.AcceptanceItems);
@@ -369,16 +396,18 @@ public record ImplementationContext(
     string[]? Requirements = null,
     string[]? Constraints = null,
     string[]? Files = null,
-    string[]? Acceptance = null)
+    string[]? Acceptance = null,
+    string[]? Decisions = null)
 {
     [JsonIgnore] public string[] RequirementItems => Requirements ?? [];
+    [JsonIgnore] public string[] DecisionItems => Decisions ?? [];
     [JsonIgnore] public string[] ConstraintItems => Constraints ?? [];
     [JsonIgnore] public string[] FileItems => Files ?? [];
     [JsonIgnore] public string[] AcceptanceItems => Acceptance ?? [];
 
     [JsonIgnore]
     public bool IsEmpty => RequirementItems.Length == 0 && ConstraintItems.Length == 0
-        && FileItems.Length == 0 && AcceptanceItems.Length == 0;
+        && FileItems.Length == 0 && AcceptanceItems.Length == 0 && DecisionItems.Length == 0;
 
     public string ToPromptText()
     {
@@ -387,6 +416,7 @@ public record ImplementationContext(
 
         return string.Join("\\n", [
             Format("requirements", RequirementItems),
+            Format("decisions", DecisionItems),
             Format("constraints", ConstraintItems),
             Format("files", FileItems),
             Format("acceptance", AcceptanceItems),
@@ -415,7 +445,8 @@ public sealed class ImplementationContextJsonConverter : JsonConverter<Implement
             ReadItems(root, "requirements"),
             ReadItems(root, "constraints"),
             ReadItems(root, "files"),
-            ReadItems(root, "acceptance"));
+            ReadItems(root, "acceptance"),
+            ReadItems(root, "decisions"));
     }
 
     private static string[] ReadItems(JsonElement root, string name) =>
@@ -439,6 +470,7 @@ public sealed class ImplementationContextJsonConverter : JsonConverter<Implement
 
         writer.WriteStartObject();
         WriteArray(writer, "requirements", value.RequirementItems);
+        WriteArray(writer, "decisions", value.DecisionItems);
         WriteArray(writer, "constraints", value.ConstraintItems);
         WriteArray(writer, "files", value.FileItems);
         WriteArray(writer, "acceptance", value.AcceptanceItems);
@@ -452,6 +484,15 @@ public sealed class ImplementationContextJsonConverter : JsonConverter<Implement
 /// Native AOT requirement.
 /// </summary>
 public record FeatureList(List<Feature> Items);
+
+/// <summary>Structured handoff published by the Specification flow for Development.</summary>
+public sealed record DevelopmentPlan(
+    string Schema,
+    string SpecificationBundleDigest,
+    string[] SourceFiles,
+    Feature[] Features,
+    string TargetDescription,
+    string VerificationDescription);
 
 public sealed record PlanRevision(
     string Reason,

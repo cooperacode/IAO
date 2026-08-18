@@ -1,0 +1,28 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Harness GUI: start",
+            "detail": "Runs .harness/gui/run.sh (control panel + monitor on http://127.0.0.1:8787). Once VS Code shows the port-forward notification, use \"Preview in Editor\" (or the PORTS panel) to open it as a Simple Browser tab inside VS Code.",
+            "type": "shell",
+            "command": "${workspaceFolder}/.harness/gui/run.sh",
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "close": false
+            },
+            "problemMatcher": {
+                "owner": "harness-gui",
+                "pattern": {
+                    "regexp": "^$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^\\[harness-gui\\] starting on",
+                    "endsPattern": "^\\[harness-gui\\] serving on"
+                }
+            }
+        }
+    ]
+}

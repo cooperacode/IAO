@@ -30,7 +30,11 @@ pub struct Envelope {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<HashMap<String, String>>,
-    #[serde(rename = "contextUsage", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "contextUsage",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub context_usage: Option<ContextUsage>,
 }
 
@@ -99,9 +103,9 @@ impl Envelope {
             Some(Value::Object(map)) => {
                 let mut ctx = HashMap::new();
                 for (key, val) in map {
-                    let val = val.as_str().ok_or_else(|| {
-                        "each value of 'context' must be a string.".to_string()
-                    })?;
+                    let val = val
+                        .as_str()
+                        .ok_or_else(|| "each value of 'context' must be a string.".to_string())?;
                     ctx.insert(key.clone(), val.to_string());
                 }
                 Some(ctx)
@@ -281,11 +285,7 @@ mod tests {
 
     #[test]
     fn to_json_faz_roundtrip() {
-        let original = Envelope::new(
-            envelope_type::COMMAND,
-            "finalize",
-            vec!["Epic".to_string()],
-        );
+        let original = Envelope::new(envelope_type::COMMAND, "finalize", vec!["Epic".to_string()]);
 
         let roundtrip = Envelope::parse(&original.to_json()).unwrap();
 
@@ -331,11 +331,7 @@ mod tests {
 
     #[test]
     fn to_json_sem_context_nao_emite_o_campo() {
-        let envelope = Envelope::new(
-            envelope_type::COMMAND,
-            "finalize",
-            vec!["Epic".to_string()],
-        );
+        let envelope = Envelope::new(envelope_type::COMMAND, "finalize", vec!["Epic".to_string()]);
 
         assert!(!envelope.to_json().contains("context"));
     }

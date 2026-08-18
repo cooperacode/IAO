@@ -837,6 +837,25 @@ public class SpecificationFlowTests : IDisposable
     }
 
     [Fact]
+    public void Start_ComPastaDeFontes_ReinjetaConteudoNoPromptDeDesign()
+    {
+        Directory.CreateDirectory(SourcesDir);
+        File.WriteAllText(
+            Path.Combine(SourcesDir, "design.md"),
+            "## Architecture\n\n```mermaid\nflowchart LR\n  Client --> API\n```\n\n```text\napp/\n  src/\n```");
+
+        AdvanceToDesign();
+        var result = SpecificationTasks.Start();
+
+        Assert.Contains("\"value\":\"design\"", result);
+        Assert.Contains("<sources folder=", result);
+        Assert.Contains("flowchart LR", result);
+        Assert.Contains("app/", result);
+        Assert.Contains("sourceDigest", result);
+        Assert.Contains("designContent", result);
+    }
+
+    [Fact]
     public void Discover_ComFontesIngeridas_RegistraFonteEDigestReaisNaoPlaceholder()
     {
         Directory.CreateDirectory(SourcesDir);

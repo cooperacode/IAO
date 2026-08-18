@@ -83,9 +83,13 @@ diagram, with the file that implements each component.
   `.harness/feature_list.json`, so later implementation sessions do not reopen
   the full brief.
 
-  The context is grouped into `requirements`, `constraints`, `files`, and `acceptance`
+  The context is grouped into `requirements`, `decisions`, `constraints`, `files`, and `acceptance`
   arrays. Older plans that used a single string remain readable and are migrated to
   `requirements` when loaded.
+- **Specification handoff**: when the Specification flow publishes a `READY` bundle,
+  `specs/active/40-development-plan.json` is the authoritative machine-readable slice
+  plan for Development. Development imports its scope directly, then runs an operational
+  setup step; it only uses `dev-initializer` planning when no valid handoff is present.
 - **HarnessHost**: reusable flow entry point; runs dispatch, publishes output
   to `stdout`, and snapshots state and trace when the flow stops.
 - **TaskRegistry**: parses envelopes, validates commands, applies step, cost,
@@ -102,8 +106,8 @@ diagram, with the file that implements each component.
   backlog, including dependency edges between features), `ArtifactStore`
   (named text artifacts — e.g. the persisted brief, `brief.md`), and `Trace`
   (one line per turn); `Inbox` is the file-based transport for the envelope.
-- **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, or another driver
-  able to run the runner, read `stdout`, and respond in JSON.
+- **IDE agent**: Codex, Claude Code, GitHub Copilot, Devin, Kimi Code CLI, or another
+  driver able to run the runner, read `stdout`, and respond in JSON.
 - **Project code**: the target repository, changed by the agent one feature at
   a time and verified — automatically through `verify-feature.sh` or the
   configured `verify_cmd`; the agent is only asked to repair a failed setup.
@@ -114,7 +118,9 @@ files across the engine and flow layers.
 ## Collaborations
 
 1. The user places a brief in `specs/`.
-2. The agent starts the flow by sending the `start` envelope.
+2. The agent starts the flow by sending the `start` envelope. If a published
+   `40-development-plan.json` exists, the flow imports its slices and asks only for
+   repository setup instead of asking the agent to decompose the brief again.
 3. The harness reads the documents, emits the planning instruction, and asks
    for a structured feature list.
 4. The agent returns the list; the harness validates it, caps it, and persists
@@ -188,10 +194,11 @@ source, not an execution directory.
 | Go | `src/go/run-development-go.sh` | `src/go/run-checks-go.sh` |
 
 The `harness.json` file configures global limits such as `maxSteps`,
-`maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`. The timeout is
-always enabled: zero or negative values fall back to 10 minutes. A timeout stops the
-current invocation, but an explicit `start` can resume or restart the run; budget stops
-remain terminal across later invocations.
+`maxInstructionChars`, `docsMaxChars`, `docsFolder`, and `timeoutMs`, plus the
+Development flow's local guards `maxFeatures`, `stepsPerFeature`, and `maxReplans`
+(defaults 10, 8, and 2). The timeout is always enabled: zero or negative values fall
+back to 10 minutes. A timeout stops the current invocation, but an explicit `start`
+can resume or restart the run; budget stops remain terminal across later invocations.
 
 For unattended or trusted integrations, `HARNESS_TARGET_DIR` and
 `HARNESS_VERIFY_CMD` can override the values returned by the initializer, keeping
@@ -217,6 +224,7 @@ The included adapters call that packaged wrapper by default:
 | Claude Code | `.claude/agents/development.agent.md` |
 | GitHub Copilot | `.github/prompts/development.prompt.md` |
 | Devin | `.devin/workflows/development.md` |
+| Kimi Code CLI | `.kimi/agents/development.md` |
 
 Every package uses the same `.harness/inbox.json` protocol. Each port keeps its
 original `run-checks*.sh` parity gate in the corresponding language directory.
@@ -252,7 +260,7 @@ Intended IDE-agent usage:
 Build a package (replace the engine and target as needed):
 
 ```bash
-./package.sh --engine python --ide codex
+./package.sh --engine python
 cd dist/flows-python-v1.0.0
 ./run-development.sh '{ "type": "text", "value": "start" }'
 ```
@@ -275,8 +283,8 @@ src/go/run-checks-go.sh
   the better operational choice.
 - **Rust port**: compatible implementation with no separate runtime or SDK
   dependency — the release binary is already native.
-- **IDE adapters**: Codex, Claude Code, GitHub Copilot, and Devin using the
-  same runner and inbox protocol.
+- **IDE adapters**: Codex, Claude Code, GitHub Copilot, Devin, and Kimi Code CLI
+  using the same runner and inbox protocol.
 
 ## Related Patterns
 

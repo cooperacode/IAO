@@ -65,7 +65,9 @@ pub fn dispatch(
         {
             state_store::clear_terminal();
         } else {
-            harness_log::error(&format!("[harness] run already stopped ({terminal}); refusing another turn."));
+            harness_log::error(&format!(
+                "[harness] run already stopped ({terminal}); refusing another turn."
+            ));
             return "stop".to_string();
         }
     }
@@ -170,7 +172,9 @@ fn resolve(
     // global. Without an override, the config's value applies.
     let effective_max_steps = max_steps.unwrap_or_else(default_max_steps);
     if step > effective_max_steps {
-        harness_log::error(&format!("[harness] step limit of {effective_max_steps} reached; stopping."));
+        harness_log::error(&format!(
+            "[harness] step limit of {effective_max_steps} reached; stopping."
+        ));
         state_store::mark_terminal("budget");
         return ("stop".to_string(), trace_outcome::BUDGET);
     }
@@ -317,9 +321,15 @@ fn run_with_timeout(
 /// dropped the channel's sender without sending, and `recv_timeout` returned
 /// `Disconnected` immediately — indistinguishable from the `Timeout` case at the call site,
 /// so a real bug was silently misreported as a timeout (see the regression test below).
-fn run_protected(action: &Action, envelope: Option<&Envelope>) -> Result<String, HarnessFaultError> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(envelope)))
-        .map_err(|payload| HarnessFaultError { reason: panic_message(payload) })
+fn run_protected(
+    action: &Action,
+    envelope: Option<&Envelope>,
+) -> Result<String, HarnessFaultError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(envelope))).map_err(|payload| {
+        HarnessFaultError {
+            reason: panic_message(payload),
+        }
+    })
 }
 
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
@@ -842,8 +852,17 @@ mod tests {
         let enter_index = content.find("enter 'classify'");
         let exit_index = content.find("exit outcome=");
 
-        assert!(enter_index.is_some(), "expected an 'enter' line in harness.log");
-        assert!(exit_index.is_some(), "expected an 'exit' line in harness.log");
-        assert!(enter_index.unwrap() < exit_index.unwrap(), "entry must be logged before exit");
+        assert!(
+            enter_index.is_some(),
+            "expected an 'enter' line in harness.log"
+        );
+        assert!(
+            exit_index.is_some(),
+            "expected an 'exit' line in harness.log"
+        );
+        assert!(
+            enter_index.unwrap() < exit_index.unwrap(),
+            "entry must be logged before exit"
+        );
     }
 }

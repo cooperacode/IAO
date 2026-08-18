@@ -14,6 +14,7 @@ from harness_engine import feature_store, harness_host
 TASKS = {
     "start": lambda _envelope: tasks.start(),
     "plan": tasks.plan,
+    "setup": tasks.setup,
     "replan": tasks.replan,
     "bearings": tasks.bearings,
     "smoke": tasks.smoke,
@@ -45,7 +46,7 @@ def main(argv: list[str]) -> int:
         trace_snapshot_path=".harness/last-development.trace.jsonl",
         state_snapshot_path=".harness/last-development.state.json",
         validators=VALIDATORS,
-        max_steps=tasks.STEP_BUDGET,
+        max_steps=tasks.STEP_BUDGET(),
         should_reset_on_start=lambda: feature_store.pending_count() == 0,
     )
 

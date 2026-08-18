@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Packages the development flow into a self-contained package, choosing the ENGINE
-# (--engine), the operating system (RID, only for --engine dotnet) and the IDE. The
-# package includes the chosen engine, the runtime skills and the matching IDE adapter.
-# Generates:
+# (--engine) and the operating system (RID, only for --engine dotnet). The package
+# bundles the chosen engine, the runtime skills, AND every supported IDE adapter/prompt
+# (Claude Code, GitHub Copilot, Devin, Codex) — no driver is chosen at packaging time,
+# so the same package works with whichever IDE agent the target machine has. Generates:
 #
 #   --engine dotnet → dist/flows-<rid>-v<version>/
 #     .harness/bin/Flows.Development  # native binary (Native AOT; self-contained if AOT fails)
@@ -10,31 +11,38 @@
 #     .harness/scripts/               # usage/correlate — dependency of the cost report
 #     run-development.sh              # root-level development wrapper → .harness/bin
 #     .harness/run-development.cmd    # Windows companion wrapper, when applicable
-#     <IDE adapter at its expected path>
-#     <IDE approval config>           # runs the wrapper with no per-command prompt
-#     .harness/START-HERE.md          # how to run the flow in the chosen IDE
+#     <every IDE adapter, at its expected path>
+#     <every IDE approval config>     # runs the wrapper with no per-command prompt
+#     .harness/START-HERE.md          # how to run the flow, per IDE
 #
 #   --engine python → dist/flows-python-v<version>/
 #     .harness/bin/engine/harness_engine, ...          # Python engine (source, no build)
 #     .harness/skills/, .harness/scripts/              # same layout, requires python3/python
 #     run-development.sh                              # root-level development wrapper
-#     <IDE adapter>, <approval config>, .harness/START-HERE.md
+#     <every IDE adapter/approval config>, .harness/START-HERE.md
 #
 #   --engine rust → dist/flows-rust-<host-rid>-v<version>/
 #     .harness/bin/flows_development  # native binary (cargo build --release --bin flows_development)
 #     .harness/skills/, .harness/scripts/              # same layout as dotnet
 #     run-development.sh                              # root-level development wrapper
-#     <IDE adapter>, <approval config>, .harness/START-HERE.md
+#     <every IDE adapter/approval config>, .harness/START-HERE.md
 #
 #   --engine go → dist/flows-go-<host-rid>-v<version>/
 #     .harness/bin/flowsdevelopment   # native binary (go build ./flowsdevelopment)
 #     .harness/skills/, .harness/scripts/              # same layout as rust
 #     run-development.sh                              # root-level development wrapper
-#     <IDE adapter>, <approval config>, .harness/START-HERE.md
+#     <every IDE adapter/approval config>, .harness/START-HERE.md
+#
+# Optional, any engine (--with-gui):
+#     .harness/gui/                   # local GUI: drives Claude/Codex in background over the
+#                                      # wrapper(s) above and shows live progress + a
+#                                      # specs/sources manager. stdlib Python 3, no extra
+#                                      # dependency. Purely additive — doesn't change anything
+#                                      # else in the package.
 #
 # Usage:
-#   ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]
-#   ./package.sh                     # interactive mode (menus)
+#   ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] [--version <v>] [--with-gui]
+#   ./package.sh                     # interactive menu (engine, and OS for dotnet)
 #
 # --os/--rid only applies to --engine dotnet (Native AOT compiles per OS). The python
 # engine runs the same on any OS with the interpreter in PATH — there's no RID for it. The
@@ -42,6 +50,10 @@
 # cross-compile here, so the binary comes out native to the host this script ran on — the
 # <host-rid> in the package name is auto-detected (uname -s/-m), not selectable.
 # RIDs (--engine dotnet only): osx-arm64, osx-x64, linux-x64, linux-arm64, win-x64
+#
+# --ide is no longer needed: every package now bundles the adapter and approval config for
+# every supported IDE. The flag is still accepted for backward compatibility and ignored
+# (with a warning) so older invocations keep working.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,23 +61,67 @@ cd "$DIR"
 
 ENGINES=(dotnet python rust go)
 RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)
-IDES=(claude copilot devin codex)
+# Every package bundles all of these — this list is now for iteration only, never selection.
+IDES=(claude copilot devin codex kimi)
 # FLOWS is derived once ENGINE is known (see below, right after engine validation) —
 # `specification` only exists on the dotnet engine today (no python/rust/go port), so it's
 # only added to the list when packaging that engine.
 
 ENGINE=""
 RID=""
-IDE=""
+WITH_GUI=false
 VERSION_FILE="$DIR/VERSION"
 [[ -f "$VERSION_FILE" ]] || { echo "version file not found: $VERSION_FILE" >&2; exit 1; }
 REPOSITORY_VERSION="$(<"$VERSION_FILE")"
 VERSION="$REPOSITORY_VERSION"
 
+# ---- visual identity ----------------------------------------------------------------
+# Colors degrade to empty strings when stdout isn't a TTY or the terminal has no color
+# support (CI logs, redirected output) — the script stays perfectly readable either way.
+setup_colors() {
+  C_RESET=""; C_BOLD=""; C_DIM=""; C_CYAN=""; C_GREEN=""; C_YELLOW=""
+  if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
+    local ncolors
+    ncolors="$(tput colors 2>/dev/null || echo 0)"
+    if [[ "$ncolors" -ge 8 ]]; then
+      C_RESET="$(tput sgr0)"
+      C_BOLD="$(tput bold)"
+      C_DIM="$(tput dim 2>/dev/null || true)"
+      C_CYAN="$(tput setaf 6)"
+      C_GREEN="$(tput setaf 2)"
+      C_YELLOW="$(tput setaf 3)"
+    fi
+  fi
+}
+setup_colors
+
+print_logo() {
+  printf '%s%s' "$C_CYAN" "$C_BOLD"
+  cat <<'LOGO'
+
+  █████   ███    ███
+    █    █   █  █   █
+    █    █████  █   █
+    █    █   █  █   █
+  █████  █   █   ███
+LOGO
+  printf '%s' "$C_RESET"
+  printf '  %sInverted Agentic Orchestration%s %s·%s %spackage builder%s\n' \
+    "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET" "$C_DIM" "$C_RESET"
+  echo
+}
+
+print_logo
+
 usage() {
-  echo "usage: ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] --ide <claude|copilot|devin|codex> [--version <v>]"
+  echo "usage: ./package.sh --engine <dotnet|python|rust|go> [--os <rid>] [--version <v>] [--with-gui]"
+  echo "       ./package.sh                     # interactive menu"
+  echo
   echo "engines: ${ENGINES[*]}"
   echo "RIDs (--engine dotnet only): ${RIDS[*]}"
+  echo "--with-gui: also bundle .harness/gui/ (optional local control panel, any engine/IDE)"
+  echo
+  echo "IDE adapters (${IDES[*]}) are always bundled — no --ide selection needed anymore."
 }
 
 # Auto-detects a RID-like value to name the --engine rust/go package (neither cargo nor
@@ -92,14 +148,79 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --engine)   ENGINE="${2:-}"; shift 2;;
     --os|--rid) RID="${2:-}"; shift 2;;
-    --ide)      IDE="${2:-}"; shift 2;;
+    --ide)
+      echo "[package] [warning] --ide '${2:-}' ignored: every IDE adapter is bundled now, nothing to select." >&2
+      shift 2;;
     --version|-v) VERSION="${2:-}"; shift 2;;
+    --with-gui) WITH_GUI=true; shift;;
     -h|--help)  usage; exit 0;;
     *) echo "unknown argument: $1" >&2; usage; exit 1;;
   esac
 done
 
 contains() { local x; for x in "${@:2}"; do [[ "$x" == "$1" ]] && return 0; done; return 1; }
+
+# ---- interactive menu helpers ----
+# Custom numbered menus (instead of bash's plain `select`) for a clearer, branded prompt.
+# Decorative output goes to stderr; only the final selected value is written to stdout, so
+# these can be used directly in a command substitution (VAR="$(ask_engine)").
+engine_desc() { case "$1" in
+  dotnet) echo ".NET Native AOT — single self-contained binary";;
+  python) echo "Python engine — source, requires python3/python in PATH";;
+  rust)   echo "Rust native binary — cargo build --release";;
+  go)     echo "Go native binary — go build";;
+esac; }
+rid_desc() { case "$1" in
+  osx-arm64)   echo "macOS · Apple Silicon";;
+  osx-x64)     echo "macOS · Intel";;
+  linux-x64)   echo "Linux · x64";;
+  linux-arm64) echo "Linux · ARM64";;
+  win-x64)     echo "Windows · x64";;
+esac; }
+
+print_menu_header() {
+  printf '%s%s%s\n' "$C_BOLD" "$1" "$C_RESET" >&2
+}
+
+ask_engine() {
+  print_menu_header "Select the harness engine:" >&2
+  local i=1 e
+  for e in "${ENGINES[@]}"; do
+    printf '  %s%d)%s %s%-8s%s %s%s%s\n' \
+      "$C_CYAN" "$i" "$C_RESET" "$C_BOLD" "$e" "$C_RESET" "$C_DIM" "$(engine_desc "$e")" "$C_RESET" >&2
+    i=$((i + 1))
+  done
+  local choice
+  while true; do
+    printf '%sengine%s [1-%d]: ' "$C_BOLD" "$C_RESET" "${#ENGINES[@]}" >&2
+    read -r choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#ENGINES[@]} )); then
+      printf '%s\n' "${ENGINES[$((choice - 1))]}"
+      return 0
+    fi
+    printf '  %sinvalid choice%s — enter a number between 1 and %d\n' "$C_YELLOW" "$C_RESET" "${#ENGINES[@]}" >&2
+  done
+}
+
+ask_rid() {
+  print_menu_header "Select the operating system (RID):" >&2
+  local i=1 r
+  for r in "${RIDS[@]}"; do
+    printf '  %s%d)%s %s%-11s%s %s%s%s\n' \
+      "$C_CYAN" "$i" "$C_RESET" "$C_BOLD" "$r" "$C_RESET" "$C_DIM" "$(rid_desc "$r")" "$C_RESET" >&2
+    i=$((i + 1))
+  done
+  local choice
+  while true; do
+    printf '%sos%s [1-%d]: ' "$C_BOLD" "$C_RESET" "${#RIDS[@]}" >&2
+    read -r choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#RIDS[@]} )); then
+      printf '%s\n' "${RIDS[$((choice - 1))]}"
+      return 0
+    fi
+    printf '  %sinvalid choice%s — enter a number between 1 and %d\n' "$C_YELLOW" "$C_RESET" "${#RIDS[@]}" >&2
+  done
+}
 
 # ---- per-flow metadata ----
 project_for() { case "$1" in
@@ -122,21 +243,27 @@ wrapper_source_for() {
     dotnet:development)   echo "src/dotnet/run-development.sh";;
     dotnet:specification) echo "src/dotnet/run-specification.sh";;
     python:development)   echo "src/python/run-development-py.sh";;
+    python:specification) echo "src/python/run-specification-py.sh";;
     rust:development)     echo "src/rust/run-development-rs.sh";;
+    rust:specification)   echo "src/rust/run-specification-rs.sh";;
     go:development)       echo "src/go/run-development-go.sh";;
+    go:specification)     echo "src/go/run-specification-go.sh";;
   esac
 }
 # --engine python only: name of the package under src/python/ that implements the flow.
 python_module_for() { case "$1" in
   development) echo "flows_development";;
+  specification) echo "flows_specification";;
 esac; }
 # --engine rust only: name of the bin crate's binary under src/rust/ that implements the flow.
 rust_bin_for() { case "$1" in
   development) echo "flows_development";;
+  specification) echo "flows_specification";;
 esac; }
 # --engine go only: name of the main package's binary under src/go/ that implements the flow.
 go_bin_for() { case "$1" in
   development) echo "flowsdevelopment";;
+  specification) echo "flowsspecification";;
 esac; }
 # adapter per IDE+flow → "SRC<TAB>REL" (REL = path expected by the IDE inside the package)
 adapter_for() { case "$1:$2" in
@@ -148,22 +275,24 @@ adapter_for() { case "$1:$2" in
   devin:specification)   printf '%s\t%s\n' ".devin/workflows/specification.md"        ".devin/workflows/specification.md";;
   codex:development)     printf '%s\t%s\n' ".codex/agents/development.toml"           ".codex/agents/development.toml";;
   codex:specification)   printf '%s\t%s\n' ".codex/agents/specification.toml"         ".codex/agents/specification.toml";;
+  kimi:development)      printf '%s\t%s\n' ".kimi/agents/development.md"              ".kimi/agents/development.md";;
+  kimi:specification)    printf '%s\t%s\n' ".kimi/agents/specification.md"            ".kimi/agents/specification.md";;
+esac; }
+# Human-readable label per IDE, used in menus/docs.
+ide_label() { case "$1" in
+  claude)  echo "Claude Code";;
+  copilot) echo "GitHub Copilot";;
+  devin)   echo "Devin";;
+  codex)   echo "Codex";;
+  kimi)    echo "Kimi Code CLI";;
 esac; }
 
 # ---- interactive selection when missing ----
-if [[ -z "$ENGINE" ]]; then
-  echo "Select the harness engine:"
-  select e in "${ENGINES[@]}"; do [[ -n "${e:-}" ]] && ENGINE="$e" && break; done
-fi
+[[ -z "$ENGINE" ]] && ENGINE="$(ask_engine)"
 # RID only exists for the dotnet engine (Native AOT compiles per OS); the python engine
 # runs the same on any OS with the interpreter in PATH.
 if [[ "$ENGINE" == "dotnet" && -z "$RID" ]]; then
-  echo "Select the operating system (RID):"
-  select r in "${RIDS[@]}"; do [[ -n "${r:-}" ]] && RID="$r" && break; done
-fi
-if [[ -z "$IDE" ]]; then
-  echo "Select the IDE:"
-  select i in "${IDES[@]}"; do [[ -n "${i:-}" ]] && IDE="$i" && break; done
+  RID="$(ask_rid)"
 fi
 
 # ---- validation ----
@@ -178,14 +307,14 @@ elif [[ -n "$RID" ]]; then
   fi
   RID=""
 fi
-contains "$IDE" "${IDES[@]}" || { echo "invalid IDE: '$IDE' (use: ${IDES[*]})" >&2; exit 1; }
+if [[ "$WITH_GUI" == true && ! -d ".harness/gui" ]]; then
+  echo "--with-gui requested but .harness/gui/ does not exist in this checkout" >&2
+  exit 1
+fi
 
-# Every engine packages `development`. `specification` only exists on the dotnet engine
-# today — including it unconditionally would make packaging any other engine fail on a flow
-# it doesn't implement (the wrapper/adapter existence check right below validates every
-# entry in FLOWS up front, before any build work starts).
-FLOWS=(development)
-[[ "$ENGINE" == "dotnet" ]] && FLOWS+=(specification)
+# Every engine now ships both flows; the adapters are shared while each engine supplies its
+# own specification implementation and wrapper.
+FLOWS=(development specification)
 
 [[ -n "$VERSION" ]] || { echo "empty version" >&2; exit 1; }
 SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
@@ -200,15 +329,17 @@ fi
 
 bash "$DIR/.harness/scripts/check-development-contracts.sh"
 
-# the flow's adapter must exist for the chosen IDE
+# every flow's adapter must exist for every bundled IDE
 for flow in "${FLOWS[@]}"; do
-  IFS=$'\t' read -r src _rel < <(adapter_for "$IDE" "$flow")
-  [[ -f "$src" ]] || { echo "adapter not found: $src (ide=$IDE, flow=$flow)" >&2; exit 1; }
   wrapper_src="$(wrapper_source_for "$ENGINE" "$flow")"
   [[ -f "$wrapper_src" ]] || {
     echo "wrapper not found: $wrapper_src (engine=$ENGINE, flow=$flow)" >&2
     exit 1
   }
+  for ide in "${IDES[@]}"; do
+    IFS=$'\t' read -r src _rel < <(adapter_for "$ide" "$flow")
+    [[ -f "$src" ]] || { echo "adapter not found: $src (ide=$ide, flow=$flow)" >&2; exit 1; }
+  done
 done
 
 if [[ "$ENGINE" == "dotnet" ]]; then
@@ -241,9 +372,17 @@ fi
 echo "[package] assembling $OUT …"
 rm -rf "$OUT"
 mkdir -p "$OUT/.harness"
-cp .harness/index.html "$OUT/.harness/index.html"
-cp .harness/run.sh "$OUT/.harness/run.sh"
-chmod +x "$OUT/.harness/run.sh"
+if [[ "$WITH_GUI" == true ]]; then
+  # Optional local control panel: a stdlib-Python orchestrator that drives Claude/Codex in
+  # background over the wrapper(s) this package already installs, plus a specs/sources
+  # manager for the specification flow.
+  echo "[package] including optional GUI orchestrator (.harness/gui/)…"
+  mkdir -p "$OUT/.harness/gui"
+  cp .harness/gui/*.py "$OUT/.harness/gui/"
+  cp .harness/gui/index.html "$OUT/.harness/gui/index.html"
+  cp .harness/gui/run.sh "$OUT/.harness/gui/run.sh"
+  chmod +x "$OUT/.harness/gui/run.sh"
+fi
 [[ "$ENGINE" == "dotnet" || "$ENGINE" == "rust" || "$ENGINE" == "go" ]] && mkdir -p "$OUT/.harness/bin"
 cp -R .harness/skills "$OUT/.harness/skills"
 find "$OUT/.harness/skills" -name "__pycache__" -type d -prune -exec rm -rf {} +
@@ -252,8 +391,7 @@ cp harness.schema.json "$OUT/harness.schema.json"   # harness.json's own "$schem
 if contains specification "${FLOWS[@]}"; then
   # Specification publishes its bundle to specs/active/ — point the packaged Development's
   # docsFolder there by default so a downstream user who runs both flows gets the handoff
-  # for free, without extra configuration. Only rewritten when specification is actually
-  # bundled (dotnet engine); other engines keep the flat "specs" default.
+  # for free, without extra configuration.
   sed -i.bak 's/"docsFolder": *"specs"/"docsFolder": "specs\/active"/' "$OUT/harness.json"
   rm -f "$OUT/harness.json.bak"
 fi
@@ -274,7 +412,7 @@ if [[ "$ENGINE" == "python" ]]; then
   find "$OUT/.harness/bin/engine/harness_engine" -name "__pycache__" -type d -exec rm -rf {} +
 fi
 
-# ---- per flow: engine (.NET build or copy of the Python source), wrapper(s) and adapter ----
+# ---- per flow: engine (.NET build or copy of the Python source), wrapper and every IDE adapter ----
 AOT_FALLBACK_FLOWS=()
 for flow in "${FLOWS[@]}"; do
   wrapper="$(wrapper_for "$flow")"
@@ -397,15 +535,17 @@ EOF
   cp "$wrapper_src" "$OUT/$wrapper"
   chmod +x "$OUT/$wrapper"
 
-  # IDE adapter (at the path it expects)
-  IFS=$'\t' read -r src rel < <(adapter_for "$IDE" "$flow")
-  mkdir -p "$OUT/$(dirname "$rel")"
-  cp "$src" "$OUT/$rel"
+  # Every IDE adapter (at the path each IDE expects) — the package no longer picks one.
+  for ide in "${IDES[@]}"; do
+    IFS=$'\t' read -r src rel < <(adapter_for "$ide" "$flow")
+    mkdir -p "$OUT/$(dirname "$rel")"
+    cp "$src" "$OUT/$rel"
+  done
 done
 
-# ---- IDE approval config (wrappers run with no per-command prompt) ----
-# Wrapper base names actually included in this package (one per FLOWS entry) — feeds both
-# blocks below so a multi-flow dotnet package (development + specification) gets every
+# ---- IDE approval config, for every bundled IDE (wrappers run with no per-command prompt) ----
+# Wrapper base names actually included in this package (one per FLOWS entry) — feeds every
+# block below so a multi-flow dotnet package (development + specification) gets every
 # wrapper pre-approved, not just the first one.
 WRAPPER_BASES=()
 for _flow in "${FLOWS[@]}"; do
@@ -413,42 +553,43 @@ for _flow in "${FLOWS[@]}"; do
   WRAPPER_BASES+=("${_w%.sh}")
 done
 
-CONFROW=""
-case "$IDE" in
-  claude)
-    # permission allowlist: the agent drives the wrappers without asking for approval on each step
-    mkdir -p "$OUT/.claude"
-    ALLOW_VALUES=()
-    for _base in "${WRAPPER_BASES[@]}"; do
-      ALLOW_VALUES+=("Bash(./$_base.sh *)" "Bash(.harness/$_base.cmd *)")
-    done
-    ALLOW_VALUES+=("Bash(chmod +x *)")
-    {
-      echo '{'
-      echo '  "permissions": {'
-      echo '    "allow": ['
-      _last=$((${#ALLOW_VALUES[@]} - 1))
-      for _i in "${!ALLOW_VALUES[@]}"; do
-        if [[ $_i -eq $_last ]]; then
-          printf '      "%s"\n' "${ALLOW_VALUES[$_i]}"
-        else
-          printf '      "%s",\n' "${ALLOW_VALUES[$_i]}"
-        fi
+CONFROWS=""
+for ide in "${IDES[@]}"; do
+  case "$ide" in
+    claude)
+      # permission allowlist: the agent drives the wrappers without asking for approval on each step
+      mkdir -p "$OUT/.claude"
+      ALLOW_VALUES=()
+      for _base in "${WRAPPER_BASES[@]}"; do
+        ALLOW_VALUES+=("Bash(./$_base.sh *)" "Bash(.harness/$_base.cmd *)")
       done
-      echo '    ]'
-      echo '  }'
-      echo '}'
-    } > "$OUT/.claude/settings.json"
-    CONFROW="| \`.claude/settings.json\` | allowlist: wrappers run with no approval prompt |
+      ALLOW_VALUES+=("Bash(chmod +x *)")
+      {
+        echo '{'
+        echo '  "permissions": {'
+        echo '    "allow": ['
+        _last=$((${#ALLOW_VALUES[@]} - 1))
+        for _i in "${!ALLOW_VALUES[@]}"; do
+          if [[ $_i -eq $_last ]]; then
+            printf '      "%s"\n' "${ALLOW_VALUES[$_i]}"
+          else
+            printf '      "%s",\n' "${ALLOW_VALUES[$_i]}"
+          fi
+        done
+        echo '    ]'
+        echo '  }'
+        echo '}'
+      } > "$OUT/.claude/settings.json"
+      CONFROWS="$CONFROWS| \`.claude/settings.json\` | Claude Code: allowlist, wrappers run with no approval prompt |
 "
-    ;;
-  copilot)
-    # terminal auto-approve in agent mode (VS Code asks for a one-time confirmation
-    # to honor auto-approve coming from workspace settings). Written with a placeholder
-    # token instead of direct variable interpolation so the heredoc can stay single-quoted
-    # (byte-literal, no bash backslash processing that would corrupt the regex escaping).
-    mkdir -p "$OUT/.vscode"
-    cat > "$OUT/.vscode/settings.json" <<'EOF'
+      ;;
+    copilot)
+      # terminal auto-approve in agent mode (VS Code asks for a one-time confirmation
+      # to honor auto-approve coming from workspace settings). Written with a placeholder
+      # token instead of direct variable interpolation so the heredoc can stay single-quoted
+      # (byte-literal, no bash backslash processing that would corrupt the regex escaping).
+      mkdir -p "$OUT/.vscode"
+      cat > "$OUT/.vscode/settings.json" <<'EOF'
 {
   "chat.tools.terminal.autoApprove": {
     "/^\.\\/(__WRAPPER_ALT__)\\.sh\\b/": true,
@@ -458,53 +599,83 @@ case "$IDE" in
   }
 }
 EOF
-    WRAPPER_ALT="$(IFS='|'; echo "${WRAPPER_BASES[*]}")"
-    sed -i.bak "s#__WRAPPER_ALT__#$WRAPPER_ALT#g" "$OUT/.vscode/settings.json"
-    rm -f "$OUT/.vscode/settings.json.bak"
-    CONFROW="| \`.vscode/settings.json\` | terminal auto-approve: wrappers run with no prompt |
+      WRAPPER_ALT="$(IFS='|'; echo "${WRAPPER_BASES[*]}")"
+      sed -i.bak "s#__WRAPPER_ALT__#$WRAPPER_ALT#g" "$OUT/.vscode/settings.json"
+      rm -f "$OUT/.vscode/settings.json.bak"
+      CONFROWS="$CONFROWS| \`.vscode/settings.json\` | GitHub Copilot: terminal auto-approve, wrappers run with no prompt |
 "
-    ;;
-  devin)
-    # nothing to generate: the copied workflows already bring auto_execution_mode: 3 (auto-exec)
-    ;;
-  codex)
-    # Codex doesn't read workspace approval config; the instruction goes in START-HERE
-    ;;
-esac
+      ;;
+    devin)
+      # nothing to generate: the copied workflows already bring auto_execution_mode: 3 (auto-exec)
+      ;;
+    codex)
+      # Codex doesn't read workspace approval config; the instruction goes in START-HERE
+      ;;
+    kimi)
+      # No known workspace-level trust/approval config file for Kimi Code CLI; non-interactive
+      # `-p` mode has no approval channel to begin with (see .harness/gui/drivers.py). The
+      # launch instruction goes in START-HERE, like Codex.
+      ;;
+  esac
+done
 
-# ---- per-IDE start instructions ----
-DEV_REL="$(adapter_for "$IDE" development | cut -f2)"
+# ---- start instructions, per bundled IDE ----
 HAS_SPEC=false
 contains specification "${FLOWS[@]}" && HAS_SPEC=true
-SPEC_REL=""
-$HAS_SPEC && SPEC_REL="$(adapter_for "$IDE" specification | cut -f2)"
 
-case "$IDE" in
-  claude)
-    START="1. Open **this folder** in Claude Code.
+DEV_REL_claude="$(adapter_for claude development | cut -f2)"
+DEV_REL_copilot="$(adapter_for copilot development | cut -f2)"
+DEV_REL_devin="$(adapter_for devin development | cut -f2)"
+DEV_REL_codex="$(adapter_for codex development | cut -f2)"
+DEV_REL_kimi="$(adapter_for kimi development | cut -f2)"
+SPEC_REL_claude=""; SPEC_REL_copilot=""; SPEC_REL_devin=""; SPEC_REL_codex=""; SPEC_REL_kimi=""
+if $HAS_SPEC; then
+  SPEC_REL_claude="$(adapter_for claude specification | cut -f2)"
+  SPEC_REL_copilot="$(adapter_for copilot specification | cut -f2)"
+  SPEC_REL_devin="$(adapter_for devin specification | cut -f2)"
+  SPEC_REL_codex="$(adapter_for codex specification | cut -f2)"
+  SPEC_REL_kimi="$(adapter_for kimi specification | cut -f2)"
+fi
+
+START="Pick whichever IDE agent is on this machine — every adapter below is already in the package, no rebuild needed to switch.
+
+### Claude Code
+1. Open **this folder** in Claude Code.
 2. **Development:** \`/agents\` → **development** and ask *\"Develop: <project goal>\"*. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass."
-    $HAS_SPEC && START="$START
+$HAS_SPEC && START="$START
 3. **Specification:** \`/agents\` → **specification** and ask it to frame your idea (point it at a sources folder with product docs/transcripts/notes if you have one). The agent drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
-    ;;
-  copilot)
-    START="1. Open **this folder** in VS Code with GitHub Copilot in **agent mode**.
+
+START="$START
+
+### GitHub Copilot
+1. Open **this folder** in VS Code with GitHub Copilot in **agent mode**.
 2. **Development:** select the **development** prompt file (\`.github/prompts/development.prompt.md\`) and ask *\"Develop: <project goal>\"*. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass."
-    $HAS_SPEC && START="$START
+$HAS_SPEC && START="$START
 3. **Specification:** select the **specification** prompt file (\`.github/prompts/specification.prompt.md\`) and ask it to frame your idea. The agent drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
-    ;;
-  devin)
-    START="1. Open **this folder** as a workspace in Devin Desktop (the workflows are already under \`.devin/workflows/\`).
+
+START="$START
+
+### Devin
+1. Open **this folder** as a workspace in Devin Desktop (the workflows are already under \`.devin/workflows/\`).
 2. **Development:** invoke \`/development\` and ask *\"Develop: <project goal>\"*. Devin drives \`./run-development.sh\`, one feature at a time, until they all pass."
-    $HAS_SPEC && START="$START
+$HAS_SPEC && START="$START
 3. **Specification:** invoke \`/specification\` and ask it to frame your idea. Devin drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
-    ;;
-  codex)
-    START="1. Open **this folder** in Codex. For the wrapper to run without per-command approval, start with \`codex --ask-for-approval never --sandbox workspace-write\` (Codex doesn't read workspace approval config).
+
+START="$START
+
+### Codex
+1. Open **this folder** in Codex. For the wrapper to run without per-command approval, start with \`codex --ask-for-approval never --sandbox workspace-write\` (Codex doesn't read workspace approval config).
 2. **Development:** ask *\"Use the custom development agent to develop: <project goal>\"*. The agent at \`.codex/agents/development.toml\` drives \`./run-development.sh\`, one feature at a time, until they all pass."
-    $HAS_SPEC && START="$START
+$HAS_SPEC && START="$START
 3. **Specification:** ask *\"Use the custom specification agent to frame: <your idea>\"*. The agent at \`.codex/agents/specification.toml\` drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
-    ;;
-esac
+
+START="$START
+
+### Kimi Code CLI
+1. Open **this folder** in a terminal (\`kimi\` reads the workspace from the current directory). Launch each run with \`--agent-file\` pointing at the adapter below — non-interactive \`-p\` mode needs no extra approval flag.
+2. **Development:** \`kimi -p \"Develop: <project goal>\" --agent-file .kimi/agents/development.md\`. The agent drives \`./run-development.sh\`, one feature at a time, until they all pass."
+$HAS_SPEC && START="$START
+3. **Specification:** \`kimi -p \"Frame: <your idea>\" --agent-file .kimi/agents/specification.md\`. The agent drives \`./run-specification.sh\` from idea through publish (\`specs/active/\`), which Development can then read as its brief."
 
 WINROW=""
 if { [[ "$ENGINE" == "dotnet" ]] && [[ "$RID" == win-* ]]; } \
@@ -531,35 +702,35 @@ doesn't cross-compile).
 fi
 
 if [[ "$ENGINE" == "dotnet" ]]; then
-  TITLE_META="$RID · v$VERSION · IDE: $IDE · engine: dotnet (Native AOT)"
+  TITLE_META="$RID · v$VERSION · engine: dotnet (Native AOT)"
   if $HAS_SPEC; then
     ENGINE_INTRO="Self-contained package with the development and specification flows as native
-binaries (no .NET runtime), plus the skills and the matching IDE adapters."
+binaries (no .NET runtime), plus the skills and every supported IDE adapter."
     ENGINE_ROW="| \`.harness/bin/Flows.Development$WINEXT\` | native binary of the development flow |
 | \`.harness/bin/Flows.Specification$WINEXT\` | native binary of the specification flow |"
   else
     ENGINE_INTRO="Self-contained package with the development flow as a native binary (no .NET runtime),
-plus the skills and the matching IDE adapter."
+plus the skills and every supported IDE adapter."
     ENGINE_ROW="| \`.harness/bin/Flows.Development$WINEXT\` | native binary of the development flow |"
   fi
 elif [[ "$ENGINE" == "rust" ]]; then
-  TITLE_META="$HOSTRID · v$VERSION · IDE: $IDE · engine: rust (native)"
+  TITLE_META="$HOSTRID · v$VERSION · engine: rust (native)"
   ENGINE_INTRO="Self-contained package with the development flow as a native Rust binary (compiled via
-\`cargo build --release\`, no runtime required on the target machine), plus the skills and the
-matching IDE adapter. **The binary is native to the host where \`package.sh\` ran** — \`cargo\`
-doesn't cross-compile here, so build the package on the same OS/architecture as the target."
+\`cargo build --release\`, no runtime required on the target machine), plus the skills and
+every supported IDE adapter. **The binary is native to the host where \`package.sh\` ran** —
+\`cargo\` doesn't cross-compile here, so build the package on the same OS/architecture as the target."
   ENGINE_ROW="| \`.harness/bin/flows_development$WINEXT\` | native (Rust) binary of the development flow |"
 elif [[ "$ENGINE" == "go" ]]; then
-  TITLE_META="$HOSTRID · v$VERSION · IDE: $IDE · engine: go (native)"
+  TITLE_META="$HOSTRID · v$VERSION · engine: go (native)"
   ENGINE_INTRO="Self-contained package with the development flow as a native Go binary (compiled via
-\`go build\`, no runtime required on the target machine), plus the skills and the matching IDE
-adapter. **The binary is native to the host where \`package.sh\` ran** — this script doesn't
+\`go build\`, no runtime required on the target machine), plus the skills and every supported
+IDE adapter. **The binary is native to the host where \`package.sh\` ran** — this script doesn't
 cross-compile (GOOS/GOARCH) here, so build the package on the same OS/architecture as the target."
   ENGINE_ROW="| \`.harness/bin/flowsdevelopment$WINEXT\` | native (Go) binary of the development flow |"
 else
-  TITLE_META="python · v$VERSION · IDE: $IDE · engine: python"
+  TITLE_META="python · v$VERSION · engine: python"
   ENGINE_INTRO="Package with the development flow on the Python engine (\`.harness/bin/engine/\`, source — no build),
-plus the skills and the matching IDE adapter. **Requires \`python3\` (macOS/Linux) or
+plus the skills and every supported IDE adapter. **Requires \`python3\` (macOS/Linux) or
 \`python\` (Windows) in the target machine's PATH** — unlike the \`--engine dotnet\` package,
 this one doesn't embed a self-contained binary."
   ENGINE_ROW="| \`.harness/bin/engine/\` | Python engine — \`harness_engine/\` + \`flows_development/\` (source, requires python3/python in PATH) |"
@@ -568,7 +739,11 @@ fi
 SPEC_BLURB=""
 QUICK_TEST_SPEC=""
 WRAPPER_ROW="| \`run-development.sh\` | execution wrapper (development) |"
-ADAPTER_ROWS="| \`$DEV_REL\` | development adapter for the chosen IDE |"
+ADAPTER_ROWS="| \`$DEV_REL_claude\` | development adapter — Claude Code |
+| \`$DEV_REL_copilot\` | development adapter — GitHub Copilot |
+| \`$DEV_REL_devin\` | development adapter — Devin |
+| \`$DEV_REL_codex\` | development adapter — Codex |
+| \`$DEV_REL_kimi\` | development adapter — Kimi Code CLI |"
 if $HAS_SPEC; then
   SPEC_BLURB=" Specification takes an idea (plus an optional sources folder of product
 docs/transcripts/notes) through PRD/SRS/SDD/readiness/approval and publishes to
@@ -581,8 +756,37 @@ docs/transcripts/notes) through PRD/SRS/SDD/readiness/approval and publishes to
 \`\`\`"
   WRAPPER_ROW="| \`run-development.sh\` | execution wrapper (development) |
 | \`run-specification.sh\` | execution wrapper (specification) |"
-  ADAPTER_ROWS="| \`$DEV_REL\` | development adapter for the chosen IDE |
-| \`$SPEC_REL\` | specification adapter for the chosen IDE |"
+  ADAPTER_ROWS="$ADAPTER_ROWS
+| \`$SPEC_REL_claude\` | specification adapter — Claude Code |
+| \`$SPEC_REL_copilot\` | specification adapter — GitHub Copilot |
+| \`$SPEC_REL_devin\` | specification adapter — Devin |
+| \`$SPEC_REL_codex\` | specification adapter — Codex |
+| \`$SPEC_REL_kimi\` | specification adapter — Kimi Code CLI |"
+fi
+
+GUI_ROW=""
+GUI_SECTION=""
+if [[ "$WITH_GUI" == true ]]; then
+  GUI_ROW="| \`.harness/gui/\` | optional local GUI (control panel + monitor + specs/sources manager) |
+"
+  # Built as a plain top-level if/else (not a "$HAS_SPEC && …" idiom nested inside a $(...)
+  # substitution) — under `set -e`, a failing command substitution embedded in an assignment
+  # aborts the script immediately, and $HAS_SPEC expands to the literal command `false` when
+  # unset, which is exactly the failure this sidesteps.
+  GUI_SPEC_NOTE=""
+  $HAS_SPEC && GUI_SPEC_NOTE=" It also manages \`specs/sources/\` for the specification flow directly from the browser."
+  DEV_WRAPPER="$(wrapper_for development)"
+  GUI_SECTION="
+## Optional GUI
+
+Prefer a graphical control panel over the IDE agent? Run \`./.harness/gui/run.sh\` (stdlib
+Python 3, no extra dependency) and open **http://127.0.0.1:8787**. Pick the driver (Claude or
+Codex — whichever CLI is on this machine's PATH) and the flow, confirm the autonomy warning
+(it writes files and can commit without review, same as driving it by hand), and click
+**Start**. It runs the driver in the background over the same \`$DEV_WRAPPER\`
+you'd invoke manually, and shows live progress with backlog/trace panels right in the
+browser.$GUI_SPEC_NOTE
+"
 fi
 
 cat > "$OUT/.harness/START-HERE.md" <<EOF
@@ -595,7 +799,7 @@ $FALLBACK_NOTE
 ## Getting started
 
 $START
-
+$GUI_SECTION
 ## Quick test (no IDE)
 
 \`\`\`bash
@@ -614,13 +818,13 @@ $ENGINE_ROW
 | \`harness.schema.json\` | editor validation/autocomplete for \`harness.json\` (ignored by the harness itself) |
 $WRAPPER_ROW
 $WINROW$ADAPTER_ROWS
-$CONFROW
+$GUI_ROW$CONFROWS
 EOF
 
 if [[ ${#AOT_FALLBACK_FLOWS[@]} -gt 0 ]]; then
   echo "[package] [warning] published with self-contained fallback (no Native AOT) for: ${AOT_FALLBACK_FLOWS[*]} — see .harness/START-HERE.md" >&2
 fi
 
-echo "[package] done ✓  → $OUT"
+echo "${C_GREEN}[package] done ✓${C_RESET}  → $OUT"
 echo "[package] contents:"
 find "$OUT" -type f | sed "s|^$OUT/|  |" | sort

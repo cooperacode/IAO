@@ -19,7 +19,11 @@ pub struct HarnessState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<HashMap<String, String>>,
     /// Hard-stop latch that survives the next fresh process invocation.
-    #[serde(rename = "terminalReason", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "terminalReason",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub terminal_reason: Option<String>,
 }
 

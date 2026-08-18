@@ -16,6 +16,30 @@ func TestConfig_Load_MissingFile_UsesDefaults(t *testing.T) {
 	if config.MaxSteps != 12 || config.MaxInstructionChars != 0 || config.DocsFolder != "specs" || config.TimeoutMs != 10*60_000 {
 		t.Fatalf("unexpected config: %+v", config)
 	}
+	if config.MaxFeatures != 10 || config.StepsPerFeature != 8 || config.MaxReplans != 2 {
+		t.Fatalf("unexpected config: %+v", config)
+	}
+}
+
+func TestConfig_Load_WithDevelopmentGuards_ReadsAndNormalizes(t *testing.T) {
+	isolate(t)
+
+	os.WriteFile("harness.json", []byte(`{"maxFeatures":5,"stepsPerFeature":4,"maxReplans":1}`), 0o644)
+
+	config := LoadConfig()
+	if config.MaxFeatures != 5 || config.StepsPerFeature != 4 || config.MaxReplans != 1 {
+		t.Fatalf("unexpected config: %+v", config)
+	}
+
+	// Non-positive values fall back to the default — same tolerance as the rest of the
+	// config: it's optional input, it can't bring down the run.
+	os.WriteFile("harness.json", []byte(`{"maxFeatures":0,"stepsPerFeature":-1,"maxReplans":0}`), 0o644)
+
+	fallback := LoadConfig()
+	def := DefaultHarnessConfig()
+	if fallback.MaxFeatures != def.MaxFeatures || fallback.StepsPerFeature != def.StepsPerFeature || fallback.MaxReplans != def.MaxReplans {
+		t.Fatalf("unexpected config: %+v", fallback)
+	}
 }
 
 func TestConfig_Load_WithTimeout_ReadsAndNormalizes(t *testing.T) {

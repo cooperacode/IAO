@@ -42,7 +42,10 @@ pub struct PlanDiff {
 
 impl PlanDiff {
     pub fn has_changes(&self) -> bool {
-        !self.added.is_empty() || !self.removed.is_empty() || !self.modified.is_empty() || !self.reprioritized.is_empty()
+        !self.added.is_empty()
+            || !self.removed.is_empty()
+            || !self.modified.is_empty()
+            || !self.reprioritized.is_empty()
     }
 }
 
@@ -92,7 +95,11 @@ pub fn evaluate(
     let diff = build_diff(current, proposed);
 
     if revision.reason.trim().is_empty() {
-        push_error(&mut errors, "REVISION_REASON_REQUIRED", "A revision reason is required.".to_string());
+        push_error(
+            &mut errors,
+            "REVISION_REASON_REQUIRED",
+            "A revision reason is required.".to_string(),
+        );
     }
 
     let mut seen_alternatives = HashSet::new();
@@ -104,16 +111,31 @@ pub fn evaluate(
         .filter(|a| seen_alternatives.insert(a.clone()))
         .collect();
     if alternatives.len() < 2 {
-        push_error(&mut errors, "ALTERNATIVES_REQUIRED", "At least two distinct alternatives are required.".to_string());
+        push_error(
+            &mut errors,
+            "ALTERNATIVES_REQUIRED",
+            "At least two distinct alternatives are required.".to_string(),
+        );
     }
 
     if proposed.is_empty() {
-        push_error(&mut errors, "PLAN_EMPTY", "The revised plan must contain features.".to_string());
+        push_error(
+            &mut errors,
+            "PLAN_EMPTY",
+            "The revised plan must contain features.".to_string(),
+        );
     }
     if proposed.len() > max_features {
-        push_error(&mut errors, "FEATURE_LIMIT", format!("The revised plan exceeds the {max_features}-feature limit."));
+        push_error(
+            &mut errors,
+            "FEATURE_LIMIT",
+            format!("The revised plan exceeds the {max_features}-feature limit."),
+        );
     }
-    if proposed.iter().any(|f| f.id <= 0 || f.title.trim().is_empty() || f.priority <= 0) {
+    if proposed
+        .iter()
+        .any(|f| f.id <= 0 || f.title.trim().is_empty() || f.priority <= 0)
+    {
         push_error(
             &mut errors,
             "FEATURE_INVALID",
@@ -124,16 +146,28 @@ pub fn evaluate(
         let mut seen_ids = HashSet::new();
         let unique_count = proposed.iter().filter(|f| seen_ids.insert(f.id)).count();
         if unique_count != proposed.len() {
-            push_error(&mut errors, "FEATURE_ID_DUPLICATE", "Feature ids must be unique.".to_string());
+            push_error(
+                &mut errors,
+                "FEATURE_ID_DUPLICATE",
+                "Feature ids must be unique.".to_string(),
+            );
         }
     }
 
     for passed in current.iter().filter(|f| f.passes) {
         match proposed_by_id.get(&passed.id) {
-            None => push_error(&mut errors, "PASSED_FEATURE_REMOVED", format!("Passed feature #{} cannot be removed.", passed.id)),
+            None => push_error(
+                &mut errors,
+                "PASSED_FEATURE_REMOVED",
+                format!("Passed feature #{} cannot be removed.", passed.id),
+            ),
             Some(retained) => {
                 if !same_definition(passed, retained) {
-                    push_error(&mut errors, "PASSED_FEATURE_MODIFIED", format!("Passed feature #{} cannot be modified.", passed.id));
+                    push_error(
+                        &mut errors,
+                        "PASSED_FEATURE_MODIFIED",
+                        format!("Passed feature #{} cannot be modified.", passed.id),
+                    );
                 }
             }
         }
@@ -143,34 +177,67 @@ pub fn evaluate(
     validate_graph(proposed, &passed_ids, &mut errors);
 
     for reference in &diff.removed_references {
-        push_error(&mut errors, "REQUIREMENT_COVERAGE_REMOVED", format!("Brief reference '{reference}' is no longer covered."));
+        push_error(
+            &mut errors,
+            "REQUIREMENT_COVERAGE_REMOVED",
+            format!("Brief reference '{reference}' is no longer covered."),
+        );
     }
     for acceptance in &diff.removed_acceptance_criteria {
-        push_error(&mut errors, "ACCEPTANCE_REMOVED", format!("Acceptance criterion '{acceptance}' is no longer covered."));
+        push_error(
+            &mut errors,
+            "ACCEPTANCE_REMOVED",
+            format!("Acceptance criterion '{acceptance}' is no longer covered."),
+        );
     }
 
     let known_observation_ids: HashSet<&str> = observations.iter().map(|o| o.id.as_str()).collect();
     if revision.based_on_observation_ids.is_empty() {
-        push_error(&mut errors, "OBSERVATION_REQUIRED", "The revision must cite at least one persisted observation.".to_string());
+        push_error(
+            &mut errors,
+            "OBSERVATION_REQUIRED",
+            "The revision must cite at least one persisted observation.".to_string(),
+        );
     }
     let mut seen_observations = HashSet::new();
-    for id in revision.based_on_observation_ids.iter().filter(|id| seen_observations.insert(id.as_str())) {
+    for id in revision
+        .based_on_observation_ids
+        .iter()
+        .filter(|id| seen_observations.insert(id.as_str()))
+    {
         if !known_observation_ids.contains(id.as_str()) {
-            push_error(&mut errors, "OBSERVATION_UNKNOWN", format!("Observation '{id}' does not exist in the run evidence."));
+            push_error(
+                &mut errors,
+                "OBSERVATION_UNKNOWN",
+                format!("Observation '{id}' does not exist in the run evidence."),
+            );
         }
     }
 
     if !diff.has_changes() {
-        push_error(&mut errors, "PLAN_UNCHANGED", "The revision does not change the current plan.".to_string());
+        push_error(
+            &mut errors,
+            "PLAN_UNCHANGED",
+            "The revision does not change the current plan.".to_string(),
+        );
     }
     let fingerprint = crate::plan_revision_store::fingerprint(proposed);
     if crate::plan_revision_store::has_plan_fingerprint(&fingerprint) {
-        push_error(&mut errors, "PLAN_REPEATED", "The same revised plan was already applied in this run.".to_string());
+        push_error(
+            &mut errors,
+            "PLAN_REPEATED",
+            "The same revised plan was already applied in this run.".to_string(),
+        );
     }
 
     let pending = proposed
         .iter()
-        .filter(|f| !current_by_id.get(&f.id).map(|old| old.passes).unwrap_or(false))
+        .filter(|f| {
+            !current_by_id
+                .get(&f.id)
+                .map(|old| old.passes)
+                .unwrap_or(false)
+        })
         .count() as i32;
     let worst_case_steps = pending * steps_per_feature;
     if remaining_steps >= 0 && worst_case_steps > remaining_steps {
@@ -203,12 +270,24 @@ fn build_diff(current: &[Feature], proposed: &[Feature]) -> PlanDiff {
         after.entry(f.id).or_insert(f);
     }
 
-    let mut added: Vec<i32> = after.keys().filter(|id| !before.contains_key(id)).copied().collect();
+    let mut added: Vec<i32> = after
+        .keys()
+        .filter(|id| !before.contains_key(id))
+        .copied()
+        .collect();
     added.sort_unstable();
-    let mut removed: Vec<i32> = before.keys().filter(|id| !after.contains_key(id)).copied().collect();
+    let mut removed: Vec<i32> = before
+        .keys()
+        .filter(|id| !after.contains_key(id))
+        .copied()
+        .collect();
     removed.sort_unstable();
 
-    let common: Vec<i32> = before.keys().filter(|id| after.contains_key(id)).copied().collect();
+    let common: Vec<i32> = before
+        .keys()
+        .filter(|id| after.contains_key(id))
+        .copied()
+        .collect();
     let mut reprioritized: Vec<i32> = common
         .iter()
         .filter(|id| before[id].priority != after[id].priority)
@@ -285,7 +364,11 @@ fn normalize(value: &str) -> String {
 // `None`/no-op equivalent: if duplicate ids are present the FEATURE_ID_DUPLICATE error was
 // already raised above and the graph can't be meaningfully validated — mirrors `.NET`'s
 // early return.
-fn validate_graph(features: &[Feature], passed_ids: &HashSet<i32>, errors: &mut Vec<PlanRevisionIssue>) {
+fn validate_graph(
+    features: &[Feature],
+    passed_ids: &HashSet<i32>,
+    errors: &mut Vec<PlanRevisionIssue>,
+) {
     let mut seen_ids = HashSet::new();
     let distinct_count = features.iter().filter(|f| seen_ids.insert(f.id)).count();
     if distinct_count != features.len() {
@@ -295,13 +378,28 @@ fn validate_graph(features: &[Feature], passed_ids: &HashSet<i32>, errors: &mut 
     let ids: HashSet<i32> = features.iter().map(|f| f.id).collect();
     for feature in features {
         if feature.depends_on.contains(&feature.id) {
-            push_error(errors, "SELF_DEPENDENCY", format!("Feature #{} depends on itself.", feature.id));
+            push_error(
+                errors,
+                "SELF_DEPENDENCY",
+                format!("Feature #{} depends on itself.", feature.id),
+            );
         }
         for &missing in feature.depends_on.iter().filter(|d| !ids.contains(d)) {
-            push_error(errors, "DEPENDENCY_MISSING", format!("Feature #{} depends on missing feature #{missing}.", feature.id));
+            push_error(
+                errors,
+                "DEPENDENCY_MISSING",
+                format!(
+                    "Feature #{} depends on missing feature #{missing}.",
+                    feature.id
+                ),
+            );
         }
     }
-    if features.iter().flat_map(|f| f.depends_on.iter()).any(|id| !ids.contains(id)) {
+    if features
+        .iter()
+        .flat_map(|f| f.depends_on.iter())
+        .any(|id| !ids.contains(id))
+    {
         return;
     }
 
@@ -315,7 +413,11 @@ fn validate_graph(features: &[Feature], passed_ids: &HashSet<i32>, errors: &mut 
         }
     }
 
-    let mut queue: VecDeque<i32> = indegree.iter().filter(|&(_, &d)| d == 0).map(|(&id, _)| id).collect();
+    let mut queue: VecDeque<i32> = indegree
+        .iter()
+        .filter(|&(_, &d)| d == 0)
+        .map(|(&id, _)| id)
+        .collect();
     let mut resolved = 0i32;
     while let Some(id) = queue.pop_front() {
         resolved += 1;
@@ -331,12 +433,27 @@ fn validate_graph(features: &[Feature], passed_ids: &HashSet<i32>, errors: &mut 
         }
     }
     if resolved as usize != features.len() {
-        push_error(errors, "DEPENDENCY_CYCLE", "The revised dependency graph contains a cycle.".to_string());
+        push_error(
+            errors,
+            "DEPENDENCY_CYCLE",
+            "The revised dependency graph contains a cycle.".to_string(),
+        );
     }
 
-    let pending: Vec<&Feature> = features.iter().filter(|f| !passed_ids.contains(&f.id)).collect();
-    if !pending.is_empty() && !pending.iter().any(|f| f.depends_on.iter().all(|d| passed_ids.contains(d))) {
-        push_error(errors, "PLAN_NO_READY_FEATURE", "The revised plan has pending work but no executable feature.".to_string());
+    let pending: Vec<&Feature> = features
+        .iter()
+        .filter(|f| !passed_ids.contains(&f.id))
+        .collect();
+    if !pending.is_empty()
+        && !pending
+            .iter()
+            .any(|f| f.depends_on.iter().all(|d| passed_ids.contains(d)))
+    {
+        push_error(
+            errors,
+            "PLAN_NO_READY_FEATURE",
+            "The revised plan has pending work but no executable feature.".to_string(),
+        );
     }
 }
 
@@ -353,6 +470,7 @@ fn same_definition_except_priority(left: &Feature, right: &Feature) -> bool {
         && left.depends_on == right.depends_on
         && left.references == right.references
         && left.implementation_context.requirements == right.implementation_context.requirements
+        && left.implementation_context.decisions == right.implementation_context.decisions
         && left.implementation_context.constraints == right.implementation_context.constraints
         && left.implementation_context.files == right.implementation_context.files
         && left.implementation_context.acceptance == right.implementation_context.acceptance
@@ -428,7 +546,12 @@ mod tests {
     fn aprova_mudanca_rastreavel_que_preserva_cobertura() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let observation = crate::plan_observation_store::append("verification_failure", Some(2), "API verification failed repeatedly.", &["exit 1"]);
+        let observation = crate::plan_observation_store::append(
+            "verification_failure",
+            Some(2),
+            "API verification failed repeatedly.",
+            &["exit 1"],
+        );
 
         let current = vec![feature_with_coverage(1, "API", 2, false)];
         let revised = revision(
@@ -442,7 +565,14 @@ mod tests {
             &observation.id,
         );
 
-        let result = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 80, 8);
+        let result = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            80,
+            8,
+        );
 
         assert_eq!(result.verdict, PlanRevisionVerdict::Approve);
         assert!(result.errors.is_empty());
@@ -454,15 +584,32 @@ mod tests {
     fn rejeita_perda_de_referencia_e_acceptance() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let observation = crate::plan_observation_store::append("verification_failure", Some(2), "API verification failed repeatedly.", &["exit 1"]);
+        let observation = crate::plan_observation_store::append(
+            "verification_failure",
+            Some(2),
+            "API verification failed repeatedly.",
+            &["exit 1"],
+        );
 
         let current = vec![feature_with_coverage(1, "API", 2, false)];
         let revised = revision(vec![feature(1, "API reduced", 2)], &observation.id);
 
-        let result = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 80, 8);
+        let result = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            80,
+            8,
+        );
 
         assert_eq!(result.verdict, PlanRevisionVerdict::Reject);
-        assert!(result.errors.iter().any(|e| e.code == "REQUIREMENT_COVERAGE_REMOVED"));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "REQUIREMENT_COVERAGE_REMOVED")
+        );
         assert!(result.errors.iter().any(|e| e.code == "ACCEPTANCE_REMOVED"));
     }
 
@@ -481,7 +628,12 @@ mod tests {
 
         let result = evaluate(&current, &revised, &[], 10, 80, 8);
 
-        assert!(result.errors.iter().any(|e| e.code == "OBSERVATION_UNKNOWN"));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "OBSERVATION_UNKNOWN")
+        );
         assert!(result.errors.iter().any(|e| e.code == "PLAN_UNCHANGED"));
     }
 
@@ -489,12 +641,27 @@ mod tests {
     fn aprova_com_aviso_quando_orcamento_pode_ser_insuficiente() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let observation = crate::plan_observation_store::append("verification_failure", Some(2), "API verification failed repeatedly.", &["exit 1"]);
+        let observation = crate::plan_observation_store::append(
+            "verification_failure",
+            Some(2),
+            "API verification failed repeatedly.",
+            &["exit 1"],
+        );
 
         let current = vec![feature(1, "API", 1)];
-        let revised = revision(vec![feature(1, "API", 2), feature(2, "Auth", 1)], &observation.id);
+        let revised = revision(
+            vec![feature(1, "API", 2), feature(2, "Auth", 1)],
+            &observation.id,
+        );
 
-        let result = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 4, 8);
+        let result = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            4,
+            8,
+        );
 
         assert_eq!(result.verdict, PlanRevisionVerdict::ApproveWithWarnings);
         assert!(result.warnings.iter().any(|w| w.code == "BUDGET_RISK"));
@@ -504,7 +671,12 @@ mod tests {
     fn rejeita_plano_ja_aplicado_no_historico() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let observation = crate::plan_observation_store::append("verification_failure", Some(2), "API verification failed repeatedly.", &["exit 1"]);
+        let observation = crate::plan_observation_store::append(
+            "verification_failure",
+            Some(2),
+            "API verification failed repeatedly.",
+            &["exit 1"],
+        );
 
         let current = vec![feature(1, "API", 2)];
         let revised = revision(
@@ -517,10 +689,24 @@ mod tests {
             ],
             &observation.id,
         );
-        let first = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 80, 8);
+        let first = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            80,
+            8,
+        );
         crate::plan_revision_store::record(&revised, &revised.revised_features, &first);
 
-        let repeated = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 80, 8);
+        let repeated = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            80,
+            8,
+        );
 
         assert!(repeated.errors.iter().any(|e| e.code == "PLAN_REPEATED"));
     }
@@ -529,22 +715,47 @@ mod tests {
     fn rejeita_remocao_de_feature_passada() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let observation = crate::plan_observation_store::append("verification_failure", Some(2), "API verification failed repeatedly.", &["exit 1"]);
+        let observation = crate::plan_observation_store::append(
+            "verification_failure",
+            Some(2),
+            "API verification failed repeatedly.",
+            &["exit 1"],
+        );
 
-        let current = vec![feature_with_coverage(1, "API", 2, true), feature(2, "Auth", 1)];
+        let current = vec![
+            feature_with_coverage(1, "API", 2, true),
+            feature(2, "Auth", 1),
+        ];
         let revised = revision(vec![feature(2, "Auth", 1)], &observation.id);
 
-        let result = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 80, 8);
+        let result = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            80,
+            8,
+        );
 
         assert_eq!(result.verdict, PlanRevisionVerdict::Reject);
-        assert!(result.errors.iter().any(|e| e.code == "PASSED_FEATURE_REMOVED"));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.code == "PASSED_FEATURE_REMOVED")
+        );
     }
 
     #[test]
     fn rejeita_ciclo_de_dependencia() {
         let _guard = lock_cwd();
         let _iso = Isolated::new();
-        let observation = crate::plan_observation_store::append("verification_failure", Some(2), "API verification failed repeatedly.", &["exit 1"]);
+        let observation = crate::plan_observation_store::append(
+            "verification_failure",
+            Some(2),
+            "API verification failed repeatedly.",
+            &["exit 1"],
+        );
 
         let current = vec![feature(1, "A", 1)];
         let revised = revision(
@@ -561,7 +772,14 @@ mod tests {
             &observation.id,
         );
 
-        let result = evaluate(&current, &revised, &crate::plan_observation_store::load(), 10, 80, 8);
+        let result = evaluate(
+            &current,
+            &revised,
+            &crate::plan_observation_store::load(),
+            10,
+            80,
+            8,
+        );
 
         assert_eq!(result.verdict, PlanRevisionVerdict::Reject);
         assert!(result.errors.iter().any(|e| e.code == "DEPENDENCY_CYCLE"));

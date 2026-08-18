@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generates an HTML usage/cost report for a driver's most recent session
-(claude/codex/copilot), correlating `.harness/trace.jsonl` with the driver's
+(claude/codex/copilot/kimi), correlating `.harness/trace.jsonl` with the driver's
 actual token consumption via .harness/scripts/harness_cost_correlate.py. Uses the
 layout of curso/material/relatorio-execucao-harness.html as its visual base.
 
@@ -16,6 +16,7 @@ Usage:
     .harness/skills/session-report/generate_report.py --driver codex --session <uuid>
     .harness/skills/session-report/generate_report.py --driver codex --session-tree <uuid>
     .harness/skills/session-report/generate_report.py --driver copilot --trace-file .harness/last-development.trace.jsonl
+    .harness/skills/session-report/generate_report.py --driver kimi
 """
 
 from __future__ import annotations
@@ -36,12 +37,14 @@ USAGE_SCRIPT = {
     "claude": SCRIPTS_DIR / "claude_usage.py",
     "codex": SCRIPTS_DIR / "codex_usage.py",
     "copilot": SCRIPTS_DIR / "copilot_usage.py",
+    "kimi": SCRIPTS_DIR / "kimi_usage.py",
 }
 CORRELATE_SCRIPT = SCRIPTS_DIR / "harness_cost_correlate.py"
 DRIVER_LABEL = {
     "claude": "Claude Code",
     "codex": "Codex CLI",
     "copilot": "GitHub Copilot",
+    "kimi": "Kimi Code CLI",
 }
 TOKEN_FIELDS = (
     "input_tokens",

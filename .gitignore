@@ -12,6 +12,9 @@ target/
 !.harness/skills/**
 !.harness/scripts/
 !.harness/scripts/**
+!.harness/gui/
+!.harness/gui/**
+.harness/gui/state/
 
 # Rider
 .idea/

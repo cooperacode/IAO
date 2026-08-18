@@ -41,9 +41,9 @@ class ModelPrice:
 # ---------------------------------------------------------------------------
 # PRICING TABLE -- USD per 1,000,000 tokens. Update by hand whenever
 # Anthropic changes prices; nothing else in the script needs to change.
-# Source: platform.claude.com/docs/en/pricing, checked on 2026-07-19.
-# claude-sonnet-5 is at promotional pricing ($2/$10) until 2026-08-31 --
-# swap in the commented-out line (standard price $3/$15) after that date.
+# Source: platform.claude.com/docs/en/about-claude/pricing, checked on
+# 2026-08-14. Claude Sonnet 5's introductory $2/$10 pricing is now standard;
+# the previously announced increase to $3/$15 will not occur.
 # ---------------------------------------------------------------------------
 PRICING: dict[str, ModelPrice] = {
     "claude-fable-5": ModelPrice(
@@ -59,6 +59,13 @@ PRICING: dict[str, ModelPrice] = {
         cache_write_5m=12.50,
         cache_write_1h=20.00,
         cache_read=1.00,
+    ),
+    "claude-opus-5": ModelPrice(
+        input=5.00,
+        output=25.00,
+        cache_write_5m=6.25,
+        cache_write_1h=10.00,
+        cache_read=0.50,
     ),
     "claude-opus-4-8": ModelPrice(
         input=5.00,
@@ -116,7 +123,6 @@ PRICING: dict[str, ModelPrice] = {
         cache_write_1h=4.00,
         cache_read=0.20,
     ),
-    # "claude-sonnet-5": ModelPrice(input=3.00, output=15.00, cache_write_5m=3.75, cache_write_1h=6.00, cache_read=0.30),  # standard, after 2026-08-31
     "claude-sonnet-4-6": ModelPrice(
         input=3.00,
         output=15.00,

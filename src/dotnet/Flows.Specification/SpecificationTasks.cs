@@ -217,7 +217,14 @@ public static partial class SpecificationTasks
         var requirementIds = srs is null
             ? []
             : srs.FunctionalRequirements.Concat(srs.QualityRequirements).Select(r => r.Id).ToArray();
-        var evaluation = SpecificationEvaluator.EvaluateSdd(sdd, srsDigest ?? "", requirementIds);
+        var (sources, sourceDigest) = SpecificationStore.ReadAccepted(
+            SpecificationStore.Phases.Sources, SpecificationJsonContext.Default.SourceBundle);
+        var evaluation = SpecificationEvaluator.EvaluateSdd(
+            sdd,
+            srsDigest ?? "",
+            requirementIds,
+            sourceDigest,
+            sources?.Files);
         if (!evaluation.Passed)
             return DesignRetryPrompt(evaluation.Violations.Select(v => $"{v.Code}: {v.Message}"));
 

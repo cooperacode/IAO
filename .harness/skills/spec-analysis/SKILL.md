@@ -21,6 +21,8 @@ to the accepted PRD digest the prompt gives you.
   PRD goal may go untraced into a requirement.
 - Every requirement has at least one `acceptanceIds` entry, and every id it lists must resolve
   to a real entry in `acceptanceCriteria`.
+- Every requirement object must include non-null arrays for `goalIds`, `dependsOn`, and
+  `acceptanceIds`. Use an empty array when there are no dependencies; do not omit the fields.
 - Every `dependsOn` id on a requirement must resolve to another requirement that actually
   exists in this same proposal.
 - Every requirement id referenced from an acceptance criterion, an interface, or a data rule

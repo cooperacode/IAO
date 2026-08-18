@@ -39,6 +39,12 @@ class HarnessConfig:
     context_reset_mode: str
     context_reset_threshold: float
     context_fallback_features: int
+    # max_features/steps_per_feature/max_replans are the Development flow's local guards:
+    # few features + a per-feature step ceiling bars an implement<->verify loop that never
+    # closes; max_replans caps how many global plan revisions one run may apply.
+    max_features: int
+    steps_per_feature: int
+    max_replans: int
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -50,6 +56,9 @@ class HarnessConfig:
             "contextResetMode": self.context_reset_mode,
             "contextResetThreshold": self.context_reset_threshold,
             "contextFallbackFeatures": self.context_fallback_features,
+            "maxFeatures": self.max_features,
+            "stepsPerFeature": self.steps_per_feature,
+            "maxReplans": self.max_replans,
         }
 
 
@@ -65,6 +74,9 @@ DEFAULT = HarnessConfig(
     context_reset_mode="adaptive",
     context_reset_threshold=0.70,
     context_fallback_features=1,
+    max_features=10,
+    steps_per_feature=8,
+    max_replans=2,
 )
 
 _current: HarnessConfig | None = None
@@ -88,6 +100,9 @@ def _normalize(config: HarnessConfig) -> HarnessConfig:
         context_reset_mode=mode if mode in {"adaptive", "per-feature", "never"} else DEFAULT.context_reset_mode,
         context_reset_threshold=min(max(config.context_reset_threshold or DEFAULT.context_reset_threshold, 0.1), 1.0),
         context_fallback_features=config.context_fallback_features if config.context_fallback_features > 0 else DEFAULT.context_fallback_features,
+        max_features=config.max_features if config.max_features > 0 else DEFAULT.max_features,
+        steps_per_feature=config.steps_per_feature if config.steps_per_feature > 0 else DEFAULT.steps_per_feature,
+        max_replans=config.max_replans if config.max_replans > 0 else DEFAULT.max_replans,
     )
 
 
@@ -119,6 +134,9 @@ def load() -> HarnessConfig:
                 context_reset_mode=str(payload.get("contextResetMode") or ""),
                 context_reset_threshold=float(payload.get("contextResetThreshold", 0) or 0),
                 context_fallback_features=int(payload.get("contextFallbackFeatures", 0) or 0),
+                max_features=int(payload.get("maxFeatures", 0) or 0),
+                steps_per_feature=int(payload.get("stepsPerFeature", 0) or 0),
+                max_replans=int(payload.get("maxReplans", 0) or 0),
             )
     except Exception as ex:
         harness_log.error(f"[HarnessConfig] failed to load; using defaults: {ex}")

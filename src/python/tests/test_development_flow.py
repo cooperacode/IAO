@@ -113,6 +113,12 @@ def _given_docs_brief(content: str) -> None:
     (Path("specs") / "brief.md").write_text(content)
 
 
+def _given_published_design(content: str) -> None:
+    path = Path("specs/active/20-software-design-document.md")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+
+
 def test_start_sem_feature_pendente_reseta_feature_list_e_run_config():
     # Um run anterior terminou (tudo passando) - "start" pode começar de verdade do zero.
     _plan()
@@ -227,6 +233,35 @@ def test_pick_retorna_implement_com_description_e_references_da_feature():
     assert "Brief references: RF-003" in result
     assert "<implementation-context>requirements: inline X" in result
     assert "<brief>" not in result
+
+
+def test_pick_retorna_implement_com_contexto_de_design_publicado():
+    _given_published_design(
+        "# Software design\n\n```mermaid\nflowchart LR\n    Client --> API\n```\n\n"
+        "```text\nsrc/\n  Domain/\n  Infrastructure/\n```"
+    )
+
+    result = _plan()
+
+    assert '<design-context source="' in result
+    assert "flowchart LR" in result
+    assert "src/\\n  Domain/\\n  Infrastructure/" in result
+    assert "Do not expand" in result
+
+
+def test_fix_prompt_retorna_contexto_de_design_publicado_apos_falha():
+    _given_published_design("# Design\n\nUse the repository interfaces from the SDD.")
+    target = Path("src/app")
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "init.sh").write_text("#!/usr/bin/env bash\nset -e\n")
+    _write_verify_feature_script(target, "#!/usr/bin/env bash\nset -e\necho 'FAIL: feature failed'\nexit 7\n")
+
+    tasks.plan(_plan_cmd(FEATURES_JSON, "dotnet test", str(target)))
+    result = tasks.implement(_cmd("implement", "feito"))
+
+    assert '<design-context source="' in result
+    assert "Use the repository interfaces from the SDD." in result
+    assert "feature failed" in result
 
 
 def test_pick_retorna_implement_sem_description_nem_references_nao_tem_bloco_de_contexto():
@@ -430,7 +465,7 @@ def test_verify_pass_handoff_automatico_commita_so_o_diretorio_alvo():
 def test_guarda_por_feature_ao_exceder_o_teto_encerra():
     _plan()
     tasks.bearings(_cmd("bearings", "ok"))  # zera para 1
-    state_store.set("feature_steps", str(tasks.STEPS_PER_FEATURE))  # no limite
+    state_store.set("feature_steps", str(tasks.STEPS_PER_FEATURE()))  # no limite
 
     result = tasks.smoke(_cmd("smoke", "ok"))  # próximo bump ultrapassa
 
@@ -465,7 +500,7 @@ def test_plan_corte_max_features_remove_dependencia_para_id_cortado():
     # "extras" preenchem as vagas restantes com prioridades intermediárias.
     extras = ",".join(
         f'{{"id":{i},"title":"extra{i}","priority":{i}}}'
-        for i in range(3, 3 + tasks.MAX_FEATURES - 1)
+        for i in range(3, 3 + tasks.MAX_FEATURES() - 1)
     )
     json_text = (
         '[{"id":1,"title":"sobrevivente","priority":1,"dependsOn":[2]},'

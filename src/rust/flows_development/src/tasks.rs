@@ -21,21 +21,29 @@ use harness_engine::{
 use crate::{handoff, prompts, verify};
 use std::process::Command;
 
-// Local guards for this flow (harness.json's global ceiling, 12, is too short for a
-// loop). Few features + a per-feature step ceiling: bars the implement↔verify loop that
-// never closes.
-pub const MAX_FEATURES: usize = 10;
-pub const STEPS_PER_FEATURE: i32 = 8;
+// Local guards for this flow, externalized into harness.json (harness.json's global
+// max_steps ceiling, 12, is too short for a loop). Few features + a per-feature step
+// ceiling: bars the implement↔verify loop that never closes.
+pub fn max_features() -> usize {
+    harness_config::current().max_features as usize
+}
+pub fn steps_per_feature() -> i32 {
+    harness_config::current().steps_per_feature
+}
 // Ceiling on how many global plan revisions ("replan") a single run may apply — mirrors
 // .NET's DevelopmentTasks.MaxReplans. Once reached, both `replan` and the third-failure
 // escalation in `handle_verify_failure` stop offering the replan path (see both call sites
 // below): the driver keeps correcting locally via `fix_prompt` instead.
-pub const MAX_REPLANS: i32 = 2;
+pub fn max_replans() -> i32 {
+    harness_config::current().max_replans
+}
 
 // Effective step ceiling passed to harness_host (override of the global one): slack for
-// the worst case of MAX_FEATURES features spending STEPS_PER_FEATURE each, plus
+// the worst case of max_features() features spending steps_per_feature() each, plus
 // start/plan and the boundaries.
-pub const STEP_BUDGET: i32 = MAX_FEATURES as i32 * STEPS_PER_FEATURE + 8;
+pub fn step_budget() -> i32 {
+    max_features() as i32 * steps_per_feature() + 8
+}
 
 // state_store::Data keys used by this module and by prompts.rs/handoff.rs — a const
 // instead of a repeated string literal, so a typo in any of these files becomes a
@@ -53,7 +61,8 @@ pub const FEATURE_STEPS_KEY: &str = "feature_steps";
 pub const VERIFY_FAILURES_KEY: &str = "verify_failures";
 
 // Name of the brief artifact in artifact_store (.harness/brief.md) — retained for
-// auditability and compatibility; implementation sessions use each feature's bounded context.
+// auditability and compatibility; implementation sessions use each feature's bounded context
+// plus the published design document rehydrated from disk.
 pub const BRIEF_ARTIFACT_NAME: &str = "brief";
 
 // Where the driver writes the raw (unescaped) feature-list JSON array with its file-write
@@ -96,6 +105,13 @@ pub fn start() -> String {
     // the driver writes a fresh array — best-effort, absence is not an error.
     let _ = std::fs::remove_file(PLAN_FILE_PATH);
 
+    if import_published_plan() {
+        harness_log::info(
+            "[dev] imported the published Specification handoff; entering operational setup",
+        );
+        return prompts::handoff_setup_prompt(None);
+    }
+
     // Brief (what to build) comes from specs/ or, without specs, from interactive mode.
     let folder = docs_folder();
     if !docs_reader::has_docs(&folder) {
@@ -104,10 +120,77 @@ pub fn start() -> String {
 
     let (content, files) = docs_reader::read(&folder);
     // Persisted for auditability and compatibility; implementation sessions use the bounded
-    // context copied into each feature by the planner.
+    // context copied into each feature plus the published design document read from disk at
+    // every fresh implementation prompt.
     artifact_store::write(BRIEF_ARTIFACT_NAME, &content);
     state_store::set("origem", "specs");
     prompts::initializer_prompt(&content, &files)
+}
+
+fn import_published_plan() -> bool {
+    let folder = docs_folder();
+    let candidates = [
+        std::path::PathBuf::from(format!("{folder}/40-development-plan.json")),
+        std::path::PathBuf::from(format!("{folder}/active/40-development-plan.json")),
+        std::path::PathBuf::from("specs/active/40-development-plan.json"),
+    ];
+    for candidate in candidates {
+        if !candidate.is_file() {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&candidate) else {
+            return false;
+        };
+        let features = feature_store::parse_development_plan(&json);
+        if features.is_empty() {
+            harness_log::error(&format!(
+                "[dev] published handoff '{}' was invalid or empty",
+                candidate.display()
+            ));
+            return false;
+        }
+        let mut capped: Vec<_> = features.into_iter().take(max_features()).collect();
+        let ids: std::collections::HashSet<i32> = capped.iter().map(|feature| feature.id).collect();
+        for feature in &mut capped {
+            feature
+                .depends_on
+                .retain(|dependency| ids.contains(dependency));
+        }
+        feature_store::write(&capped);
+        return true;
+    }
+    false
+}
+
+pub fn setup(envelope: Option<&Envelope>) -> String {
+    let target = std::env::var("HARNESS_TARGET_DIR")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| arg_at(envelope, 0, ""));
+    let verify_cmd = std::env::var("HARNESS_VERIFY_CMD")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| arg_at(envelope, 1, ""));
+    if target.trim().is_empty()
+        || verify_cmd.trim().is_empty()
+        || target.len() > 240
+        || verify_cmd.len() > 500
+        || target.contains(['\r', '\n'])
+    {
+        return prompts::handoff_setup_prompt(Some(
+            "the setup response did not contain a concrete target directory and executable verification command",
+        ));
+    }
+    run_config_store::write(&RunConfig {
+        verify_cmd,
+        verify_cmds: Vec::new(),
+        target_dir: target,
+        run_id: uuid::Uuid::new_v4().to_string(),
+    });
+    harness_log::info(&format!(
+        "[dev] setup completed for target with verify command"
+    ));
+    bearings(None)
 }
 
 // plan interprets the driver's feature array (written to PLAN_FILE_PATH, not the
@@ -121,7 +204,7 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     // Feature ceiling: keeps the highest-priority ones (lowest number).
     let mut sorted = features;
     sorted.sort_by_key(|f| (f.priority, f.id));
-    let mut capped: Vec<_> = sorted.into_iter().take(MAX_FEATURES).collect();
+    let mut capped: Vec<_> = sorted.into_iter().take(max_features()).collect();
 
     // Sanitize depends_on: a surviving feature may depend on an id cut above, which would
     // block it forever (never "ready") with no way for the driver to know — the harness
@@ -142,13 +225,19 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
     // Envelope exchanged with the model (RFC §6.4 — run identity is a control-plane
     // concern, not part of the contract).
     run_config_store::write(&RunConfig {
-        verify_cmd: std::env::var("HARNESS_VERIFY_CMD").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 0, "dotnet test")),
+        verify_cmd: std::env::var("HARNESS_VERIFY_CMD")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| arg_at(envelope, 0, "dotnet test")),
         // Not sourced from the envelope (plan's two args stay verify_cmd/target_dir) — a
         // list of independent commands isn't something the driver's plan turn hands over
         // today. Left empty here (the "not configured" signal); tests set it directly via
         // run_config_store after plan() to exercise the parallel path.
         verify_cmds: Vec::new(),
-        target_dir: std::env::var("HARNESS_TARGET_DIR").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| arg_at(envelope, 1, ".")),
+        target_dir: std::env::var("HARNESS_TARGET_DIR")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| arg_at(envelope, 1, ".")),
         run_id: uuid::Uuid::new_v4().to_string(),
     });
 
@@ -165,8 +254,8 @@ pub fn plan(envelope: Option<&Envelope>) -> String {
 /// `feature_store::apply_revision` re-checks the invariants it alone enforces and performs
 /// the write.
 pub fn replan(_envelope: Option<&Envelope>) -> String {
-    if plan_revision_store::revision_count() >= MAX_REPLANS {
-        return stop(&format!("global replan limit ({MAX_REPLANS})"));
+    if plan_revision_store::revision_count() >= max_replans() {
+        return stop(&format!("global replan limit ({})", max_replans()));
     }
 
     let revision = match plan_revision_store::read_proposal() {
@@ -174,14 +263,14 @@ pub fn replan(_envelope: Option<&Envelope>) -> String {
         None => return prompts::replan_prompt("No readable replan proposal was found."),
     };
 
-    let remaining_steps = (STEP_BUDGET - state_store::load().step).max(0);
+    let remaining_steps = (step_budget() - state_store::load().step).max(0);
     let evaluation = plan_revision_evaluator::evaluate(
         &feature_store::load(),
         &revision,
         &plan_observation_store::load(),
-        MAX_FEATURES,
+        max_features(),
         remaining_steps,
-        STEPS_PER_FEATURE,
+        steps_per_feature(),
     );
     if !evaluation.passed() {
         let errors = evaluation
@@ -190,12 +279,17 @@ pub fn replan(_envelope: Option<&Envelope>) -> String {
             .map(|e| format!("{}: {}", e.code, e.message))
             .collect::<Vec<_>>()
             .join(" | ");
-        return prompts::replan_prompt(&format!("The deterministic plan evaluator rejected the proposal: {errors}"));
+        return prompts::replan_prompt(&format!(
+            "The deterministic plan evaluator rejected the proposal: {errors}"
+        ));
     }
 
-    let result = feature_store::apply_revision(&revision, MAX_FEATURES);
+    let result = feature_store::apply_revision(&revision, max_features());
     if !result.success {
-        return prompts::replan_prompt(&format!("The proposed revision was rejected: {}", result.error));
+        return prompts::replan_prompt(&format!(
+            "The proposed revision was rejected: {}",
+            result.error
+        ));
     }
 
     plan_revision_store::record(&revision, &result.features, &evaluation);
@@ -274,7 +368,12 @@ pub fn implement(_envelope: Option<&Envelope>) -> String {
         // verification not attempted" path as a target_dir with no verify-feature.sh.
         if let Ok(target_dir) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
             let config = run_config_store::load();
-            let auto = verify::try_automated_verify(feature_id, &target_dir, &config.verify_cmd, &config.verify_cmds);
+            let auto = verify::try_automated_verify(
+                feature_id,
+                &target_dir,
+                &config.verify_cmd,
+                &config.verify_cmds,
+            );
             if auto.attempted {
                 state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
                 return if auto.success {
@@ -295,47 +394,105 @@ pub fn verify(_envelope: Option<&Envelope>) -> String {
     }
 
     let config = run_config_store::load();
-    let id = match state(CURRENT_FEATURE_ID_KEY).parse::<i32>() { Ok(v) => v, Err(_) => return prompts::verify_retry_prompt() };
-    let target = match handoff::resolve_target_dir(&config.target_dir) { Ok(v) => v, Err(_) => return prompts::verify_retry_prompt() };
+    let id = match state(CURRENT_FEATURE_ID_KEY).parse::<i32>() {
+        Ok(v) => v,
+        Err(_) => return prompts::verify_retry_prompt(),
+    };
+    let target = match handoff::resolve_target_dir(&config.target_dir) {
+        Ok(v) => v,
+        Err(_) => return prompts::verify_retry_prompt(),
+    };
     let auto = verify::try_automated_verify(id, &target, &config.verify_cmd, &config.verify_cmds);
-    if !auto.attempted { return prompts::verify_retry_prompt(); }
+    if !auto.attempted {
+        return prompts::verify_retry_prompt();
+    }
     state_store::set(CURRENT_FEATURE_VERIFY_KEY, &auto.result);
-    if auto.success { handoff::complete_verified_feature(&auto.result) } else { handle_verify_failure(&auto.result) }
+    if auto.success {
+        handoff::complete_verified_feature(&auto.result)
+    } else {
+        handle_verify_failure(&auto.result)
+    }
 }
 
 pub fn handoff_task(_envelope: Option<&Envelope>) -> String {
     let result = state(CURRENT_FEATURE_VERIFY_KEY);
-    if !result.to_uppercase().starts_with("PASS") { return prompts::verify_retry_prompt(); }
+    if !result.to_uppercase().starts_with("PASS") {
+        return prompts::verify_retry_prompt();
+    }
     handoff::complete_verified_feature(&result)
 }
 
 fn capture_bearings() {
     if let Ok(target) = handoff::resolve_target_dir(&run_config_store::load().target_dir) {
         let progress = std::fs::read_to_string(target.join("progress.txt")).unwrap_or_default();
-        let tail = progress.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+        let tail = progress
+            .lines()
+            .rev()
+            .take(12)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
         let log = harness_engine::git_command::run(&target, &["log", "-n", "10", "--oneline"]);
-        let evidence = format!("cwd: {}\nprogress tail:\n{}\ngit log:\n{}", target.display(), tail, handoff::one_line(&log.output, "no git history"));
-        state_store::set(CURRENT_BEARINGS_KEY, &evidence.chars().take(4000).collect::<String>());
+        let evidence = format!(
+            "cwd: {}\nprogress tail:\n{}\ngit log:\n{}",
+            target.display(),
+            tail,
+            handoff::one_line(&log.output, "no git history")
+        );
+        state_store::set(
+            CURRENT_BEARINGS_KEY,
+            &evidence.chars().take(4000).collect::<String>(),
+        );
     }
 }
 
 fn run_smoke() -> Result<(), String> {
     let target = handoff::resolve_target_dir(&run_config_store::load().target_dir)?;
     let script = target.join("init.sh");
-    if !script.is_file() { return Err("init.sh is missing from the target directory".to_string()); }
-    let output = Command::new("bash").arg(&script).current_dir(&target).output().map_err(|e| e.to_string())?;
+    if !script.is_file() {
+        return Err("init.sh is missing from the target directory".to_string());
+    }
+    let output = Command::new("bash")
+        .arg(&script)
+        .current_dir(&target)
+        .output()
+        .map_err(|e| e.to_string())?;
     let log = std::path::PathBuf::from(".harness/logs/smoke.log");
-    if let Some(parent) = log.parent() { let _ = std::fs::create_dir_all(parent); }
-    let _ = std::fs::write(&log, format!("exitCode: {}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}\n", output.status.code().unwrap_or(-1), String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)));
-    if output.status.success() { Ok(()) } else { Err("init.sh failed. Log: .harness/logs/smoke.log".to_string()) }
+    if let Some(parent) = log.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(
+        &log,
+        format!(
+            "exitCode: {}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}\n",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    );
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("init.sh failed. Log: .harness/logs/smoke.log".to_string())
+    }
 }
 
 fn implementation_summary() -> String {
     let config = run_config_store::load();
     if let Ok(target) = handoff::resolve_target_dir(&config.target_dir) {
-        let diff = harness_engine::git_command::run(&target, &["diff", "HEAD", "--stat", ".", ":(exclude).harness"]);
-        if diff.exit_code == 0 && !diff.output.trim().is_empty() { return handoff::one_line(&diff.output, "implementation completed"); }
-        let status = harness_engine::git_command::run(&target, &["status", "--short", "--", ".", ":(exclude).harness"]);
+        let diff = harness_engine::git_command::run(
+            &target,
+            &["diff", "HEAD", "--stat", ".", ":(exclude).harness"],
+        );
+        if diff.exit_code == 0 && !diff.output.trim().is_empty() {
+            return handoff::one_line(&diff.output, "implementation completed");
+        }
+        let status = harness_engine::git_command::run(
+            &target,
+            &["status", "--short", "--", ".", ":(exclude).harness"],
+        );
         return handoff::one_line(&status.output, "implementation completed");
     }
     "implementation completed".to_string()
@@ -348,9 +505,10 @@ fn over_feature_budget() -> bool {
     let steps: i32 = state(FEATURE_STEPS_KEY).parse().unwrap_or(0) + 1;
     state_store::set(FEATURE_STEPS_KEY, &steps.to_string());
 
-    if steps > STEPS_PER_FEATURE {
+    if steps > steps_per_feature() {
+        let limit = steps_per_feature();
         harness_log::error(&format!(
-            "[dev] feature '{}' exceeded {STEPS_PER_FEATURE} steps; stopping.",
+            "[dev] feature '{}' exceeded {limit} steps; stopping.",
             state(CURRENT_FEATURE_TITLE_KEY)
         ));
         return true;
@@ -367,7 +525,7 @@ fn handle_verify_failure(failure: &str) -> String {
     let failures: i32 = state(VERIFY_FAILURES_KEY).parse().unwrap_or(0) + 1;
     state_store::set(VERIFY_FAILURES_KEY, &failures.to_string());
 
-    if failures < 3 || plan_revision_store::revision_count() >= MAX_REPLANS {
+    if failures < 3 || plan_revision_store::revision_count() >= max_replans() {
         return prompts::fix_prompt(Some(failure));
     }
 
@@ -381,11 +539,16 @@ fn handle_verify_failure(failure: &str) -> String {
         ),
         &[failure],
     );
-    prompts::replan_prompt(&format!("{}: {} Latest evidence: {failure}", observation.id, observation.summary))
+    prompts::replan_prompt(&format!(
+        "{}: {} Latest evidence: {failure}",
+        observation.id, observation.summary
+    ))
 }
 
 pub(crate) fn stop(reason: &str) -> String {
-    harness_log::error(&format!("[dev] stopped due to {reason}. feature_list in .harness/feature_list.json"));
+    harness_log::error(&format!(
+        "[dev] stopped due to {reason}. feature_list in .harness/feature_list.json"
+    ));
     "stop".to_string()
 }
 
@@ -466,12 +629,7 @@ mod tests {
     /// Writes the driver-side feature array to PLAN_FILE_PATH — plan() reads features from
     /// that file, not from the envelope's args (see PLAN_FILE_PATH above).
     fn write_plan_file(features: &str) {
-        std::fs::create_dir_all(
-            std::path::Path::new(PLAN_FILE_PATH)
-                .parent()
-                .unwrap(),
-        )
-        .unwrap();
+        std::fs::create_dir_all(std::path::Path::new(PLAN_FILE_PATH).parent().unwrap()).unwrap();
         std::fs::write(PLAN_FILE_PATH, features).unwrap();
     }
 
@@ -572,6 +730,11 @@ mod tests {
         std::fs::write("specs/brief.md", content).unwrap();
     }
 
+    fn given_published_design(content: &str) {
+        std::fs::create_dir_all("specs/active").unwrap();
+        std::fs::write("specs/active/20-software-design-document.md", content).unwrap();
+    }
+
     #[test]
     fn start_com_docs_populados_persiste_o_brief_no_artifact_store() {
         let _guard = lock_cwd();
@@ -658,13 +821,52 @@ mod tests {
         std::fs::create_dir_all("src/app").unwrap();
         std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
         plan(Some(&plan_cmd(json, "dotnet test", "src/app"))); // escolhe "B"
-        write_verify_feature_script(std::path::Path::new("src/app"), "#!/usr/bin/env bash\nset -e\n");
+        write_verify_feature_script(
+            std::path::Path::new("src/app"),
+            "#!/usr/bin/env bash\nset -e\n",
+        );
         let result = implement(Some(&cmd("implement", vec!["feito"]))); // verifica B, entrega A
 
         assert!(result.contains("Description: faz X"));
         assert!(result.contains("Brief references: RF-003"));
         assert!(result.contains("<implementation-context>requirements: inline X"));
         assert!(!result.contains("<brief>"));
+    }
+
+    #[test]
+    fn pick_retorna_implement_com_contexto_de_design_publicado() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        given_published_design(
+            "# Software design\n\n```mermaid\nflowchart LR\n    Client --> API\n```\n\n```text\nsrc/\n  Domain/\n  Infrastructure/\n```",
+        );
+
+        let result = plan_default();
+
+        assert!(result.contains("<design-context source=\""));
+        assert!(result.contains("flowchart LR"));
+        assert!(result.contains("src/\\n  Domain/\\n  Infrastructure/"));
+        assert!(result.contains("Do not expand"));
+    }
+
+    #[test]
+    fn fix_prompt_retorna_contexto_de_design_publicado_apos_falha() {
+        let _guard = lock_cwd();
+        let _iso = Isolated::new();
+        given_published_design("# Design\n\nUse the repository interfaces from the SDD.");
+        std::fs::create_dir_all("src/app").unwrap();
+        std::fs::write("src/app/init.sh", "#!/usr/bin/env bash\nset -e\n").unwrap();
+        write_verify_feature_script(
+            std::path::Path::new("src/app"),
+            "#!/usr/bin/env bash\nset -e\necho 'FAIL: feature failed'\nexit 7\n",
+        );
+
+        plan(Some(&plan_cmd(FEATURES_JSON, "dotnet test", "src/app")));
+        let result = implement(Some(&cmd("implement", vec!["feito"])));
+
+        assert!(result.contains("<design-context source=\""));
+        assert!(result.contains("Use the repository interfaces from the SDD."));
+        assert!(result.contains("feature failed"));
     }
 
     #[test]
@@ -739,8 +941,8 @@ mod tests {
 
         // id 1 (prioridade 1, a melhor) sobrevive ao corte; depende do id 2, cuja
         // priority (1000) is the worst of all — guaranteed to be cut by the cutoff at
-        // MAX_FEATURES. Os "extras" preenchem as vagas restantes.
-        let extras: String = (3..3 + MAX_FEATURES - 1)
+        // max_features(). Os "extras" preenchem as vagas restantes.
+        let extras: String = (3..3 + max_features() - 1)
             .map(|i| format!(r#"{{"id":{i},"title":"extra{i}","priority":{i}}}"#))
             .collect::<Vec<_>>()
             .join(",");
@@ -805,7 +1007,8 @@ mod tests {
                 depends_on: vec![2],
                 description: String::new(),
                 references: Vec::new(),
-                implementation_context: harness_engine::feature_store::ImplementationContext::default(),
+                implementation_context:
+                    harness_engine::feature_store::ImplementationContext::default(),
             },
             Feature {
                 id: 2,
@@ -815,7 +1018,8 @@ mod tests {
                 depends_on: vec![1],
                 description: String::new(),
                 references: Vec::new(),
-                implementation_context: harness_engine::feature_store::ImplementationContext::default(),
+                implementation_context:
+                    harness_engine::feature_store::ImplementationContext::default(),
             },
         ]);
         bearings(Some(&cmd("bearings", vec!["ok"])));
@@ -848,7 +1052,10 @@ mod tests {
 
         advance_to_verify();
 
-        write_verify_feature_script(std::path::Path::new("src/app"), "#!/usr/bin/env bash\nset -e\n");
+        write_verify_feature_script(
+            std::path::Path::new("src/app"),
+            "#!/usr/bin/env bash\nset -e\n",
+        );
 
         let result = verify(Some(&cmd("verify", vec!["PASS"])));
 
@@ -977,7 +1184,9 @@ mod tests {
 
         let result = implement(Some(&cmd("implement", vec!["implementei"])));
 
-        assert!(result.contains("FAIL: verify command #2 is empty or uses disallowed shell operators"));
+        assert!(
+            result.contains("FAIL: verify command #2 is empty or uses disallowed shell operators")
+        );
         assert!(result.contains(r#""value":"implement"#));
         assert_eq!(feature_store::pending_count(), 2);
         assert!(!std::path::Path::new("src/app/progress.txt").exists());
@@ -1087,7 +1296,7 @@ mod tests {
         let _iso = Isolated::new();
 
         plan_default();
-        for _ in 0..MAX_REPLANS {
+        for _ in 0..max_replans() {
             let approval = harness_engine::plan_revision_evaluator::PlanRevisionEvaluation {
                 verdict: harness_engine::plan_revision_evaluator::PlanRevisionVerdict::Approve,
                 errors: Vec::new(),
@@ -1100,7 +1309,11 @@ mod tests {
                 revised_features: feature_store::load(),
                 based_on_observation_ids: vec!["OBS-001".to_string()],
             };
-            harness_engine::plan_revision_store::record(&revision, &revision.revised_features, &approval);
+            harness_engine::plan_revision_store::record(
+                &revision,
+                &revision.revised_features,
+                &approval,
+            );
         }
 
         let result = replan(Some(&cmd("replan", vec![])));
@@ -1114,7 +1327,7 @@ mod tests {
         let _iso = Isolated::new();
 
         advance_to_verify();
-        for _ in 0..MAX_REPLANS {
+        for _ in 0..max_replans() {
             let approval = harness_engine::plan_revision_evaluator::PlanRevisionEvaluation {
                 verdict: harness_engine::plan_revision_evaluator::PlanRevisionVerdict::Approve,
                 errors: Vec::new(),
@@ -1127,7 +1340,11 @@ mod tests {
                 revised_features: feature_store::load(),
                 based_on_observation_ids: vec!["OBS-001".to_string()],
             };
-            harness_engine::plan_revision_store::record(&revision, &revision.revised_features, &approval);
+            harness_engine::plan_revision_store::record(
+                &revision,
+                &revision.revised_features,
+                &approval,
+            );
         }
 
         verify(Some(&cmd("verify", vec!["FAIL: red tests"]))); // second failure
@@ -1146,7 +1363,7 @@ mod tests {
 
         plan_default();
         bearings(Some(&cmd("bearings", vec!["ok"]))); // zera para 1
-        state_store::set(FEATURE_STEPS_KEY, &STEPS_PER_FEATURE.to_string()); // no limite
+        state_store::set(FEATURE_STEPS_KEY, &steps_per_feature().to_string()); // no limite
 
         let result = smoke(Some(&cmd("smoke", vec!["ok"]))); // next bump goes over
 

@@ -7,6 +7,7 @@ using Flows.Development;
 var tasks = new Dictionary<string, Func<Envelope?, string>>
 {
     ["start"] = _ => DevelopmentTasks.Start(),
+    ["setup"] = envelope => DevelopmentTasks.Setup(envelope),
     ["plan"] = envelope => DevelopmentTasks.Plan(envelope),
     ["replan"] = envelope => DevelopmentTasks.Replan(envelope),
     ["bearings"] = envelope => DevelopmentTasks.Bearings(envelope),

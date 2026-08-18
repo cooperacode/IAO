@@ -21,6 +21,39 @@ organized using categories such as `Added`, `Changed`, `Fixed`, and `Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- Kimi Code CLI as a supported driver: `.kimi/agents/{development,specification}.md`
+  adapters, wired into `.harness/gui/drivers.py` (via Kimi's native `--agent-file`
+  resolution), `package.sh`, and `.harness/scripts/check-development-contracts.sh`.
+  `validated: True` — the exact command shape was spiked twice against a real,
+  authenticated install (bare and with `--agent-file`), headless, exit code 0.
+- `.harness/scripts/kimi_usage.py`: extracts token usage and estimated cost from
+  local Kimi Code CLI sessions (`~/.kimi-code/sessions/**/agents/*/wire.jsonl`
+  `usage.record` events), wired into `harness_cost_correlate.py`
+  (`--usage-source kimi`) and `session-report/generate_report.py --driver kimi` —
+  closes the cost-report gap for the Kimi driver. Pricing is a public-API-based
+  estimate (Kimi's default managed/OAuth plan bills flat-rate, not per token),
+  matched to Moonshot's raw API model prices by context-window/name
+  correspondence; one model alias (`kimi-code/k3-256k`) has no confident match
+  and is left unpriced.
+- `.harness/scripts/kimi_context_usage.py`: emits the `iao.context.v1` contract
+  (`HARNESS_CONTEXT_USAGE_JSON`) for Kimi's adaptive context-reset policy, read
+  from `wire.jsonl`'s `llm.request.maxTokens` (the model's real configured
+  context window, unlike Claude's env-var-default fallback) paired with the
+  matching `usage.record`'s input total. Wired into a new "Driver telemetry"
+  section in `.kimi/agents/{development,specification}.md`.
+
+### Changed
+
+- `package.sh` no longer asks which IDE to package for (`--ide` is now a deprecated,
+  ignored no-op kept for backward compatibility): every generated package bundles the
+  adapter/prompt and approval config for all five supported IDEs (Claude Code, GitHub
+  Copilot, Devin, Codex, Kimi Code CLI), and `.harness/START-HERE.md` documents
+  getting-started steps for each of them.
+- `package.sh` gained a branded ASCII-logo banner and redesigned interactive menus
+  (colored, numbered, with per-option descriptions) for the engine/OS selection.
+
 ## [0.3.0] - 2026-08-05
 
 ### Fixed

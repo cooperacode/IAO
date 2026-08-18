@@ -160,6 +160,7 @@ public static class PlanRevisionEvaluator
         left.Id == right.Id && left.Title == right.Title && left.Description == right.Description
         && left.Deps.SequenceEqual(right.Deps) && left.Refs.SequenceEqual(right.Refs)
         && left.Context.RequirementItems.SequenceEqual(right.Context.RequirementItems)
+        && left.Context.DecisionItems.SequenceEqual(right.Context.DecisionItems)
         && left.Context.ConstraintItems.SequenceEqual(right.Context.ConstraintItems)
         && left.Context.FileItems.SequenceEqual(right.Context.FileItems)
         && left.Context.AcceptanceItems.SequenceEqual(right.Context.AcceptanceItems);

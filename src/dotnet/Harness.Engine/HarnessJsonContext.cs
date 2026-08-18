@@ -18,6 +18,7 @@ namespace Harness.Engine;
 [JsonSerializable(typeof(GoldenCase))]
 [JsonSerializable(typeof(Feature))]
 [JsonSerializable(typeof(FeatureList))]
+[JsonSerializable(typeof(DevelopmentPlan))]
 [JsonSerializable(typeof(RunConfig))]
 [JsonSerializable(typeof(PlanRevision))]
 [JsonSerializable(typeof(AppliedPlanRevision))]

@@ -5,8 +5,8 @@
 use harness_engine::envelope::{Envelope, envelope_type};
 use harness_engine::feature_store::{self, Feature};
 use harness_engine::{
-    artifact_store, context_policy, plan_observation_store, plan_revision_store,
-    prompt_formatter, run_config_store, state_store,
+    artifact_store, context_policy, harness_config, harness_log, path_resolver,
+    plan_observation_store, plan_revision_store, prompt_formatter, run_config_store, state_store,
 };
 
 use crate::tasks::{
@@ -17,7 +17,8 @@ use crate::tasks::{
 const VERIFY_CMD: &str = "$VERIFY_CMD";
 const TARGET_DIR: &str = "$TARGET_DIR";
 
-const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"constraints":[],"files":[],"acceptance":[]}}, ...]"#;
+const FEATURES_SHAPE: &str = r#"[{"id":1,"title":"...","priority":1,"dependsOn":[],"description":"...","references":[],"implementationContext":{"requirements":[],"decisions":[],"constraints":[],"files":[],"acceptance":[]}}, ...]"#;
+const DESIGN_DOCUMENT_FILE_NAME: &str = "20-software-design-document.md";
 
 // Returns the current feature's bounded inline context for implement/fix prompts.
 fn feature_context_block(feature: &Feature) -> String {
@@ -36,12 +37,77 @@ fn feature_context_block(feature: &Feature) -> String {
     let implementation_context = if feature.implementation_context.is_empty() {
         String::new()
     } else {
-        format!("<implementation-context>{}</implementation-context>\n", feature.implementation_context.prompt_text())
+        format!(
+            "<implementation-context>{}</implementation-context>\n",
+            feature.implementation_context.prompt_text()
+        )
     };
     format!(
         "Description: {}\nBrief references: {references}\n{implementation_context}\n",
         feature.description
     )
+}
+
+fn truncate_utf8_bytes(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+
+    let mut cut = max_bytes;
+    while cut > 0 && !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text[..cut].to_string()
+}
+
+/// Rehydrates the published design document for every fresh implementation session. The
+/// feature list remains the feature-specific scope; this durable source carries architecture,
+/// diagrams, folder trees, and cross-feature decisions across context resets.
+fn design_context_block() -> String {
+    let docs_folder = harness_config::current().docs_folder;
+    let candidates = [
+        format!("{docs_folder}/{DESIGN_DOCUMENT_FILE_NAME}"),
+        format!("{docs_folder}/active/{DESIGN_DOCUMENT_FILE_NAME}"),
+        format!("specs/active/{DESIGN_DOCUMENT_FILE_NAME}"),
+    ];
+
+    for candidate in candidates {
+        let path = path_resolver::resolve(&candidate);
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                harness_log::error(&format!(
+                    "[dev] failed to read design document '{candidate}': {error}"
+                ));
+                continue;
+            }
+        };
+
+        if content.trim().is_empty() {
+            continue;
+        }
+
+        let max_bytes = harness_config::current().docs_max_chars.max(0) as usize;
+        let content = if content.len() > max_bytes {
+            harness_log::error(&format!(
+                "[dev] design document exceeded {max_bytes} bytes (UTF-8); truncating implementation context"
+            ));
+            format!(
+                "{}\n\n[design context truncated at the configured docsMaxChars limit]",
+                truncate_utf8_bytes(&content, max_bytes)
+            )
+        } else {
+            content
+        };
+
+        return format!(
+            "<design-context source=\"{candidate}\">\n{}\n</design-context>\n\n",
+            prompt_formatter::inline(&content)
+        );
+    }
+
+    String::new()
 }
 
 fn state(key: &str) -> String {
@@ -119,6 +185,25 @@ scaffolds everything is not a valid plan for a multi-requirement goal."
     )
 }
 
+pub fn handoff_setup_prompt(failure: Option<&str>) -> String {
+    let feedback = failure
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| format!("Setup feedback: {value}\n"))
+        .unwrap_or_default();
+    let input = format!(
+        "{feedback}A validated Specification handoff already defined the Development features.\nDo not split, rename, reprioritize, remove, or rewrite them. Follow `dev-handoff-setup`: inspect the repository, prepare Git, create or validate idempotent init.sh and verify-feature.sh <feature-id>, and determine the real executable verification command. Both scripts must live directly inside the concrete target directory.\nReturn `setup` with exactly two arguments: the concrete target directory (relative to the harness root when possible) and the executable verification command. Do not use the Specification target description as the directory."
+    );
+    prompt_formatter::format(
+        &input,
+        &Envelope::new(
+            envelope_type::COMMAND,
+            "setup",
+            vec![TARGET_DIR.to_string(), VERIFY_CMD.to_string()],
+        ),
+        Some(&prompt_formatter::skills(&["dev-handoff-setup"])),
+    )
+}
+
 pub fn plan_retry_prompt() -> String {
     // The retry instruction is short by design, but a driver that already dropped the
     // original (possibly large) brief from its context would otherwise have nothing left
@@ -157,12 +242,18 @@ surrounding text. Repeat the command with '{VERIFY_CMD}' and '{TARGET_DIR}'."
 pub fn replan_prompt(observation: &str) -> String {
     let current_plan = match std::fs::read_to_string(".harness/feature_list.json") {
         Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "(current plan unavailable)".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            "(current plan unavailable)".to_string()
+        }
         Err(e) => format!("(current plan unavailable: {e})"),
     };
 
     let brief = artifact_store::read(BRIEF_ARTIFACT_NAME).trim().to_string();
-    let brief_block = if brief.is_empty() { String::new() } else { format!("<brief>{brief}</brief>") };
+    let brief_block = if brief.is_empty() {
+        String::new()
+    } else {
+        format!("<brief>{brief}</brief>")
+    };
     let observations = plan_observation_store::load()
         .iter()
         .map(|o| {
@@ -170,7 +261,9 @@ pub fn replan_prompt(observation: &str) -> String {
                 "{} [{}] feature={}: {}; evidence={}",
                 o.id,
                 o.kind,
-                o.feature_id.map(|id| id.to_string()).unwrap_or_else(|| "n/a".to_string()),
+                o.feature_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "n/a".to_string()),
                 o.summary,
                 o.evidence.join(" | ")
             )
@@ -223,11 +316,13 @@ pub fn smoke_fix_prompt(failure: &str) -> String {
 pub fn implement_prompt(feature: &Feature) -> String {
     let target_dir = run_config_store::load().target_dir;
     let context = feature_context_block(feature);
+    let design_context = design_context_block();
     let input = format!(
         "{}\
 Follow `dev-implement` for this feature:\n\
 Feature #{} (priority {}): {}\n\
-{context}\
+{context}{design_context}Treat the design context as architectural guidance for this feature. Do not expand\n\
+the feature's scope to implement unrelated work from the document.\n\
 Target directory: {target_dir}\n\
 \n\
 Return `implement` without arguments when done. The harness derives the summary from Git.",
@@ -283,11 +378,12 @@ pub fn fix_prompt(verify_failure: Option<&str>) -> String {
 
     let input = format!(
         "Verification FAILED on feature #{}\n\
-({}).\n{}{}Follow `dev-implement` to fix only this feature.\n\
+({}).\n{}{}{}Follow `dev-implement` to fix only this feature.\n\
 Return `implement` without arguments; the harness derives the new summary from Git.",
         state(CURRENT_FEATURE_ID_KEY),
         state(CURRENT_FEATURE_TITLE_KEY),
         current_feature_context_block(),
+        design_context_block(),
         failure
     );
 

@@ -27,8 +27,8 @@ pub mod state_store;
 pub mod task_registry;
 pub mod trace;
 
-pub use envelope::{Envelope, envelope_type};
 pub use context_policy::ContextUsage;
+pub use envelope::{Envelope, envelope_type};
 pub use envelope_validation::{ValidationResult, Validator};
 pub use errors::{HarnessFaultError, HarnessTimeoutError};
 pub use harness_config::HarnessConfig;

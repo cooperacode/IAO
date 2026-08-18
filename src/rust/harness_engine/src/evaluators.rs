@@ -199,9 +199,7 @@ mod tests {
             .data
             .insert("description".to_string(), "Login".to_string());
         state.data.insert("type".to_string(), "Feature".to_string());
-        state
-            .data
-            .insert("stories".to_string(), "   ".to_string()); // blank doesn't count
+        state.data.insert("stories".to_string(), "   ".to_string()); // blank doesn't count
 
         let score = completeness(&state, &strings(&["description", "type", "stories"]));
 

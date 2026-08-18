@@ -87,6 +87,15 @@ def test_parse_preserva_description_e_references():
     assert features[0].context.acceptance == ("returns 401",)
 
 
+def test_parse_development_plan_preserva_contexto_de_decisao():
+    features = feature_store.parse_development_plan(
+        '{"schema":"iao/development-plan/v1","features":[{"id":1,"title":"API",'
+        '"priority":1,"implementationContext":{"decisions":["ADR-2: use Postgres"]}}]}'
+    )
+
+    assert features[0].context.decisions == ("ADR-2: use Postgres",)
+
+
 def test_parse_description_acima_do_teto_e_truncada():
     long_description = "a" * (feature_store.DESCRIPTION_MAX_CHARS + 50)
 
